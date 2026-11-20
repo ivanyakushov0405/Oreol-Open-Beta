@@ -1,0 +1,80 @@
+/** Фон приложения из макета: три размытых свечения и тор Ореола.
+ *  Тор «живой», но переливается целиком: два градиента медленно вращаются навстречу друг другу,
+ *  второй плавно проявляется и гаснет — цвет перетекает по всему кольцу сразу, без бегущих бликов. */
+/** Раскладка фона: десктоп 1440×900 и телефон 390×844 (Figma «Mobile · …»: тор 520×312 у нижнего края). */
+const LAYOUT = {
+  desktop: {
+    box: '0 0 1440 900',
+    glowBlur: 90,
+    torusBlur: 28,
+    glows: [
+      [210, 68, 410, 328],
+      [1280, 724, 380, 304],
+      [680, 828, 260, 208],
+    ],
+    ring: { transform: 'translate(199.09 386.37) rotate(-24)', cx: 450, cy: 270, rx: 425, ry: 245, w: 50, hl: 18 },
+  },
+  mobile: {
+    box: '0 0 390 844',
+    glowBlur: 90,
+    torusBlur: 34,
+    glows: [
+      [10, 30, 310, 250],
+      [370, 770, 260, 210],
+      [70, 530, 210, 170],
+    ],
+    // Figma: эллипс 520×312 в (-105.97, 433.24), повёрнут на 24°, обводка 50 внутрь
+    ring: { transform: 'translate(-105.97 433.24) rotate(-24)', cx: 260, cy: 156, rx: 235, ry: 131, w: 50, hl: 10 },
+  },
+};
+
+export function Backdrop({ torus = 0.35, mobile = false }: { torus?: number; mobile?: boolean }) {
+  const L = LAYOUT[mobile ? 'mobile' : 'desktop'];
+  const r = L.ring;
+  return (
+    <div className="backdrop" aria-hidden="true">
+      <svg viewBox={L.box} preserveAspectRatio="xMidYMid slice">
+        <defs>
+          <filter id="bd-glow" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation={L.glowBlur} />
+          </filter>
+          <filter id="bd-torus" x="-30%" y="-40%" width="160%" height="180%">
+            <feGaussianBlur stdDeviation={L.torusBlur} />
+          </filter>
+          <linearGradient id="bd-torus-g" x1="0" y1="0" x2="1" y2="0">
+            <stop stopColor="var(--glow-3)" />
+            <stop offset="0.5" stopColor="var(--glow-1)" />
+            <stop offset="1" stopColor="var(--glow-2)" />
+            <animateTransform attributeName="gradientTransform" type="rotate" from="0 0.5 0.5" to="360 0.5 0.5" dur="48s" repeatCount="indefinite" />
+          </linearGradient>
+          <linearGradient id="bd-torus-g2" x1="0" y1="0" x2="1" y2="1">
+            <stop stopColor="var(--glow-2)" />
+            <stop offset="0.5" stopColor="var(--glow-3)" />
+            <stop offset="1" stopColor="var(--glow-1)" />
+            <animateTransform attributeName="gradientTransform" type="rotate" from="360 0.5 0.5" to="0 0.5 0.5" dur="64s" repeatCount="indefinite" />
+          </linearGradient>
+        </defs>
+        <ellipse className="bd-glow a" cx={L.glows[0][0]} cy={L.glows[0][1]} rx={L.glows[0][2]} ry={L.glows[0][3]} fill="var(--glow-1)" opacity="0.35" filter="url(#bd-glow)" />
+        <ellipse className="bd-glow b" cx={L.glows[1][0]} cy={L.glows[1][1]} rx={L.glows[1][2]} ry={L.glows[1][3]} fill="var(--glow-2)" opacity="0.3" filter="url(#bd-glow)" />
+        <ellipse className="bd-glow c" cx={L.glows[2][0]} cy={L.glows[2][1]} rx={L.glows[2][2]} ry={L.glows[2][3]} fill="var(--glow-3)" opacity="0.16" filter="url(#bd-glow)" />
+        {/* Halo torus: эллипс 900×540, повёрнут на 24°, обводка 50 внутрь */}
+        {/* На телефоне кольцо занимает пол-экрана — делаем его прозрачнее, чтобы фон не был «плотным» */}
+        <g className={mobile ? 'bd-ring m' : 'bd-ring'} opacity={mobile ? torus * 0.6 : torus}>
+          <g filter="url(#bd-torus)" className="bd-torus">
+            <g transform={r.transform}>
+              <ellipse cx={r.cx} cy={r.cy} rx={r.rx} ry={r.ry} fill="none" stroke="url(#bd-torus-g)" strokeWidth={r.w} />
+              {/* Второй слой цвета: всё кольцо целиком плавно перетекает в другие оттенки */}
+              <ellipse cx={r.cx} cy={r.cy} rx={r.rx} ry={r.ry} fill="none" stroke="url(#bd-torus-g2)" strokeWidth={r.w} opacity="0">
+                <animate attributeName="opacity" values="0;0.75;0" dur="22s" calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1" repeatCount="indefinite" />
+              </ellipse>
+              {/* Мягкое свечение всего кольца — дышит вместе с тором */}
+              <ellipse cx={r.cx} cy={r.cy} rx={r.rx} ry={r.ry} fill="none" stroke="#ffffff" strokeWidth={r.hl} opacity="0.12">
+                <animate attributeName="opacity" values="0.06;0.22;0.06" dur="14s" calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1" repeatCount="indefinite" />
+              </ellipse>
+            </g>
+          </g>
+        </g>
+      </svg>
+    </div>
+  );
+}

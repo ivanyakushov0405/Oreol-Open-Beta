@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Oreol Glass</title>
+    <script src="https://cdn.jsdelivr.net/npm/livekit-client/dist/livekit-client.umd.min.js"></script>
+    <style>
+        :root {
+            /* Apple-style Glass Colors */
+            --glass-bg: rgba(22, 22, 24, 0.75);
+            --glass-border: rgba(255, 255, 255, 0.08);
+            --glass-shine: rgba(255, 255, 255, 0.05);
+            --accent: #0A84FF; /* iOS Blue */
+            --accent-gradient: linear-gradient(135deg, #0A84FF 0%, #007AFF 100%);
+            --danger: #FF453A;
+            --text-main: #FFFFFF;
+            --text-muted: rgba(235, 235, 245, 0.6);
+            --blur: 25px;
+        }
+
+        * { box-sizing: border-box; outline: none; -webkit-tap-highlight-color: transparent; }
+
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+            background: #000;
+            color: var(--text-main);
+            overflow: hidden;
+            height: 100dvh;
+            width: 100vw;
+            /* Глубокий фон */
+            background-image:
+                radial-gradient(circle at 15% 50%, rgba(76, 29, 149, 0.4), transparent 50%),
+                radial-gradient(circle at 85% 30%, rgba(14, 165, 233, 0.25), transparent 50%);
+            background-color: #050507;
+        }
+
+        /* --- ВХОД (LOGIN) --- */
+        #login-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            display: flex; justify-content: center; align-items: center; z-index: 3000;
+            background: rgba(0,0,0,0.6);
+            backdrop-filter: blur(20px);
+        }
+        .login-box {
+            width: 90%; max-width: 360px;
+            padding: 40px;
+            background: rgba(30, 30, 35, 0.6);
+            backdrop-filter: blur(40px);
+            -webkit-backdrop-filter: blur(40px);
+            border: 1px solid var(--glass-border);
+            border-radius: 24px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.5);
+            text-align: center;
+        }
+        .login-box h2 { margin: 0 0 10px; font-weight: 600; letter-spacing: -0.5px; }
+        .login-desc { color: var(--text-muted); font-size: 14px; margin-bottom: 25px; }
+
+        input.login-input {
+            width: 100%; padding: 16px; margin-bottom: 15px;
+            background: rgba(0,0,0,0.3); border: 1px solid var(--glass-border);
+            color: white; border-radius: 12px; font-size: 16px; text-align: center;
+            transition: 0.3s;
+        }
+        input.login-input:focus { border-color: var(--accent); background: rgba(0,0,0,0.5); }
+
+        button.primary {
+            width: 100%; padding: 16px;
+            background: var(--accent-gradient);
+            color: white; border: none; border-radius: 12px;
+            font-size: 16px; font-weight: 600; cursor: pointer;
+            box-shadow: 0 4px 15px rgba(10, 132, 255, 0.3);
+            transition: transform 0.1s;
+        }
+        button.primary:active { transform: scale(0.98); opacity: 0.9; }
+
+        /* --- ОСНОВНОЙ ИНТЕРФЕЙС --- */
+        #app-container { display: flex; height: 100%; width: 100%; position: relative; }
+
+        /* ЗАТЕМНЕНИЕ ДЛЯ МОБИЛЬНЫХ */
+        #mobile-backdrop {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5); backdrop-filter: blur(4px); z-index: 1000;
+            opacity: 0; transition: opacity 0.3s; pointer-events: none;
+        }
+        #mobile-backdrop.active { opacity: 1; pointer-events: auto; }
+
+        /* SIDEBAR (СЛЕВА) */
+        .sidebar {
+            width: 280px; height: 100%;
+            background: var(--glass-bg);
+            backdrop-filter: blur(var(--blur));
+            -webkit-backdrop-filter: blur(var(--blur));
+            border-right: 1px solid var(--glass-border);
+            display: flex; flex-direction: column;
+            z-index: 1001;
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            flex-shrink: 0;
+        }
+
+        .sidebar-header {
+            height: 60px; display: flex; align-items: center; justify-content: space-between;
+            padding: 0 20px; font-weight: 700; letter-spacing: -0.5px;
+            border-bottom: 1px solid var(--glass-border);
+        }
+        .close-menu-btn { display: none; background: none; border: none; color: var(--text-muted); font-size: 24px; cursor: pointer; }
+
+        .channels-scroll { flex: 1; overflow-y: auto; padding: 20px 10px; }
+
+        .section-title {
+            font-size: 12px; font-weight: 700; color: var(--text-muted);
+            text-transform: uppercase; letter-spacing: 1px;
+            margin: 20px 10px 10px;
+        }
+
+        .nav-item {
+            display: flex; align-items: center; padding: 10px 14px;
+            margin-bottom: 4px; border-radius: 10px; cursor: pointer;
+            color: var(--text-muted); font-size: 15px; font-weight: 500;
+            transition: 0.2s;
+        }
+        .nav-item:hover { background: var(--glass-shine); color: white; }
+        .nav-item.active { background: rgba(10, 132, 255, 0.15); color: var(--accent); }
+        .nav-icon { width: 24px; opacity: 0.7; font-size: 18px; text-align: center; margin-right: 8px; }
+
+        /* Voice Preview */
+        .voice-list { margin-top: 5px; margin-left: 14px; }
+        .v-row { display: flex; align-items: center; padding: 6px 10px; font-size: 13px; color: var(--text-muted); }
+        .v-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .v-muted {
+            margin-left: 6px;
+            color: var(--danger);
+            display: inline-flex;
+            align-items: center;
+        }
+        .v-avatar {
+            width: 22px; height: 22px; border-radius: 50%;
+            background: linear-gradient(135deg, #444, #222);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 10px; font-weight: bold; margin-right: 10px;
+            border: 1.5px solid transparent;
+        }
+        .v-avatar.speaking { border-color: #30D158; box-shadow: 0 0 8px rgba(48, 209, 88, 0.4); }
+
+        /* USER CONTROLS */
+        .user-controls {
+            padding: 16px; border-top: 1px solid var(--glass-border);
+            background: rgba(0,0,0,0.2);
+            display: flex; align-items: center; justify-content: space-between;
+            margin-top: auto;
+        }
+        .me-info { font-weight: 600; font-size: 15px; }
+        .btn-round {
+            width: 40px; height: 40px; border-radius: 50%;
+            border: 1px solid var(--glass-border);
+            background: rgba(255,255,255,0.05); color: white;
+            cursor: pointer; display: flex; align-items: center; justify-content: center;
+            transition: 0.2s;
+        }
+        .btn-round:hover { background: rgba(255,255,255,0.15); }
+        .btn-round:disabled {
+            cursor: default;
+            opacity: 0.45;
+            color: var(--text-muted);
+            border-color: var(--glass-border);
+            background: rgba(255,255,255,0.03);
+        }
+        .btn-round:disabled:hover { background: rgba(255,255,255,0.03); }
+        .btn-round.danger { color: var(--danger); border-color: rgba(255, 69, 58, 0.3); }
+        .btn-round.muted { color: var(--danger); border-color: rgba(255, 69, 58, 0.8); background: rgba(255, 69, 58, 0.1); }
+        .btn-round.connected { color: white; border-color: rgba(48, 209, 88, 0.45); }
+        .btn-round.hidden { display: none; }
+
+        /* CHAT AREA (СПРАВА) */
+        .chat-area { flex: 1; display: flex; flex-direction: column; min-width: 0; background: transparent; }
+
+        .chat-header {
+            height: 60px; display: flex; align-items: center; padding: 0 20px;
+            background: rgba(22, 22, 24, 0.4); backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--glass-border); z-index: 10;
+        }
+        .burger-btn {
+            display: none; background: none; border: none; color: white; font-size: 24px; margin-right: 15px; cursor: pointer;
+        }
+
+        .messages-box {
+            flex: 1; overflow-y: auto; padding: 20px;
+            display: flex; flex-direction: column; gap: 12px;
+        }
+
+        .msg { display: flex; gap: 12px; animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+        @keyframes popIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+
+        .msg-avatar {
+            width: 36px; height: 36px; border-radius: 12px; flex-shrink: 0;
+            background: linear-gradient(135deg, #333, #111);
+            display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 14px;
+        }
+        .msg-bubble {
+            background: rgba(40, 40, 45, 0.6);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--glass-border);
+            padding: 10px 14px; border-radius: 16px;
+            border-top-left-radius: 4px;
+            min-width: 0; max-width: 80%;
+        }
+        .msg-header { display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px; }
+        .msg-name { font-weight: 600; font-size: 14px; color: var(--accent); }
+        .msg-time { font-size: 11px; color: var(--text-muted); }
+        .msg-text { margin: 0; line-height: 1.5; font-size: 15px; }
+
+        /* === НОВАЯ ПАНЕЛЬ ВВОДА НА ВСЮ ШИРИНУ === */
+        .input-wrapper {
+            padding: 20px;
+            width: 100%; /* Растягиваем на всю ширину */
+            margin: 0;   /* Убираем отступы по краям */
+            background: rgba(22, 22, 24, 0.3); /* Легкий фон подложки */
+            border-top: 1px solid var(--glass-border);
+            backdrop-filter: blur(10px);
+        }
+
+        .glass-input-bar {
+            display: flex; align-items: center;
+            background: rgba(60, 60, 65, 0.5); /* Чуть светлее для контраста */
+            border: 1px solid var(--glass-border);
+            border-radius: 24px; /* Круглые края */
+            padding: 8px 8px 8px 20px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+        }
+
+        .chat-input {
+            flex: 1; background: transparent; border: none;
+            color: white; font-size: 16px;
+            text-align: left; /* Текст слева */
+        }
+        .chat-input::placeholder { color: rgba(255,255,255,0.4); }
+
+        .send-btn {
+            width: 40px; height: 40px; border-radius: 50%;
+            background: var(--accent); border: none;
+            color: white; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 18px; margin-left: 10px;
+            box-shadow: 0 2px 10px rgba(10, 132, 255, 0.4);
+            transition: transform 0.2s;
+        }
+        .send-btn:hover { transform: scale(1.05); }
+        .send-btn:active { transform: scale(0.95); }
+
+        /* CLEAR CHAT BUTTON */
+        .clear-chat-btn {
+            margin-left: auto;
+            background: none; border: none;
+            color: var(--text-muted); cursor: pointer;
+            padding: 6px; border-radius: 8px;
+            display: flex; align-items: center; justify-content: center;
+            transition: 0.2s;
+        }
+        .clear-chat-btn:hover { color: var(--danger); background: rgba(255, 69, 58, 0.1); }
+
+        /* --- MOBILE ADAPTIVE --- */
+        @media (max-width: 768px) {
+            .burger-btn { display: block; }
+            .close-menu-btn { display: block; }
+            #mobile-backdrop { display: block; }
+
+            .sidebar {
+                position: fixed; top: 0; left: 0; height: 100%; width: 80%; max-width: 300px;
+                transform: translateX(-100%);
+                box-shadow: 10px 0 40px rgba(0,0,0,0.5);
+            }
+            .sidebar.active { transform: translateX(0); }
+
+            .input-wrapper { padding: 15px; }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="mobile-backdrop" onclick="closeSidebar()"></div>
+
+    <div id="login-overlay">
+        <div class="login-box">
+            <img src="/logo.png" alt="Oreol" style="width: 64px; height: 64px; margin-bottom: 12px;">
+            <h2>Welcome Back</h2>
+            <div class="login-desc">Oreol Glass</div>
+            <input type="text" class="login-input" id="username-input" placeholder="Введите имя..." autocomplete="off">
+            <button class="primary" onclick="login()">Войти в систему</button>
+        </div>
+    </div>
+
+    <div id="app-container" style="display: none;">
+
+        <div class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <img src="/logo.png" alt="Oreol" style="width: 28px; height: 28px; margin-right: 8px;">
+                <span>Oreol</span>
+                <button class="close-menu-btn" onclick="closeSidebar()">✕</button>
+            </div>
+
+            <div class="channels-scroll">
+                <div class="section-title">Пространства</div>
+                <div class="nav-item active" id="btn-chat1" onclick="switchChannel('chat1')">
+                    <span class="nav-icon">#</span> Общий чат
+                </div>
+                <div class="nav-item" id="btn-chat2" onclick="switchChannel('chat2')">
+                    <span class="nav-icon">#</span> IT Talk
+                </div>
+
+                <div class="section-title">Голос</div>
+                <div class="nav-item" id="voice-btn" onclick="joinVoice()">
+                    <span class="nav-icon">🔊</span> Lounge
+                </div>
+                <div id="voice-users-list" class="voice-list"></div>
+            </div>
+
+            <div class="user-controls">
+                <div class="me-info" id="display-username">Ghost</div>
+                <div style="display:flex; gap:10px;">
+                    <button class="btn-round" id="btn-mic" onclick="toggleMic()" title="Микрофон">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
+                        </svg>
+                    </button>
+                    <button class="btn-round danger hidden" id="btn-leave" onclick="leaveVoice()" title="Завершить звонок">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L7.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="chat-area">
+            <div class="chat-header">
+                <button class="burger-btn" onclick="openSidebar()">☰</button>
+                <span style="font-weight:600; font-size:17px;" id="header-title">Общий чат</span>
+                <button class="clear-chat-btn" onclick="clearChat()" title="Очистить чат">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                    </svg>
+                </button>
+            </div>
+
+            <div class="messages-box" id="messages-container"></div>
+
+            <div class="input-wrapper">
+                <div class="glass-input-bar">
+                    <input type="text" class="chat-input" id="message-input" placeholder="Сообщение..." onkeypress="handleInput(event)">
+                    <button class="send-btn" onclick="sendMessage()">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- LOGIC ---
+        let username = "";
+        let currentChannel = "chat1";
+        let ws = null;
+        let voiceRoom = null;
+        let isVoiceConnected = false;
+        let isMicOn = true;
+        let participantsTimer = null;
+
+        const VOICE_ROOM_NAME = 'Voice-Lounge';
+        const MIC_ON_ICON = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>';
+        const MIC_OFF_ICON = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="1" y1="1" x2="23" y2="23"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2c0 .76-.13 1.49-.35 2.17"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>';
+        const USER_MUTED_ICON = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="1" y1="1" x2="23" y2="23"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2c0 .76-.13 1.49-.35 2.17"/></svg>';
+
+        function openSidebar() {
+            document.getElementById('sidebar').classList.add('active');
+            document.getElementById('mobile-backdrop').classList.add('active');
+        }
+        function closeSidebar() {
+            document.getElementById('sidebar').classList.remove('active');
+            document.getElementById('mobile-backdrop').classList.remove('active');
+        }
+
+        function login() {
+            const inp = document.getElementById('username-input');
+            username = inp.value.trim();
+            if(!username) return;
+
+            document.getElementById('display-username').innerText = username;
+            document.getElementById('login-overlay').style.display = 'none';
+            document.getElementById('app-container').style.display = 'flex';
+
+            switchChannel('chat1');
+            startPolling();
+
+            document.body.addEventListener('click', () => {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                if(AudioContext) new AudioContext().resume();
+            }, { once: true });
+        }
+
+        function startPolling() {
+            if (participantsTimer) clearInterval(participantsTimer);
+            participantsTimer = setInterval(fetchParticipants, 3000);
+            fetchParticipants();
+        }
+
+        async function fetchParticipants() {
+            if(isVoiceConnected) return;
+            try {
+                const res = await fetch('/participants/' + encodeURIComponent(VOICE_ROOM_NAME));
+                if (!res.ok) throw new Error('Не удалось получить участников');
+                const data = await res.json();
+                renderVoiceList(normalizeParticipants(data.participants));
+            } catch(e) { console.error(e); }
+        }
+
+        function normalizeParticipants(participants) {
+            if (!Array.isArray(participants)) return [];
+            return participants
+                .map(p => {
+                    const identity = typeof p === 'string' ? p : (p.identity || p.name || '');
+                    return {
+                        identity: identity.trim(),
+                        isSpeaking: Boolean(p.isSpeaking),
+                        isMuted: Boolean(p.isMuted),
+                    };
+                })
+                .filter(p => p.identity);
+        }
+
+        function isParticipantMuted(participant) {
+            const publications = [
+                ...Array.from(participant.audioTrackPublications?.values?.() || []),
+                ...Array.from(participant.trackPublications?.values?.() || []).filter(pub => pub.kind === 'audio'),
+            ];
+
+            if (!publications.length) return false;
+            return publications.every(pub => pub.isMuted || pub.muted || !pub.track);
+        }
+
+        function getVoiceParticipants() {
+            if (!voiceRoom) return [];
+            const participants = [voiceRoom.localParticipant, ...Array.from(voiceRoom.remoteParticipants.values())];
+            return participants.map(p => ({
+                identity: p.identity,
+                isSpeaking: Boolean(p.isSpeaking),
+                isMuted: p === voiceRoom.localParticipant ? !isMicOn : isParticipantMuted(p),
+            }));
+        }
+
+        function updateVoiceUI() {
+            renderVoiceList(getVoiceParticipants());
+        }
+
+        function onRoomEvent(eventName, handler) {
+            if (eventName && voiceRoom) {
+                voiceRoom.on(eventName, handler);
+            }
+        }
+
+        function renderVoiceList(users) {
+            const list = document.getElementById('voice-users-list');
+            list.innerHTML = '';
+            if (!users.length) return;
+
+            users.forEach(u => {
+                const div = document.createElement('div');
+                div.className = 'v-row';
+                const avatar = document.createElement('div');
+                avatar.className = 'v-avatar' + (u.isSpeaking ? ' speaking' : '');
+                avatar.textContent = u.identity[0].toUpperCase();
+                const name = document.createElement('span');
+                name.className = 'v-name';
+                name.textContent = u.identity === username ? `${u.identity} (вы)` : u.identity;
+                div.append(avatar, name);
+                if (u.isMuted) {
+                    const muted = document.createElement('span');
+                    muted.className = 'v-muted';
+                    muted.title = 'Микрофон выключен';
+                    muted.innerHTML = USER_MUTED_ICON;
+                    div.appendChild(muted);
+                }
+                list.appendChild(div);
+            });
+        }
+
+        function setVoiceConnected(connected) {
+            isVoiceConnected = connected;
+            const voiceBtn = document.getElementById('voice-btn');
+            const leaveBtn = document.getElementById('btn-leave');
+
+            voiceBtn.style.color = connected ? '#30D158' : 'var(--text-muted)';
+            leaveBtn.classList.toggle('hidden', !connected);
+            leaveBtn.classList.toggle('connected', connected);
+
+            if (!connected) {
+                voiceRoom = null;
+            }
+        }
+
+        function setMicState(enabled) {
+            isMicOn = enabled;
+            const btn = document.getElementById('btn-mic');
+            btn.classList.toggle('muted', !enabled);
+            btn.innerHTML = enabled ? MIC_ON_ICON : MIC_OFF_ICON;
+            if (isVoiceConnected) updateVoiceUI();
+        }
+
+        function switchChannel(ch) {
+            currentChannel = ch;
+            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+            if(ch.startsWith('chat')) {
+                document.getElementById('btn-'+ch).classList.add('active');
+                document.getElementById('header-title').innerText = ch === 'chat1' ? 'Общий чат' : 'IT Talk';
+            }
+            if(window.innerWidth <= 768) closeSidebar();
+
+            document.getElementById('messages-container').innerHTML = '';
+
+            if(ws) ws.close();
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(`${protocol}//${window.location.host}/ws/${encodeURIComponent(ch)}/${encodeURIComponent(username)}`);
+
+            ws.onmessage = (e) => {
+                const d = JSON.parse(e.data);
+                if(Array.isArray(d)) d.forEach(m => appendMsg(m.user, m.content, m.timestamp));
+                else appendMsg(d.user, d.msg);
+            }
+        }
+
+        // --- ОТПРАВКА СООБЩЕНИЙ ---
+        function sendMessage() {
+            const i = document.getElementById('message-input');
+            const text = i.value.trim();
+            if(text && ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(text);
+                i.value = '';
+                i.focus();
+            }
+        }
+
+        function handleInput(e) {
+            if(e.key === 'Enter') {
+                sendMessage();
+            }
+        }
+
+        function appendMsg(user, text, time) {
+            const box = document.getElementById('messages-container');
+            const date = time ? new Date(time).toLocaleTimeString().slice(0,5) : new Date().toLocaleTimeString().slice(0,5);
+
+            const div = document.createElement('div');
+            div.className = 'msg';
+            const avatar = document.createElement('div');
+            avatar.className = 'msg-avatar';
+            avatar.textContent = user[0].toUpperCase();
+
+            const bubble = document.createElement('div');
+            bubble.className = 'msg-bubble';
+
+            const header = document.createElement('div');
+            header.className = 'msg-header';
+
+            const name = document.createElement('span');
+            name.className = 'msg-name';
+            name.textContent = user;
+
+            const timeNode = document.createElement('span');
+            timeNode.className = 'msg-time';
+            timeNode.textContent = date;
+
+            const message = document.createElement('p');
+            message.className = 'msg-text';
+            message.textContent = text;
+
+            header.append(name, timeNode);
+            bubble.append(header, message);
+            div.append(avatar, bubble);
+            box.appendChild(div);
+            box.scrollTop = box.scrollHeight;
+        }
+
+        // --- VOICE ---
+        async function joinVoice() {
+            if(isVoiceConnected) return;
+
+            voiceRoom = new LivekitClient.Room({ adaptiveStream: true, dynacast: true });
+
+            onRoomEvent(LivekitClient.RoomEvent.ParticipantConnected, updateVoiceUI);
+            onRoomEvent(LivekitClient.RoomEvent.ParticipantDisconnected, updateVoiceUI);
+            onRoomEvent(LivekitClient.RoomEvent.ActiveSpeakersChanged, updateVoiceUI);
+            onRoomEvent(LivekitClient.RoomEvent.TrackPublished, updateVoiceUI);
+            onRoomEvent(LivekitClient.RoomEvent.TrackUnpublished, updateVoiceUI);
+            onRoomEvent(LivekitClient.RoomEvent.TrackMuted, updateVoiceUI);
+            onRoomEvent(LivekitClient.RoomEvent.TrackUnmuted, updateVoiceUI);
+            onRoomEvent(LivekitClient.RoomEvent.LocalTrackPublished, updateVoiceUI);
+            onRoomEvent(LivekitClient.RoomEvent.LocalTrackUnpublished, updateVoiceUI);
+
+            voiceRoom.on(LivekitClient.RoomEvent.TrackSubscribed, (track) => {
+                if (track.kind === 'audio') {
+                    const el = track.attach();
+                    document.body.appendChild(el);
+                    el.play().catch(() => alert("Tap anywhere to enable sound"));
+                }
+            });
+
+            voiceRoom.on(LivekitClient.RoomEvent.Disconnected, () => {
+                setVoiceConnected(false);
+                fetchParticipants();
+            });
+
+            try {
+                const res = await fetch('/get_token', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ username: username, room_name: VOICE_ROOM_NAME })
+                });
+                if (!res.ok) throw new Error('Не удалось получить токен LiveKit');
+                const data = await res.json();
+
+                await voiceRoom.connect(data.url, data.token);
+                await voiceRoom.localParticipant.setMicrophoneEnabled(isMicOn);
+
+                setVoiceConnected(true);
+                if(window.innerWidth <= 768) closeSidebar();
+                updateVoiceUI();
+
+            } catch(e) {
+                console.error(e);
+                setVoiceConnected(false);
+                fetchParticipants();
+                alert("Connection error: " + e.message);
+            }
+        }
+
+        function leaveVoice() {
+            if(!voiceRoom || !isVoiceConnected) return;
+            voiceRoom.disconnect();
+        }
+
+        async function toggleMic() {
+            const nextMicState = !isMicOn;
+            if(!voiceRoom || !isVoiceConnected) {
+                setMicState(nextMicState);
+                return;
+            }
+
+            try {
+                await voiceRoom.localParticipant.setMicrophoneEnabled(nextMicState);
+                setMicState(nextMicState);
+            } catch(e) {
+                console.error(e);
+                alert("Не удалось переключить микрофон: " + e.message);
+            }
+        }
+
+        async function clearChat() {
+            if (!confirm('Очистить историю чата?')) return;
+            await fetch('/clear_chat/' + currentChannel, { method: 'DELETE' });
+            document.getElementById('messages-container').innerHTML = '';
+        }
+    </script>
+</body>
+</html>

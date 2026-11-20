@@ -1,0 +1,14 @@
+# Локальный LiveKit для разработки (контейнер oreol-glass-mvp-livekit-1).
+# Ключи приходят из LIVEKIT_KEYS (compose), IP — из --node-ip. Боевой конфиг — deploy/livekit.yaml.
+port: 7880              # сигнальный WebSocket/API
+rtc:
+  tcp_port: 7881        # медиа по TCP
+  udp_port: 7882        # медиа по UDP
+  use_external_ip: false
+audio:
+  active_level: 52
+  min_percentile: 20
+  update_interval: 200
+  smooth_intervals: 2
+logging:
+  level: info

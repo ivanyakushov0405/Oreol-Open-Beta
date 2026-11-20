@@ -1,0 +1,30 @@
+services:
+  app:
+    build: .
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      LK_SERVER_URL: "${LK_SERVER_URL:-ws://127.0.0.1:7880}"
+      LK_API_URL: "${LK_API_URL:-http://livekit:7880}"
+      LK_API_KEY: "${LK_API_KEY:?Set LK_API_KEY in .env}"
+      LK_API_SECRET: "${LK_API_SECRET:?Set LK_API_SECRET in .env}"
+      DB_NAME: "/data/chat.db"
+    volumes:
+      - chat-data:/data
+    depends_on:
+      - livekit
+
+  livekit:
+    image: livekit/livekit-server:v1.13.11
+    command: ["--config", "/etc/livekit.yaml"]
+    environment:
+      LIVEKIT_KEYS: "${LK_API_KEY:?Set LK_API_KEY in .env}: ${LK_API_SECRET:?Set LK_API_SECRET in .env}"
+    ports:
+      - "127.0.0.1:7880:7880"
+      - "127.0.0.1:7881:7881"
+      - "127.0.0.1:7882:7882/udp"
+    volumes:
+      - ./livekit.yaml:/etc/livekit.yaml:ro
+
+volumes:
+  chat-data:
