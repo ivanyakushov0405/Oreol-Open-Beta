@@ -380,7 +380,7 @@ export function ChatBody({ app, chat, channel, compact }: { app: AppState; chat:
           ) : (
             <>
               <b>{chat.connected ? `Добро пожаловать в ${title}` : 'Подключаемся к чату…'}</b>
-              {chat.connected ? 'Сообщений пока нет — напишите первым.' : 'Проверьте, что бэкенд запущен.'}
+              {chat.connected ? 'Сообщений пока нет — напишите первым' : 'Нет связи с сервером'}
             </>
           )
         }

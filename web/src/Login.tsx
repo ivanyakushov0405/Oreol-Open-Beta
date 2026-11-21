@@ -116,13 +116,13 @@ export function Login({ onLogin }: { onLogin: (token: string, user: Me) => void 
           </div>
           <div className="hero-titles">
             <h1 className={mode === 'login' ? 'on' : ''} aria-hidden={mode !== 'login'}>
-              С возвращением в Ореол
+              Войти в Ореол
             </h1>
             <h1 className={mode === 'signup' ? 'on' : ''} aria-hidden={mode !== 'signup'}>
-              Твой новый ореол друзей
+              Ваш новый ореол друзей
             </h1>
           </div>
-          <p>Собери свой сервер и позови друзей: текстовые и голосовые каналы, личные сообщения и звонки — в одном приложении.</p>
+          <p>Соберите свой сервер и позовите друзей: текстовые и голосовые каналы, личные сообщения и звонки — в одном приложении.</p>
         </div>
 
         <div className="auth-card">
@@ -146,7 +146,7 @@ export function Login({ onLogin }: { onLogin: (token: string, user: Me) => void 
               >
                 <div className="auth-head">
                   <h2>Войти в аккаунт</h2>
-                  <p className="sub">Твои серверы и переписки ждут на месте</p>
+                  <p className="sub">Ваши серверы и переписки ждут на месте</p>
                 </div>
                 <label className="auth-field">
                   <span className="field-label">Email</span>
@@ -218,7 +218,7 @@ export function Login({ onLogin }: { onLogin: (token: string, user: Me) => void 
                     autoComplete="nickname"
                     value={suDisplay}
                     maxLength={32}
-                    placeholder="Как тебя будут видеть друзья"
+                    placeholder="Как вас будут видеть другие"
                     tabIndex={tabS}
                     onChange={(e) => setSuDisplay(e.target.value)}
                   />
@@ -241,7 +241,7 @@ export function Login({ onLogin }: { onLogin: (token: string, user: Me) => void 
                           Юзернейм: <b>{handleOf(suUser)}</b>
                         </>
                       ) : (
-                        'Под ним тебя видно в чате и в голосе'
+                        'Под ним вас видно в чате и в голосе'
                       ))}
                   </span>
                 </label>

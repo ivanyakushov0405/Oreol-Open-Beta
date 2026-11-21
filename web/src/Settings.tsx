@@ -4,9 +4,10 @@ import { createPortal } from 'react-dom';
 import { SENS_MAX, SENS_MIN, canPickOutput, readLevel, setAudioPrefs, useAudioPrefs } from './audioPrefs';
 import { playSound } from './sounds';
 import type { AppState } from './App';
-import { Icon, type IconName } from './icons';
+import { Icon, StrikeIcon, type IconName } from './icons';
 import { handleOf } from './mock';
 import { Avatar, Banner } from './ui';
+import { STATUS_ITEMS } from './views';
 import { flushSync } from 'react-dom';
 
 /** Смена темы: новая тема «выходит» из выбранной плашки — светлая разливается светом, тёмная — тьмой. */
@@ -70,8 +71,7 @@ export const isServerSection = (s: string | undefined): s is ServerSection =>
   !!s && ['overview', 'channels', 'roles', 'members', 'invites', 'audit', 'moderation'].includes(s);
 
 export const USER_NAV: { id: UserSection; label: string; icon: IconName; group?: string }[] = [
-  { id: 'account', label: 'Учётная запись', icon: 'users' },
-  { id: 'profile', label: 'Профиль', icon: 'pencil' },
+  { id: 'account', label: 'Учётная запись', icon: 'user' },
   { id: 'privacy', label: 'Конфиденциальность', icon: 'shield' },
   { id: 'notifications', label: 'Уведомления', icon: 'bell' },
   { id: 'voice', label: 'Голос и звук', icon: 'mic', group: 'Приложение' },
@@ -81,12 +81,12 @@ export const USER_NAV: { id: UserSection; label: string; icon: IconName; group?:
 
 /** Заголовок раздела. «Редактирование профиля» — подстраница «Учётной записи» (Figma). */
 export function userSectionTitle(s: UserSection) {
-  return s === 'account-edit' ? 'Редактирование профиля' : USER_NAV.find((n) => n.id === s)!.label;
+  return s === 'account-edit' ? 'Редактирование' : USER_NAV.find((n) => n.id === userNavOf(s))!.label;
 }
 
 /** Какой пункт навигации подсветить для раздела. */
 export function userNavOf(s: UserSection): UserSection {
-  return s === 'account-edit' ? 'account' : s;
+  return s === 'account-edit' || s === 'profile' ? 'account' : s;
 }
 
 export const SERVER_NAV: { id: ServerSection; label: string; icon: IconName; group?: string }[] = [
@@ -711,13 +711,13 @@ function PasswordDialog({ app, onClose }: { app: AppState; onClose: () => void }
     <Dialog title="Сменить пароль" onClose={onClose}>
       <form className="dialog-form" onSubmit={submit}>
         <AccField label="Текущий пароль" error={errs.current}>
-          <input className="input" type="password" autoComplete="current-password" autoFocus value={current} onChange={(e) => setCurrent(e.target.value)} />
+          <PasswordInput autoComplete="current-password" autoFocus value={current} onChange={setCurrent} />
         </AccField>
         <AccField label="Новый пароль" error={errs.password}>
-          <input className="input" type="password" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} />
+          <PasswordInput value={next} onChange={setNext} />
         </AccField>
         <AccField label="Повторите новый пароль" error={errs.repeat}>
-          <input className="input" type="password" autoComplete="new-password" value={repeat} onChange={(e) => setRepeat(e.target.value)} />
+          <PasswordInput value={repeat} onChange={setRepeat} />
         </AccField>
         {errs._ && <p className="field-hint error">{errs._}</p>}
         <div className="dialog-actions">
@@ -730,6 +730,46 @@ function PasswordDialog({ app, onClose }: { app: AppState; onClose: () => void }
         </div>
       </form>
     </Dialog>
+  );
+}
+
+/** Поле пароля с «глазком»: показать / скрыть введённое. */
+function PasswordInput({
+  value,
+  onChange,
+  autoComplete = 'new-password',
+  autoFocus,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  autoComplete?: string;
+  autoFocus?: boolean;
+}) {
+  const [show, setShow] = useState(false);
+  return (
+    <span className="pw-wrap">
+      <input
+        className="input"
+        type={show ? 'text' : 'password'}
+        autoComplete={autoComplete}
+        autoFocus={autoFocus}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      <button
+        type="button"
+        className="pw-eye"
+        title={show ? 'Скрыть пароль' : 'Показать пароль'}
+        aria-label={show ? 'Скрыть пароль' : 'Показать пароль'}
+        aria-pressed={show}
+        onClick={(e) => {
+          e.preventDefault();
+          setShow((x) => !x);
+        }}
+      >
+        <StrikeIcon name="eye" off={show} size={18} />
+      </button>
+    </span>
   );
 }
 
@@ -753,16 +793,16 @@ function DeleteDialog({ app, onClose }: { app: AppState; onClose: () => void }) 
     <Dialog title="Удалить аккаунт?" onClose={onClose}>
       <form className="dialog-form" onSubmit={submit}>
         <p className="hint" style={{ margin: 0 }}>
-          Аккаунт, ваши сообщения, аватар и фон будут удалены без возможности восстановления. Для подтверждения введите пароль.
+          Аккаунт будет удалён без возможности восстановления. Для подтверждения введите пароль.
         </p>
         <AccField label="Пароль" error={err ?? undefined}>
-          <input className="input" type="password" autoComplete="current-password" autoFocus value={password} onChange={(e) => setPassword(e.target.value)} />
+          <PasswordInput autoComplete="new-password" autoFocus value={password} onChange={setPassword} />
         </AccField>
         <div className="dialog-actions">
           <button type="button" className="btn btn-secondary" onClick={onClose}>
             Отмена
           </button>
-          <button type="submit" className="btn btn-danger-solid" disabled={busy || !password}>
+          <button type="submit" className="btn btn-primary" disabled={busy || !password}>
             <Icon name="trash" size={16} />
             {busy ? 'Удаляем…' : 'Удалить навсегда'}
           </button>
@@ -782,8 +822,44 @@ function AccField({ label, error, children }: { label: string; error?: string; c
   );
 }
 
+/** Выбор статуса: меняется сразу, без «Сохранить». */
+function StatusPicker({ app }: { app: AppState }) {
+  return (
+    <div className="status-picker" role="radiogroup" aria-label="Статус">
+      {STATUS_ITEMS.map((s) => (
+        <button
+          key={s.id}
+          type="button"
+          role="radio"
+          aria-checked={app.status === s.id}
+          className={'status-chip' + (app.status === s.id ? ' on' : '')}
+          onClick={(e) => {
+            pressIcon(e.currentTarget);
+            app.setStatus(s.id);
+          }}
+        >
+          <i className={`acct-dot status-${s.id}`} />
+          {s.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 /** Шапка: баннер, аватар со статусом, имя, @ник и кнопка действия. */
-function AccountHead({ app, children, onAvatar, onBanner }: { app: AppState; children: ReactNode; onAvatar?: () => void; onBanner?: () => void }) {
+function AccountHead({
+  app,
+  children,
+  onAvatar,
+  onBanner,
+  hideName,
+}: {
+  app: AppState;
+  children: ReactNode;
+  onAvatar?: () => void;
+  onBanner?: () => void;
+  hideName?: boolean;
+}) {
   return (
     <div className="card profile-card account-head">
       {onBanner ? (
@@ -800,101 +876,22 @@ function AccountHead({ app, children, onAvatar, onBanner }: { app: AppState; chi
       ) : (
         <Avatar name={app.name} size={80} status={app.status} />
       )}
-      <h2>{app.me.displayName}</h2>
-      <div className="handle">{handleOf(app.name)}</div>
+      {!hideName && (
+        <>
+          <h2>{app.me.displayName}</h2>
+        </>
+      )}
       {children}
     </div>
   );
 }
 
-function AccountView({ app, onEdit }: { app: AppState; onEdit: () => void }) {
-  const [showEmail, setShowEmail] = useState(false);
-  const [pw, setPw] = useState(false);
-  const me = app.me;
-  return (
-    <>
-      <AccountHead app={app}>
-        <button type="button" className="btn btn-secondary btn-xs" onClick={onEdit}>
-          <Icon name="pencil" size={16} />
-          Редактировать профиль
-        </button>
-      </AccountHead>
-      <div className="card account-data">
-        <h3>Данные аккаунта</h3>
-        <div className="acc-field">
-          <div className="overline">Отображаемое имя</div>
-          <div className="v">{me.displayName}</div>
-        </div>
-        <div className="acc-field">
-          <div className="overline">Имя пользователя</div>
-          <div className="v">{handleOf(me.username)}</div>
-        </div>
-        <div className="acc-row">
-          <div className="acc-field">
-            <div className="overline">Email</div>
-            <div className="v">{showEmail ? me.email : maskEmail(me.email)}</div>
-          </div>
-          <button type="button" className="btn btn-secondary btn-xs" onClick={() => setShowEmail((x) => !x)}>
-            {showEmail ? 'Скрыть' : 'Показать'}
-          </button>
-        </div>
-        <div className="acc-field">
-          <div className="overline">Телефон</div>
-          <div className="v">{formatPhone(me.phone) || 'Не добавлен'}</div>
-        </div>
-      </div>
-      <div className="card account-security">
-        <h3>Пароль и безопасность</h3>
-        <div className="acc-actions">
-          <button type="button" className="btn btn-primary" onClick={() => setPw(true)}>
-            Сменить пароль
-          </button>
-          <button type="button" className="btn btn-secondary" onClick={() => app.notify('Двухфакторная аутентификация появится позже')}>
-            Включить 2FA
-          </button>
-        </div>
-      </div>
-      {pw && <PasswordDialog app={app} onClose={() => setPw(false)} />}
-    </>
-  );
-}
-
-/* ---------- Редактирование профиля (Figma «Desktop · User settings · Редактирование профиля») ---------- */
-function AccountEdit({ app, onDone }: { app: AppState; onDone: () => void }) {
-  const me = app.me;
-  const initial = { displayName: me.displayName, username: me.username, email: me.email, phone: formatPhone(me.phone) };
-  const [form, setForm] = useState(initial);
-  const [errs, setErrs] = useState<Record<string, string>>({});
-  const [saving, setSaving] = useState(false);
+/** Аватар и баннер: загружаются и убираются сразу, без кнопки «Сохранить». */
+function useImages(app: AppState) {
   const [busy, setBusy] = useState<'avatar' | 'banner' | null>(null);
-  const [menu, setMenu] = useState(false);
-  const [del, setDel] = useState(false);
   const avatarInput = useRef<HTMLInputElement>(null);
   const bannerInput = useRef<HTMLInputElement>(null);
-  const set = (k: keyof typeof initial) => (e: React.ChangeEvent<HTMLInputElement>) =>
-    setForm((f) => ({ ...f, [k]: k === 'phone' ? phoneInput(e.target.value) : e.target.value }));
-  const dirty = (Object.keys(initial) as (keyof typeof initial)[]).some((k) => form[k].trim() !== initial[k]);
-
-  const save = async () => {
-    setSaving(true);
-    setErrs({});
-    try {
-      const r = await api<{ user: Me }>('/api/account', {
-        method: 'PATCH',
-        body: { displayName: form.displayName, username: form.username, email: form.email, phone: form.phone },
-      });
-      app.updateMe(r.user);
-      app.notify('Профиль сохранён', 'success');
-      onDone();
-    } catch (e) {
-      setErrs(e instanceof ApiError && Object.keys(e.fields).length ? e.fields : { _: errText(e, 'Не удалось сохранить') });
-    } finally {
-      setSaving(false);
-    }
-  };
-
   const image = async (kind: 'avatar' | 'banner', file?: File) => {
-    setMenu(false);
     setBusy(kind);
     try {
       const r = await api<{ user: Me }>(`/api/profile/${kind}`, file ? { method: 'PUT', body: file } : { method: 'DELETE' });
@@ -905,7 +902,7 @@ function AccountEdit({ app, onDone }: { app: AppState; onDone: () => void }) {
       setBusy(null);
     }
   };
-  const picker = (kind: 'avatar' | 'banner', ref: React.RefObject<HTMLInputElement>) => (
+  const input = (kind: 'avatar' | 'banner', ref: React.RefObject<HTMLInputElement>) => (
     <input
       ref={ref}
       type="file"
@@ -918,58 +915,195 @@ function AccountEdit({ app, onDone }: { app: AppState; onDone: () => void }) {
       }}
     />
   );
+  return {
+    busy,
+    pick: (kind: 'avatar' | 'banner') => (kind === 'avatar' ? avatarInput : bannerInput).current?.click(),
+    remove: (kind: 'avatar' | 'banner') => void image(kind),
+    inputs: (
+      <>
+        {input('avatar', avatarInput)}
+        {input('banner', bannerInput)}
+      </>
+    ),
+  };
+}
+
+/* ---------- Учётная запись: данные профиля и данные аккаунта на одной странице ----------
+   Просмотр и редактирование устроены одинаково: те же карточки, те же поля в том же порядке, одна колонка,
+   между полями — линии. Кнопка «Редактировать» стоит там же, где в режиме редактирования «Отмена» и «Сохранить». */
+const MAX_BIO = 190;
+
+function AccountView({ app, onEdit }: { app: AppState; onEdit: () => void }) {
+  const [showEmail, setShowEmail] = useState(false);
+  const [pw, setPw] = useState(false);
+  const [del, setDel] = useState(false);
+  const me = app.me;
+  return (
+    <>
+      <AccountHead app={app}>
+        <StatusPicker app={app} />
+        <div className="acc-list acc-head-list">
+          <div className="acc-field">
+            <div className="overline">О себе</div>
+            <div className={'v' + (me.bio ? ' bio' : ' muted')}>{me.bio || 'Не заполнено'}</div>
+          </div>
+        </div>
+      </AccountHead>
+      <div className="card acc-card">
+        <h3>Данные аккаунта</h3>
+        <div className="acc-list">
+          <div className="acc-field">
+            <div className="overline">Имя пользователя</div>
+            <div className="v">{handleOf(me.username)}</div>
+          </div>
+          <div className="acc-row">
+            <div className="acc-field">
+              <div className="overline">Email</div>
+              <div className="v">{showEmail ? me.email : maskEmail(me.email)}</div>
+            </div>
+            <button type="button" className="btn btn-secondary btn-xs" onClick={() => setShowEmail((x) => !x)}>
+              {showEmail ? 'Скрыть' : 'Показать'}
+            </button>
+          </div>
+          <div className="acc-field">
+            <div className="overline">Телефон</div>
+            <div className="v">{formatPhone(me.phone) || 'Не добавлен'}</div>
+          </div>
+        </div>
+      </div>
+      <div className="acc-actions-end">
+        <button type="button" className="btn btn-primary acc-edit-btn" onClick={onEdit}>
+          <Icon name="pencil" size={16} />
+          Редактировать
+        </button>
+      </div>
+      <div className="card account-security">
+        <h3>Пароль и безопасность</h3>
+        <div className="acc-actions">
+          <button type="button" className="btn btn-primary" onClick={() => setPw(true)}>
+            Сменить пароль
+          </button>
+          <button type="button" className="btn btn-secondary" onClick={() => app.notify('Двухфакторная аутентификация — скоро будет')}>
+            Включить 2FA
+          </button>
+        </div>
+      </div>
+      <div className="card danger-card">
+        <div className="grow">
+          <b>Удаление аккаунта</b>
+          <p>Аккаунт и все данные будут удалены без возможности восстановления.</p>
+        </div>
+        <button type="button" className="btn btn-danger-solid" onClick={() => setDel(true)}>
+          <Icon name="trash" size={16} />
+          Удалить аккаунт
+        </button>
+      </div>
+      {pw && <PasswordDialog app={app} onClose={() => setPw(false)} />}
+      {del && <DeleteDialog app={app} onClose={() => setDel(false)} />}
+    </>
+  );
+}
+
+/* ---------- Редактирование учётной записи (Figma «Desktop · User settings · Редактирование профиля») ---------- */
+function AccountEdit({ app, onDone }: { app: AppState; onDone: () => void }) {
+  const me = app.me;
+  const initial = { username: me.username, email: me.email, phone: formatPhone(me.phone), displayName: me.displayName, bio: me.bio };
+  const [form, setForm] = useState(initial);
+  const [errs, setErrs] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+  const img = useImages(app);
+  const set = (k: keyof typeof initial) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+    setForm((f) => ({ ...f, [k]: k === 'phone' ? phoneInput(e.target.value) : e.target.value }));
+  const changed = (k: keyof typeof initial) => form[k].trim() !== initial[k];
+  const accDirty = (['username', 'email', 'phone', 'displayName'] as const).some(changed);
+  const bioDirty = changed('bio');
+  const dirty = accDirty || bioDirty;
+
+  const save = async () => {
+    setSaving(true);
+    setErrs({});
+    try {
+      if (accDirty) {
+        const r = await api<{ user: Me }>('/api/account', {
+          method: 'PATCH',
+          body: { displayName: form.displayName, username: form.username, email: form.email, phone: form.phone },
+        });
+        app.updateMe(r.user);
+      }
+      if (bioDirty) {
+        const r = await api<{ user: Me }>('/api/profile', { method: 'PATCH', body: { bio: form.bio.trim() } });
+        app.updateMe(r.user);
+      }
+      app.notify('Изменения сохранены', 'success');
+      onDone();
+    } catch (e) {
+      setErrs(e instanceof ApiError && Object.keys(e.fields).length ? e.fields : { _: errText(e, 'Не удалось сохранить') });
+    } finally {
+      setSaving(false);
+    }
+  };
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (dirty && !saving) void save();
+  };
 
   return (
     <>
-      <AccountHead app={app} onAvatar={() => avatarInput.current?.click()} onBanner={() => bannerInput.current?.click()}>
-        <div className="img-menu-wrap">
-          <button type="button" className="btn btn-secondary btn-xs" disabled={busy !== null} onClick={() => setMenu((m) => !m)} aria-expanded={menu}>
-            <Icon name="pencil" size={16} />
-            {busy ? 'Загрузка…' : 'Сменить аватар и баннер'}
+      <AccountHead app={app} hideName>
+        {img.inputs}
+        <StatusPicker app={app} />
+        <div className="acc-photo-actions">
+          <button type="button" className="btn btn-secondary btn-xs" disabled={img.busy !== null} onClick={() => img.pick('avatar')}>
+            {img.busy === 'avatar' ? 'Загрузка…' : me.avatar ? 'Сменить аватар' : 'Загрузить аватар'}
           </button>
-          {menu && (
-            <>
-              <div className="popover-backdrop" onClick={() => setMenu(false)} />
-              <div className="img-menu" role="menu">
-                <button role="menuitem" onClick={() => avatarInput.current?.click()}>
-                  Загрузить аватар
-                </button>
-                <button role="menuitem" onClick={() => bannerInput.current?.click()}>
-                  Загрузить баннер
-                </button>
-                {me.avatar && (
-                  <button role="menuitem" className="danger" onClick={() => void image('avatar')}>
-                    Убрать аватар
-                  </button>
-                )}
-                {me.banner && (
-                  <button role="menuitem" className="danger" onClick={() => void image('banner')}>
-                    Убрать баннер
-                  </button>
-                )}
-                <span className="img-menu-hint">PNG, JPG, WEBP или GIF · аватар до 3 МБ, баннер до 6 МБ</span>
-              </div>
-            </>
+          <button type="button" className="btn btn-secondary btn-xs" disabled={img.busy !== null} onClick={() => img.pick('banner')}>
+            {img.busy === 'banner' ? 'Загрузка…' : me.banner ? 'Сменить баннер' : 'Загрузить баннер'}
+          </button>
+          {me.avatar && (
+            <button type="button" className="btn btn-secondary btn-xs" disabled={img.busy !== null} onClick={() => img.remove('avatar')}>
+              Убрать аватар
+            </button>
+          )}
+          {me.banner && (
+            <button type="button" className="btn btn-secondary btn-xs" disabled={img.busy !== null} onClick={() => img.remove('banner')}>
+              Убрать баннер
+            </button>
           )}
         </div>
-        {picker('avatar', avatarInput)}
-        {picker('banner', bannerInput)}
       </AccountHead>
 
-      <form
-        className="card acc-form"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (dirty && !saving) void save();
-        }}
-      >
-        <h3>Профиль</h3>
-        <div className="acc-grid">
+      <form className="card acc-card" onSubmit={submit}>
+        <h3>Данные профиля</h3>
+        <div className="acc-list">
           <AccField label="Отображаемое имя" error={errs.displayName}>
             <input className="input" value={form.displayName} maxLength={32} onChange={set('displayName')} />
           </AccField>
+          <label className="acc-input">
+            <span className="field-label">О себе</span>
+            <textarea
+              className="input textarea"
+              rows={3}
+              value={form.bio}
+              maxLength={MAX_BIO}
+              placeholder="Пара слов о себе — её увидят в карточке участника"
+              onChange={set('bio')}
+            />
+            <span className="field-hint">
+              {form.bio.length}/{MAX_BIO}
+            </span>
+          </label>
+        </div>
+        <button type="submit" hidden />
+      </form>
+
+      <form className="card acc-card" onSubmit={submit}>
+        <h3>Данные аккаунта</h3>
+        <div className="acc-list">
           <AccField label="Имя пользователя" error={errs.username}>
-            <input className="input" value={form.username} maxLength={32} autoComplete="username" onChange={set('username')} />
+            <span className="input-at">
+              <span className="at" aria-hidden="true">@</span>
+              <input className="input" value={form.username} maxLength={32} autoComplete="username" onChange={(e) => setForm((f) => ({ ...f, username: e.target.value.replace(/^@+/, '') }))} />
+            </span>
           </AccField>
           <AccField label="Email" error={errs.email}>
             <input className="input" type="email" value={form.email} autoComplete="email" onChange={set('email')} />
@@ -981,6 +1115,7 @@ function AccountEdit({ app, onDone }: { app: AppState; onDone: () => void }) {
         {errs._ && <p className="field-hint error">{errs._}</p>}
         <button type="submit" hidden />
       </form>
+
       <div className="acc-actions-end">
         <button type="button" className="btn btn-secondary" onClick={onDone}>
           Отмена
@@ -989,187 +1124,7 @@ function AccountEdit({ app, onDone }: { app: AppState; onDone: () => void }) {
           {saving ? 'Сохраняем…' : 'Сохранить'}
         </button>
       </div>
-      <div className="card danger-card">
-        <div className="grow">
-          <b>Удаление аккаунта</b>
-          <p>Аккаунт и все данные будут удалены без возможности восстановления.</p>
-        </div>
-        <button type="button" className="btn btn-danger-solid btn-xs" onClick={() => setDel(true)}>
-          <Icon name="trash" size={16} />
-          Удалить аккаунт
-        </button>
-      </div>
-      {del && <DeleteDialog app={app} onClose={() => setDel(false)} />}
     </>
-  );
-}
-
-/* ---------- Профиль: отображаемое имя, «О себе», аватар и фон (файлы хранятся на сервере) ---------- */
-const MAX_BIO = 190;
-
-function ProfileEditor({ app }: { app: AppState }) {
-  const me = app.me;
-  const [display, setDisplay] = useState(me.displayName);
-  const [bio, setBio] = useState(me.bio);
-  const [saving, setSaving] = useState(false);
-  const [busy, setBusy] = useState<'avatar' | 'banner' | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-  const avatarInput = useRef<HTMLInputElement>(null);
-  const bannerInput = useRef<HTMLInputElement>(null);
-  const dirty = display.trim() !== me.displayName || bio.trim() !== me.bio;
-
-  const save = async () => {
-    if (!display.trim()) return setErr('Отображаемое имя не может быть пустым');
-    setSaving(true);
-    setErr(null);
-    try {
-      const r = await api<{ user: Me }>('/api/profile', { method: 'PATCH', body: { displayName: display.trim(), bio: bio.trim() } });
-      app.updateMe(r.user);
-      setDisplay(r.user.displayName);
-      setBio(r.user.bio);
-      app.notify('Профиль сохранён', 'success');
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Не удалось сохранить');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const upload = async (kind: 'avatar' | 'banner', file: File | undefined) => {
-    if (!file) return;
-    setBusy(kind);
-    setErr(null);
-    try {
-      const r = await api<{ user: Me }>(`/api/profile/${kind}`, { method: 'PUT', body: file });
-      app.updateMe(r.user);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Не удалось загрузить файл');
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const remove = async (kind: 'avatar' | 'banner') => {
-    setBusy(kind);
-    setErr(null);
-    try {
-      const r = await api<{ user: Me }>(`/api/profile/${kind}`, { method: 'DELETE' });
-      app.updateMe(r.user);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Не удалось удалить');
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const picker = (kind: 'avatar' | 'banner', ref: React.RefObject<HTMLInputElement>) => (
-    <input
-      ref={ref}
-      type="file"
-      accept="image/png,image/jpeg,image/webp,image/gif"
-      hidden
-      onChange={(e) => {
-        void upload(kind, e.target.files?.[0]);
-        e.target.value = '';
-      }}
-    />
-  );
-
-  return (
-    <div className="grid-2">
-      <div className="card kv profile-form">
-        <label>
-          <span className="field-label">Отображаемое имя</span>
-          <input className="input" value={display} maxLength={32} onChange={(e) => setDisplay(e.target.value)} />
-        </label>
-        <label>
-          <span className="field-label">О себе</span>
-          <textarea
-            className="input textarea"
-            rows={3}
-            value={bio}
-            maxLength={MAX_BIO}
-            placeholder="Пара слов о себе — её увидят в карточке участника"
-            onChange={(e) => setBio(e.target.value)}
-          />
-          <span className="field-hint">
-            {bio.length}/{MAX_BIO}
-          </span>
-        </label>
-        <div className="upload-row">
-          <div>
-            <span className="field-label">Аватар</span>
-            <p className="hint" style={{ margin: 0 }}>
-              PNG, JPG, WEBP или GIF, до 3 МБ. Лучше квадратный.
-            </p>
-          </div>
-          <div className="upload-actions">
-            {me.avatar && (
-              <button type="button" className="btn btn-secondary btn-sm" disabled={busy !== null} onClick={() => void remove('avatar')}>
-                Убрать
-              </button>
-            )}
-            <button type="button" className="btn btn-secondary btn-sm" disabled={busy !== null} onClick={() => avatarInput.current?.click()}>
-              {busy === 'avatar' ? 'Загрузка…' : 'Загрузить'}
-            </button>
-          </div>
-          {picker('avatar', avatarInput)}
-        </div>
-        <div className="upload-row">
-          <div>
-            <span className="field-label">Фон профиля</span>
-            <p className="hint" style={{ margin: 0 }}>
-              До 6 МБ. Подойдёт широкая картинка, примерно 3:1.
-            </p>
-          </div>
-          <div className="upload-actions">
-            {me.banner && (
-              <button type="button" className="btn btn-secondary btn-sm" disabled={busy !== null} onClick={() => void remove('banner')}>
-                Убрать
-              </button>
-            )}
-            <button type="button" className="btn btn-secondary btn-sm" disabled={busy !== null} onClick={() => bannerInput.current?.click()}>
-              {busy === 'banner' ? 'Загрузка…' : 'Загрузить'}
-            </button>
-          </div>
-          {picker('banner', bannerInput)}
-        </div>
-        {err && <p className="hint danger-text" style={{ margin: 0 }}>{err}</p>}
-        <div className="row-between" style={{ justifyContent: 'flex-end', gap: 8 }}>
-          {dirty && (
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={() => {
-                setDisplay(me.displayName);
-                setBio(me.bio);
-              }}
-            >
-              Отменить
-            </button>
-          )}
-          <button type="button" className="btn btn-primary" disabled={!dirty || saving} onClick={() => void save()}>
-            {saving ? 'Сохраняем…' : 'Сохранить'}
-          </button>
-        </div>
-      </div>
-      {/* Превью — как вас видят другие */}
-      <div className="card profile-card profile-preview">
-        <button type="button" className="banner-edit" title="Сменить фон" onClick={() => bannerInput.current?.click()}>
-          <Banner name={app.name} />
-        </button>
-        <button type="button" className="avatar-edit" title="Сменить аватар" onClick={() => avatarInput.current?.click()}>
-          <Avatar name={app.name} size={72} status={app.status} />
-          <span className="avatar-edit-ico">
-            <Icon name="pencil" size={14} />
-          </span>
-        </button>
-        <h2>{display.trim() || me.displayName}</h2>
-        <div className="handle">{handleOf(app.name)}</div>
-        {bio.trim() && <p className="preview-bio">{bio.trim()}</p>}
-        <div style={{ height: 20 }} />
-      </div>
-    </div>
   );
 }
 
@@ -1178,7 +1133,7 @@ function Soon({ title, text }: { title: string; text?: string }) {
     <div className="card">
       <h3>{title}</h3>
       <p className="hint" style={{ margin: 0 }}>
-        {text ?? 'Раздел появится вместе с полноценным бэкендом. Сейчас это демонстрация дизайна.'}
+        {text ?? 'Скоро будет'}
       </p>
     </div>
   );
@@ -1196,11 +1151,10 @@ export function UserSettingsBody({
   const v = app.voice;
   switch (section) {
     case 'account':
+    case 'profile':
       return <AccountView app={app} onEdit={() => onSection?.('account-edit')} />;
     case 'account-edit':
       return <AccountEdit app={app} onDone={() => onSection?.('account')} />;
-    case 'profile':
-      return <ProfileEditor app={app} />;
     case 'voice':
       return (
         <>
@@ -1331,7 +1285,7 @@ export function ServerSettingsBody({ app, section }: { app: AppState; section: S
               <input className="input" value={app.server.about} disabled />
             </label>
             <p className="hint" style={{ margin: 0 }}>
-              Редактирование появится с полноценным бэкендом
+              Редактирование — скоро будет
             </p>
           </div>
           <div className="card profile-card">
@@ -1370,7 +1324,7 @@ export function ServerSettingsBody({ app, section }: { app: AppState; section: S
         </div>
       );
     case 'channels':
-      return <Soon title="Каналы" text="Создавать и редактировать каналы пока нельзя — нет полноценного бэкенда." />;
+      return <Soon title="Каналы" text="Создание и редактирование каналов — скоро будет" />;
     case 'invites':
       return <Soon title="Приглашения" />;
     case 'audit':
@@ -1381,6 +1335,24 @@ export function ServerSettingsBody({ app, section }: { app: AppState; section: S
 }
 
 /** Полноэкранные настройки на десктопе. */
+/** Анимация иконки пункта меню по нажатию: атрибут data-press перезапускает её при каждом клике
+ *  (атрибут не из пропсов, поэтому React его не перезаписывает при смене className). */
+function pressIcon(el: HTMLElement) {
+  el.removeAttribute('data-press');
+  void el.offsetWidth;
+  el.setAttribute('data-press', '');
+  const token = String(Date.now() + Math.random());
+  el.dataset.pressId = token;
+  // самая длинная анимация иконки — 1 с (микрофон), потом снимаем атрибут
+  window.setTimeout(() => {
+    if (el.dataset.pressId !== token) return;
+    el.removeAttribute('data-press');
+  }, 1100);
+}
+
+/** Разделы, между которыми переход — это «просмотр ↔ редактирование», а не смена вкладки. */
+const SWAP_GROUP: string[] = ['account', 'profile', 'account-edit'];
+
 export function SettingsScreen<T extends string>({
   title,
   overline,
@@ -1391,9 +1363,12 @@ export function SettingsScreen<T extends string>({
   footer,
   children,
   active,
+  closing,
 }: {
   title: string;
   overline: string;
+  /** Окно уходит — играет анимация закрытия. */
+  closing?: boolean;
   nav: { id: T; label: string; icon: IconName; group?: string }[];
   section: T;
   /** Подсвеченный пункт навигации, если раздел — подстраница. */
@@ -1403,22 +1378,42 @@ export function SettingsScreen<T extends string>({
   footer?: ReactNode;
   children: ReactNode;
 }) {
+  // Переключение «просмотр ↔ редактирование» учётной записи — своя анимация (проявление из размытия);
+  // переход между вкладками — обычная. Помним, откуда пришли, пока раздел не сменится снова.
+  const last = useRef(section);
+  const swap = useRef(false);
+  if (last.current !== section) {
+    swap.current = SWAP_GROUP.includes(last.current) && SWAP_GROUP.includes(section);
+    last.current = section;
+  }
   return (
-    <div className="settings">
+    <div className={'settings' + (closing ? ' closing' : '')}>
       <nav className="settings-nav glass">
         <div className="overline">{overline}</div>
-        {nav.map((n) => (
+        {nav.map((n, i) => (
           <Fragment key={n.id}>
             {n.group && <div className="overline">{n.group}</div>}
-            <button className={'nav-item' + ((active ?? section) === n.id ? ' on' : '')} onClick={() => onSection(n.id)}>
-              <Icon name={n.icon} size={20} />
+            <button
+              className={'nav-item' + ((active ?? section) === n.id ? ' on' : '')}
+              data-ico={n.icon}
+              style={{ '--i': i } as React.CSSProperties}
+              onClick={(e) => {
+                pressIcon(e.currentTarget);
+                onSection(n.id);
+              }}
+            >
+              <span className="si">
+                <Icon name={n.icon} size={20} />
+                {n.icon === 'mic' && <Icon name="mic" size={20} className="si-fill" />}
+                {n.icon === 'appearance' && <Icon name="appearance" size={20} className="si-paint" />}
+              </span>
               {n.label}
             </button>
           </Fragment>
         ))}
         {footer}
       </nav>
-      <main className="settings-body glass">
+      <main className={'settings-body glass' + (swap.current ? ' swap' : '')}>
         {/* Шапка из Figma: заголовок H1 + кнопка закрытия 32×32 r10 с подписью ESC */}
         <div className="settings-head">
           <h1>{title}</h1>
@@ -1429,7 +1424,8 @@ export function SettingsScreen<T extends string>({
             <span>ESC</span>
           </div>
         </div>
-        {children}
+        {/* ключ по разделу — при смене раздела содержимое заново проявляется (анимация set-sec-in) */}
+        <Fragment key={section}>{children}</Fragment>
       </main>
     </div>
   );
@@ -1501,7 +1497,7 @@ function RolesEditor({ app }: { app: AppState }) {
             </Fragment>
           ))}
         </div>
-        <button type="button" className="btn-chip" onClick={() => app.notify('Создание ролей появится с полноценным бэкендом')}>
+        <button type="button" className="btn-chip" onClick={() => app.notify('Создание ролей — скоро будет')}>
           <Icon name="plus" size={16} />
           Создать роль
         </button>

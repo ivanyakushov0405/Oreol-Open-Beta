@@ -1,5 +1,5 @@
 import { openProfile, EDIT_PROFILE_EVENT } from './profile';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { AppState } from './App';
 import { Icon } from './icons';
 import { handleOf, type Channel, type ServerId, type Status } from './mock';
@@ -38,6 +38,22 @@ export function Desktop({ app }: { app: AppState }) {
   const [showMembers, setShowMembers] = useState(true);
   const [voiceChat, setVoiceChat] = useState(false);
   const [overlay, setOverlay] = useState<Overlay>(null);
+  /** Закрытие настроек: сначала анимация ухода окна, потом основной экран (он проявляется — класс from-settings). */
+  const [closing, setClosing] = useState(false);
+  const closingRef = useRef(false);
+  const [fromSettings, setFromSettings] = useState(false);
+  const closeOverlay = () => {
+    if (closingRef.current) return;
+    closingRef.current = true;
+    setClosing(true);
+    window.setTimeout(() => {
+      closingRef.current = false;
+      setOverlay(null);
+      setClosing(false);
+      setFromSettings(true);
+      window.setTimeout(() => setFromSettings(false), 320);
+    }, 150);
+  };
   // «Редактировать профиль» из окна полного профиля
   useEffect(() => {
     const edit = () => setOverlay({ kind: 'user', section: 'account-edit' });
@@ -50,7 +66,7 @@ export function Desktop({ app }: { app: AppState }) {
   const elapsed = useElapsed(app.inVoiceHere ? app.voice.startedAt : null);
   useEffect(() => {
     if (!overlay) return;
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOverlay(null);
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && closeOverlay();
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [overlay]);
@@ -96,7 +112,8 @@ export function Desktop({ app }: { app: AppState }) {
         section={overlay.section}
         active={userNavOf(overlay.section)}
         onSection={(s) => setOverlay({ kind: 'user', section: s })}
-        onClose={() => setOverlay(null)}
+        onClose={closeOverlay}
+        closing={closing}
         footer={
           <button className="nav-item danger" onClick={app.logout}>
             <Icon name="logout" size={18} />
@@ -116,7 +133,8 @@ export function Desktop({ app }: { app: AppState }) {
         nav={SERVER_NAV}
         section={overlay.section}
         onSection={(s) => setOverlay({ kind: 'server', section: s })}
-        onClose={() => setOverlay(null)}
+        onClose={closeOverlay}
+        closing={closing}
         footer={
           <button className="nav-item danger" onClick={() => app.notify('Удаление сервера недоступно в демо')}>
             <Icon name="trash" size={18} />
@@ -147,7 +165,7 @@ export function Desktop({ app }: { app: AppState }) {
   };
 
   return (
-    <div className={'app' + (app.glassChat ? ' glass-chat' : '') + (app.glassVoice ? ' glass-voice' : '')}>
+    <div className={'app' + (app.glassChat ? ' glass-chat' : '') + (app.glassVoice ? ' glass-voice' : '') + (fromSettings ? ' from-settings' : '')}>
       <Rail app={app} home={home} onHome={() => setHome(true)} onServer={(id: ServerId) => {
           setHome(false);
           app.setServerId(id);
@@ -166,7 +184,7 @@ export function Desktop({ app }: { app: AppState }) {
             <div className="sidebar-scroll">
               <div className="empty-state" style={{ marginTop: 40, fontSize: 13 }}>
                 <b>Пока пусто</b>
-                Личные сообщения появятся с полноценным бэкендом.
+                Личные сообщения — скоро будут
               </div>
             </div>
           </>
@@ -244,7 +262,7 @@ export function Desktop({ app }: { app: AppState }) {
               <button className="icon-btn" title="Уведомления" onClick={() => app.notify('Настройка уведомлений — в демо недоступна')}>
                 <Icon name="bell" />
               </button>
-              <button className="icon-btn" title="Поиск" onClick={() => app.notify('Поиск появится с полноценным бэкендом')}>
+              <button className="icon-btn" title="Поиск" onClick={() => app.notify('Поиск — скоро будет')}>
                 <Icon name="search" />
               </button>
               <button className={'icon-btn' + (showMembers ? ' active' : '')} title="Участники" onClick={() => setShowMembers((s) => !s)}>

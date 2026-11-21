@@ -135,7 +135,7 @@ export function Rail({
         className="rail-add"
         aria-label="Создать сервер"
         {...hover('Создать сервер')}
-        onClick={() => app.notify('Создание серверов появится с полноценным бэкендом')}
+        onClick={() => app.notify('Создание серверов — скоро будет')}
       >
         <Icon name="plus" />
       </button>
@@ -401,10 +401,6 @@ function AccountMenu({
     window.addEventListener('resize', place);
     return () => window.removeEventListener('resize', place);
   }, []);
-  const soon = (what: string) => {
-    onClose();
-    app.notify(`${what} появятся вместе с личными сообщениями`);
-  };
   if (!pos) return null;
   return createPortal(
     <div className="acct-menu" role="menu" ref={ref} style={{ left: pos.left, bottom: pos.bottom }}>
@@ -432,14 +428,6 @@ function AccountMenu({
             </button>
           ))}
           <hr />
-          <button role="menuitem" className="acct-item" onClick={() => soon('Друзья')}>
-            <Icon name="users" size={18} />
-            Друзья
-          </button>
-          <button role="menuitem" className="acct-item" onClick={() => soon('Запросы в друзья')}>
-            <Icon name="plus" size={18} />
-            Запросы в друзья
-          </button>
           <button role="menuitem" className="acct-item" onClick={onProfile}>
             <Icon name="pencil" size={18} />
             Редактировать профиль
@@ -745,7 +733,7 @@ export function VoiceStage({ app, mobile }: { app: AppState; mobile?: boolean })
           <p>Подключаемся к голосовому каналу…</p>
         ) : (
           <>
-            <p>{v.error ?? (other ? `Вы в голосовом канале сервера «${other}».` : 'Вы не в голосовом канале.')}</p>
+            <p>{v.error ?? (other ? `Вы в голосовом канале сервера «${other}»` : 'Вы не в голосовом канале')}</p>
             <button className="btn btn-primary" onClick={app.joinVoice} style={{ height: 44, padding: '0 24px' }}>
               <Icon name="voice" size={18} />
               {v.error ? 'Повторить' : other ? 'Перейти сюда' : 'Подключиться'}

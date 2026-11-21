@@ -27,6 +27,14 @@ export function Avatar({
 }) {
   // Загруженный аватар из профиля; без него — инициалы на градиенте
   const img = useUser(name)?.avatar;
+  // Точка статуса «перещёлкивается» только при смене статуса, не при первом показе
+  // (класс остаётся после первой смены; точка пересоздаётся по key только при новом статусе, так что повторные рендеры анимацию не запускают)
+  const prevStatus = useRef(status);
+  const statusChanged = useRef(false);
+  if (prevStatus.current !== status) {
+    statusChanged.current = true;
+    prevStatus.current = status;
+  }
   return (
     <span
       className={'avatar' + (speaking ? ' speaking' : '') + (img ? ' has-img' : '')}
@@ -39,7 +47,7 @@ export function Avatar({
       aria-hidden="true"
     >
       {!img && initials(name)}
-      {status && <i className={`status-dot status-${status}`} style={dotStyle(size)} />}
+      {status && <i key={status} className={`status-dot status-${status}` + (statusChanged.current ? ' dot-pop' : '')} style={dotStyle(size)} />}
     </span>
   );
 }
@@ -668,7 +676,7 @@ export function Composer({
         submit();
       }}
     >
-      <button type="button" className="round" title="Вложения появятся с полноценным бэкендом" disabled>
+      <button type="button" className="round" title="Вложения — скоро будут" disabled>
         <Icon name="attach" />
       </button>
       <div className={'field' + (bar ? ' has-bar' : '')}>
@@ -821,6 +829,7 @@ export function MemberCard({
   sheet,
   serverIcon,
   onCall,
+  full,
   status = 'online',
 }: {
   name: string;
@@ -831,6 +840,8 @@ export function MemberCard({
   /** Иконка сервера для блока «Общие серверы» в развёрнутой шторке. */
   serverIcon?: { short: string; gradient: string };
   onCall?: () => void;
+  /** Телефон: содержимое развёрнутой шторки — полный профиль, как окно профиля на десктопе. */
+  full?: ReactNode;
   at: { x: number; y: number };
   activity: string;
   since: Date;
@@ -852,12 +863,19 @@ export function MemberCard({
     if (sheet && ref.current) setH0(ref.current.offsetHeight);
   }, [sheet]);
   const expRef = useRef(false);
+  /** Карточка появилась при сворачивании из профиля — для обратной анимации. */
+  const [back, setBack] = useState(false);
   const setExpanded = (v: boolean | ((x: boolean) => boolean)) => {
     setExpandedState((x) => {
       const next = typeof v === 'function' ? v(x) : v;
-      if (next) setExtras(true);
-      // запасной вариант, если transitionend не придёт (вкладка в фоне, прерванный жест)
-      else window.setTimeout(() => !expRef.current && setExtras(false), 420);
+      // Разворот — сразу полный профиль; сворот — сразу карточка, она «собирается» обратно, пока шторка опускается
+      if (next) {
+        setExtras(true);
+        setBack(false);
+      } else if (x) {
+        setExtras(false);
+        setBack(true);
+      }
       expRef.current = next;
       return next;
     });
@@ -949,7 +967,10 @@ export function MemberCard({
           </div>
         )}
         <Banner name={name} {...(sheet ? grab : {})} />
-        <div className="body">
+        {sheet && extras && full ? (
+          <div className="mc-full">{full}</div>
+        ) : (
+        <div className={'body' + (back ? ' from-full' : '')}>
           <span className="mc-avatar">
             <Avatar name={name} size={72} status={status} />
           </span>
@@ -1025,7 +1046,7 @@ export function MemberCard({
                     className="mc-note"
                     rows={2}
                     value={note}
-                    placeholder="Нажми, чтобы добавить заметку — её видишь только ты"
+                    placeholder="Нажмите, чтобы добавить заметку — её видите только вы"
                     onChange={(e) => saveNote(e.target.value)}
                   />
                 </section>
@@ -1043,6 +1064,7 @@ export function MemberCard({
             </div>
           )}
         </div>
+        )}
       </div>
     </Modal>
   );

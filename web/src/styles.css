@@ -152,13 +152,6 @@ input, textarea { font: inherit; color: inherit; }
 ::-webkit-scrollbar-thumb { background: var(--border-default); border-radius: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
 
-.grad-text {
-  background: linear-gradient(90deg, var(--grad-start), var(--grad-mid), var(--grad-end));
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-}
-
 /* ---------- Базовые элементы ---------- */
 .glass {
   background: var(--panel-bg);
@@ -176,7 +169,6 @@ input, textarea { font: inherit; color: inherit; }
 .btn-sm { height: 32px; padding: 0 12px; border-radius: 10px; font-size: 13px; }
 .btn-primary {
   color: #fff;
-  background: linear-gradient(90deg, var(--accent-primary), var(--accent-violet));
   box-shadow: inset 0 1px 0 #ffffff33;
 }
 .btn-primary:hover:not(:disabled) { filter: brightness(1.08); }
@@ -254,7 +246,7 @@ input, textarea { font: inherit; color: inherit; }
 .auth-card { width: 440px; max-width: 100%; padding: 32px; border-radius: 24px; display: flex; flex-direction: column; gap: 18px; }
 .mode-switch { display: grid; grid-template-columns: 1fr 1fr; padding: 4px; border-radius: 16px; background: var(--surface-input); border: 1px solid var(--border-subtle); }
 .mode-switch button { height: 38px; border-radius: 12px; color: var(--text-secondary); font-weight: 500; }
-.mode-switch button.on { color: #fff; background: linear-gradient(90deg, var(--accent-primary), var(--accent-violet)); }
+.mode-switch button.on { color: #fff; }
 .auth-card h2 { margin: 0; font-size: 24px; font-weight: 600; }
 .auth-card .sub { margin: 4px 0 0; color: var(--text-secondary); }
 .auth-note { font-size: 12px; color: var(--text-muted); text-align: center; }
@@ -270,14 +262,14 @@ input, textarea { font: inherit; color: inherit; }
   width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; flex: none;
   background: var(--surface-icon); box-shadow: inset 0 0 0 1px var(--border-subtle);
 }
-.rail-home.on { box-shadow: inset 0 0 0 1px var(--accent-cyan), var(--glow-accent); }
+
 .server-icon {
   position: relative; width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; flex: none;
   color: #fff; font-weight: 600; font-size: 15px; transition: border-radius .2s;
   box-shadow: inset 0 1px 0 #ffffff40;
 }
 .server-icon:hover, .server-icon.on { border-radius: 16px; }
-.server-icon.on { box-shadow: 0 0 0 2px var(--accent-cyan), var(--glow-accent); }
+
 .server-icon .voice-badge {
   position: absolute; top: -6px; right: -10px; display: flex; align-items: center; gap: 2px; height: 18px;
   padding: 0 6px 0 4px; border-radius: 999px; background: var(--accent-cyan); color: #041018; font-size: 11px; font-weight: 600;
@@ -410,7 +402,6 @@ input, textarea { font: inherit; color: inherit; }
 .composer input::placeholder { color: var(--text-muted); }
 .send-btn {
   width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; color: #fff; flex: none;
-  background: linear-gradient(135deg, var(--accent-primary), var(--accent-violet));
 }
 .readonly-note { padding: 12px 16px 16px; text-align: center; font-size: 13px; color: var(--text-muted); position: relative; }
 
@@ -481,7 +472,7 @@ input, textarea { font: inherit; color: inherit; }
 .card h3 { margin: 0 0 4px; font-size: 18px; font-weight: 600; }
 .card .hint { color: var(--text-secondary); font-size: 13px; margin: 0 0 14px; }
 .profile-card { padding: 0; overflow: hidden; text-align: center; }
-.profile-card .banner { height: 84px; background: linear-gradient(90deg, var(--grad-start) 0%, var(--grad-mid) 50%, var(--grad-end) 100%); }
+.profile-card .banner { height: 84px; }
 .profile-card .avatar { margin: -36px auto 0; box-shadow: 0 0 0 4px var(--bg-elevated); }
 .profile-card h2 { margin: 10px 0 0; font-size: 24px; }
 .profile-card .handle { color: var(--text-secondary); }
@@ -495,7 +486,7 @@ input, textarea { font: inherit; color: inherit; }
 .toggle.on::after { transform: translateX(18px); }
 .theme-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 220px)); gap: 12px; }
 .theme-card { border-radius: 14px; padding: 10px; border: 1px solid var(--border-default); text-align: left; }
-.theme-card.on { border-color: var(--accent-cyan); box-shadow: var(--glow-accent); }
+.theme-card.on { border-color: var(--accent-cyan); }
 .theme-card .preview { height: 90px; border-radius: 10px; margin-bottom: 8px; }
 .list-row {
   height: 48px; display: flex; align-items: center; gap: 12px; padding: 0 12px; border-radius: 12px;
@@ -512,7 +503,7 @@ input, textarea { font: inherit; color: inherit; }
   position: fixed; z-index: 51; width: 300px; border-radius: 18px; overflow: hidden; background: var(--bg-elevated);
   border: 1px solid var(--border-default); box-shadow: var(--shadow-elevated);
 }
-.member-card .banner { height: 84px; background: linear-gradient(90deg, var(--grad-start) 0%, var(--grad-mid) 50%, var(--grad-end) 100%); }
+.member-card .banner { height: 84px; }
 .member-card .body { padding: 0 16px 16px; }
 .member-card .avatar { margin-top: -32px; box-shadow: 0 0 0 4px var(--bg-elevated); }
 .member-card h3 { margin: 8px 0 0; font-size: 18px; }
@@ -566,7 +557,7 @@ input, textarea { font: inherit; color: inherit; }
 .m-voice .ctrl { width: 44px; border-radius: 50%; }
 .m-voice .ctrl.leave { width: 88px; border-radius: 22px; }
 .m-you { flex: 1; overflow-y: auto; padding-bottom: 12px; }
-.m-you .banner { height: 150px; background: linear-gradient(90deg, var(--grad-start) 0%, var(--grad-mid) 50%, var(--grad-end) 100%); }
+.m-you .banner { height: 150px; }
 .m-you .avatar { margin: -48px auto 0; box-shadow: 0 0 0 4px var(--bg-base); }
 .m-you .name { text-align: center; margin-top: 10px; font-size: 18px; font-weight: 600; }
 .m-you .handle { text-align: center; color: var(--text-secondary); font-size: 13px; }
@@ -669,7 +660,7 @@ input, textarea { font: inherit; color: inherit; }
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   -webkit-mask-composite: xor; mask-composite: exclude;
 }
-.server-icon.on { border-radius: 16px; box-shadow: 0 0 0 2px var(--accent-cyan), 0 0 16px #00e5ff59; }
+.server-icon.on { border-radius: 16px; }
 .server-icon.on::after { display: none; }
 .rail-add { border: 1px solid var(--panel-stroke); }
 
@@ -725,7 +716,7 @@ input, textarea { font: inherit; color: inherit; }
 }
 .composer .field:focus-within { background: linear-gradient(var(--fill-soft), var(--fill-soft)) padding-box, linear-gradient(var(--border-focus), var(--border-focus)) border-box; }
 .composer input { font-size: 14px; }
-.send-btn { width: 36px; height: 36px; box-shadow: 0 0 16px #00e5ff59, inset 0 0 0 1px #ffffff40; }
+.send-btn { width: 36px; height: 36px; }
 
 /* Голосовой экран */
 .stage { padding: 24px; }
@@ -778,8 +769,7 @@ input, textarea { font: inherit; color: inherit; }
 }
 .mode-switch button { height: 38px; border-radius: 999px; color: var(--text-secondary); font-size: 14px; font-weight: 500; }
 .mode-switch button.on {
-  color: #fff; background: linear-gradient(90deg, var(--accent-primary), var(--accent-violet));
-  box-shadow: 0 0 16px #00e5ff59;
+  color: #fff;
 }
 .auth-head { display: flex; flex-direction: column; gap: 4px; }
 .auth-card h2 { margin: 0; font-size: 24px; line-height: 1.25; font-weight: 600; }
@@ -798,7 +788,6 @@ input, textarea { font: inherit; color: inherit; }
 .field-hint.error { color: var(--danger); }
 .auth-submit {
   height: 40px; border-radius: 12px; font-size: 14px; border: 1px solid transparent;
-  background: linear-gradient(90deg, var(--accent-primary), var(--accent-violet)) padding-box, var(--outline-strong) border-box;
 }
 .auth-submit:disabled { opacity: .55; }
 .auth-foot { display: flex; justify-content: center; gap: 6px; font-size: 14px; line-height: 1.45; color: var(--text-secondary); text-align: center; }
@@ -836,8 +825,7 @@ input, textarea { font: inherit; color: inherit; }
 .mode-switch { position: relative; isolation: isolate; }
 .mode-switch::before {
   content: ''; position: absolute; z-index: -1; top: 4px; bottom: 4px; left: 4px; width: calc(50% - 6px);
-  border-radius: 999px; background: linear-gradient(90deg, var(--accent-primary), var(--accent-violet));
-  box-shadow: 0 0 16px #00e5ff59;
+  border-radius: 999px;
   transition: transform .45s cubic-bezier(.65,0,.25,1);
 }
 .mode-switch.signup::before { transform: translateX(calc(100% + 4px)); }
@@ -917,7 +905,6 @@ input, textarea { font: inherit; color: inherit; }
 
 .rail-home.on, .server-icon.on {
   border-radius: 16px;
-  box-shadow: inset 0 0 0 2px #00e5ff, 0 0 16px 0 #00e5ff59;
 }
 .rail-home.on:hover { background: #0e2440; }
 .rail-home.on::after, .server-icon.on::after { display: block; opacity: 0; }
@@ -1223,7 +1210,7 @@ input, textarea { font: inherit; color: inherit; }
   background: #ffffff1a; border: 1px solid #ffffff52; transition: filter .15s, background .15s;
 }
 .mc-btn:hover { background: #ffffff26; }
-.mc-btn.primary { color: #fff; background: linear-gradient(90deg, var(--accent-primary), var(--accent-violet)); border-color: #ffffff8c; }
+.mc-btn.primary { color: #fff; border-color: #ffffff8c; }
 .mc-btn.primary:hover { filter: brightness(1.08); }
 [data-theme="light"] .member-card { border-color: var(--border-default); box-shadow: 0 12px 32px #1a335033; }
 [data-theme="light"] .mc-info { background: #040a140a; }
@@ -1260,9 +1247,6 @@ input, textarea { font: inherit; color: inherit; }
 @keyframes bd-drift { 0%, 100% { transform: translate(0, 0) scale(1); } 50% { transform: translate(24px, -18px) scale(1.06); } }
 
 /* ===== Фон профиля: градиент бренда (Figma «Profile banner · Default») вместо картинки ===== */
-.profile-card .banner, .member-card .banner, .m-you .banner, .banner {
-  background: linear-gradient(90deg, var(--grad-start) 0%, var(--grad-mid) 50%, var(--grad-end) 100%);
-}
 
 /* ===== Сообщения прижаты к низу ленты ===== */
 .chat-scroll > :first-child { margin-top: auto; }
@@ -1281,17 +1265,11 @@ input, textarea { font: inherit; color: inherit; }
 
 /* ===== Светлая тема: фирменные градиенты по макетам Figma (Light) =====
    Кнопки и «Отправить»: #1E6BFF → #6342E8 (+ светлая градиентная кромка), переключатель: #00A8CC → #6342E8. */
-.btn-primary, .mc-btn.primary, .mode-switch button.on, .send-btn {
-  background: linear-gradient(90deg, var(--grad-mid), var(--grad-end));
-}
+
 [data-theme='light'] .btn-primary, [data-theme='light'] .mc-btn.primary {
   border: 1px solid transparent;
-  background: linear-gradient(90deg, var(--grad-mid), var(--grad-end)) padding-box,
-    linear-gradient(90deg, #ffffff8c, #ffffff00 50%, #ffffff40) border-box,
-    linear-gradient(90deg, var(--grad-mid), var(--grad-end)) border-box;
   box-shadow: none;
 }
-[data-theme='light'] .mode-switch button.on { box-shadow: 0 0 16px #00e5ff59; }
 
 /* «Личные сообщения»: выбранная кнопка при наведении не темнеет в светлой теме */
 [data-theme="light"] .rail-home.on:hover { background: var(--fill-soft); }
@@ -1423,7 +1401,6 @@ input, textarea { font: inherit; color: inherit; }
 @keyframes acct-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 .acct-menu .banner {
   height: 84px; margin: 1px 1px -36px; border-radius: 17px 17px 0 0; flex: none;
-  background: linear-gradient(90deg, var(--grad-start), var(--grad-mid), var(--grad-end));
 }
 .acct-body { padding: 0 8px 8px; display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .acct-body .mc-avatar { position: relative; display: inline-flex; border-radius: 50%; box-shadow: 0 0 0 3px var(--bg-elevated); }
@@ -1463,8 +1440,7 @@ input, textarea { font: inherit; color: inherit; }
 .rail-home, .server-icon, .rail-add {
   transition: border-radius .22s cubic-bezier(.3,.7,.2,1), box-shadow .12s ease-out, background-color .2s ease, filter .2s ease;
 }
-.server-icon.on { box-shadow: 0 0 0 2px var(--accent-cyan), 0 0 16px #00e5ff59; }
-[data-theme='light'] .server-icon.on { box-shadow: 0 0 0 2px var(--accent-cyan), 0 0 18px 2px #00a8cc80, 0 4px 14px -4px #1e6bff66; }
+
 .server-icon.on::after { transition: none; }
 
 /* ===== Аватарки и иконки серверов: буквы не выделяются ===== */
@@ -1504,9 +1480,7 @@ input, textarea { font: inherit; color: inherit; }
 .btn-primary:hover:not(:disabled)::before, .mc-btn.primary:hover::before, .send-btn:hover:not(:disabled)::before,
 .ctrl.leave:hover::before { opacity: .14; }
 .btn-danger:hover:not(:disabled)::before, .btn-secondary:hover:not(:disabled)::before, .mc-btn:not(.primary):hover::before { opacity: .06; }
-.btn-primary:hover:not(:disabled), .mc-btn.primary:hover, .send-btn:hover:not(:disabled) {
-  box-shadow: 0 6px 18px -6px color-mix(in srgb, var(--grad-end) 75%, transparent), 0 0 16px #00e5ff40;
-}
+
 .ctrl.leave:hover { background: #ff5c7a; box-shadow: 0 6px 18px -6px #ff5c7acc; }
 .btn-primary:active:not(:disabled)::before, .mc-btn:active::before, .send-btn:active:not(:disabled)::before,
 .btn-danger:active:not(:disabled)::before, .btn-secondary:active:not(:disabled)::before, .ctrl.leave:active::before {
@@ -1593,7 +1567,6 @@ input, textarea { font: inherit; color: inherit; }
 .sound-chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .sub-settings.off .sound-chips, .sub-settings.off .sound-volume { opacity: .5; }
 
-
 /* ===== Громкости и камера в настройках ===== */
 .device-grid label { display: flex; flex-direction: column; min-width: 0; }
 .device-grid.one { grid-template-columns: minmax(0, 1fr); max-width: 420px; }
@@ -1679,12 +1652,7 @@ input, textarea { font: inherit; color: inherit; }
 /* ===== Градиентные кнопки: наведение — чуть светлее и мягкая тень в цвет, без голубого ореола ===== */
 .btn-primary::before, .mc-btn.primary::before, .send-btn::before { inset: -1px; }
 .btn-primary:hover:not(:disabled)::before, .mc-btn.primary:hover::before, .send-btn:hover:not(:disabled)::before { opacity: .1; }
-.btn-primary:hover:not(:disabled), .mc-btn.primary:hover, .send-btn:hover:not(:disabled) {
-  box-shadow: 0 6px 16px -6px color-mix(in srgb, var(--grad-mid) 70%, transparent), 0 0 14px #00e5ff33;
-}
-[data-theme='light'] .btn-primary:hover:not(:disabled), [data-theme='light'] .mc-btn.primary:hover, [data-theme='light'] .send-btn:hover:not(:disabled) {
-  box-shadow: 0 6px 14px -6px color-mix(in srgb, var(--grad-mid) 60%, transparent);
-}
+
 [data-theme='light'] .send-btn { box-shadow: 0 2px 8px -2px #1e6bff59; }
 
 /* ======================================================================================
@@ -2020,10 +1988,15 @@ input, textarea { font: inherit; color: inherit; }
 .acc-actions-end .btn { height: 40px; border-radius: 12px; font-size: 14px; padding: 0 16px; }
 .danger-card {
   display: flex; align-items: center; gap: 16px; padding: 14px 20px;
-  border: 1px solid var(--danger) !important; background: color-mix(in srgb, var(--danger) 8%, transparent) !important;
+  transition: border-color .2s ease, background-color .2s ease, box-shadow .2s ease;
 }
-.danger-card b { display: block; font-size: 14px; line-height: 18px; font-weight: 500; }
-.danger-card p { margin: 2px 0 0; font-size: 12px; line-height: 16px; color: var(--text-secondary); }
+/* Стеклянная, как остальные карточки; красная рамка — только пока наведена кнопка удаления */
+.danger-card:has(.btn-danger-solid:hover:not(:disabled)), .danger-card:has(.btn-danger-solid:focus-visible) {
+  border-color: var(--danger);
+  background-color: color-mix(in srgb, var(--danger) 8%, transparent);
+}
+.danger-card b { display: block; font-size: 18px; line-height: 23px; font-weight: 600; }
+.danger-card p { margin: 4px 0 0; font-size: 14px; line-height: 20px; color: var(--text-secondary); }
 .btn-danger-solid { background: var(--danger); color: #fff; border: 0; }
 .btn-danger-solid:hover:not(:disabled) { filter: brightness(1.08); }
 .dialog-backdrop {
@@ -2244,9 +2217,7 @@ input, textarea { font: inherit; color: inherit; }
 .main-head .actions .icon-btn.active { box-shadow: none; }
 
 /* ===== «Личные сообщения»: в активном состоянии — циановая обводка и свечение, как у выбранного сервера ===== */
-.rail-home.on, .rail-home.on:hover, [data-theme='light'] .rail-home.on, [data-theme='light'] .rail-home.on:hover {
-  box-shadow: 0 0 0 2px var(--accent-cyan), 0 0 16px #00e5ff59;
-}
+
 .rail-home.on::after { display: none; }
 
 /* ===== Облачка и плашка даты: обводка ровной толщины — без дополнительной светлой линии сверху и тёмного ореола снизу ===== */
@@ -2440,9 +2411,6 @@ input, textarea { font: inherit; color: inherit; }
 /* ===== Светлая тема: выбранный сервер =====
    Бирюзовая рамка прямо по цветной иконке + широкое голубое свечение на белой панели смотрелись мутно.
    Теперь только бирюзовое кольцо по краю и мягкая цветная тень снизу, без широкого свечения. */
-[data-theme='light'] .rail .server-icon.on {
-  box-shadow: 0 0 0 2px var(--accent-cyan), 0 6px 14px -4px #00a8cc4d;
-}
 
 /* ===== Обводка сообщений мягче — обе темы ===== */
 :root, [data-theme='dark'] {
@@ -2478,9 +2446,6 @@ input, textarea { font: inherit; color: inherit; }
 .server-icon .voice-badge { z-index: 2; }
 
 /* ===== Светлая тема: выбранный сервер — бирюзовое кольцо и мягкое свечение вокруг ===== */
-[data-theme='light'] .rail .server-icon.on {
-  box-shadow: 0 0 0 2px var(--accent-cyan), 0 0 14px 2px #00b8d966;
-}
 
 /* ===== Светлая тема: плитки войса полупрозрачные (как в тёмной), а не почти белые ===== */
 [data-theme='light'][data-glass='on'] .tile.novideo {
@@ -2501,8 +2466,6 @@ input, textarea { font: inherit; color: inherit; }
 /* ===== Свечение выбранного сервера помещается в панель =====
    Панель серверов прокручивается и обрезает всё, что выходит за её края, а от иконки до края — 12px.
    Широкое бледное свечение (14–16px) почти целиком обрезалось. Теперь оно короче и плотнее — видно целиком. */
-.rail .server-icon.on { box-shadow: 0 0 0 2px var(--accent-cyan), 0 0 9px 2px #00e5ff73; }
-[data-theme='light'] .rail .server-icon.on { box-shadow: 0 0 0 2px var(--accent-cyan), 0 0 9px 2px #00b8d999; }
 
 /* ===== Плитки войса в светлой теме — так же прозрачны, как в тёмной =====
    В тёмной: 4–10 % белого без размытия, фон с тором виден насквозь. В светлой было 30–50 % белого + размытие — молочная плитка.
@@ -2513,14 +2476,8 @@ input, textarea { font: inherit; color: inherit; }
 }
 
 /* ===== Свечение выбранного сервера заметнее (в пределах 12px до края панели) ===== */
-.rail .server-icon.on { box-shadow: 0 0 0 2px var(--accent-cyan), 0 0 8px 3px #00e5ffb3, 0 0 12px 5px #00e5ff33; }
-[data-theme='light'] .rail .server-icon.on { box-shadow: 0 0 0 2px var(--accent-cyan), 0 0 8px 3px #00c8e6bf, 0 0 12px 5px #00c8e640; }
 
 /* ===== «Личные сообщения» — то же свечение, что у выбранного сервера (широкое бледное обрезалось панелью) ===== */
-.rail .rail-home.on, .rail .rail-home.on:hover { box-shadow: 0 0 0 2px var(--accent-cyan), 0 0 8px 3px #00e5ffb3, 0 0 12px 5px #00e5ff33; }
-[data-theme='light'] .rail .rail-home.on, [data-theme='light'] .rail .rail-home.on:hover {
-  box-shadow: 0 0 0 2px var(--accent-cyan), 0 0 8px 3px #00c8e6bf, 0 0 12px 5px #00c8e640;
-}
 
 /* ===== Светлая тема без «Жидкого стекла»: плитка войса — плотная белая карточка с мягкой рамкой =====
    Как в тёмной: плитка выделяется на фоне войса. Рамка — та же, что у панелей (ровно по краю, с ореолом),
@@ -2581,8 +2538,6 @@ input, textarea { font: inherit; color: inherit; }
 .msg:not(.mine) { gap: 12px; }
 
 /* ===== Кнопка «Отправить»: свечение сильнее ===== */
-.composer .send-btn.show { box-shadow: 0 0 20px 2px #00e5ff80, inset 0 0 0 1px #ffffff4d; }
-[data-theme='light'] .composer .send-btn.show { box-shadow: 0 0 16px 2px #1e6bff66, 0 3px 10px -2px #1e6bff73; }
 
 /* ===== Светлая тема: иконки — тёмная линия на светлом выглядит тоньше, делаем штрих чуть толще ===== */
 [data-theme='light'] svg [stroke-width='1.6'] { stroke-width: 1.85; }
@@ -2617,8 +2572,6 @@ input, textarea { font: inherit; color: inherit; }
 [data-theme='light'] .tile.speaking::after { display: none; }
 
 /* ===== «Отправить»: свечение ещё сильнее ===== */
-.composer .send-btn.show { box-shadow: 0 0 24px 4px #00e5ff8c, inset 0 0 0 1px #ffffff4d; }
-[data-theme='light'] .composer .send-btn.show { box-shadow: 0 0 20px 4px #1e6bff73, 0 3px 10px -2px #1e6bff80; }
 
 /* =====================================================================
    Светлая тема без «Жидкого стекла»: серые подложки не пропадают
@@ -2636,7 +2589,6 @@ input, textarea { font: inherit; color: inherit; }
 [data-theme='light'][data-glass='off'] .theme-card.on { background: var(--underlay-l); }
 
 /* Тёмная тема: свечение «Отправить» тише */
-.composer .send-btn.show { box-shadow: 0 0 16px 1px #00e5ff66, inset 0 0 0 1px #ffffff4d; }
 
 /* Настройки без «Жидкого стекла» (светлая): блоки-карточки — на серо-голубой подложке, как в тёмной
    (там они светлее фона настроек). Раньше были белыми на белом и сливались. Поля внутри остаются белыми. */
@@ -2680,7 +2632,6 @@ input, textarea { font: inherit; color: inherit; }
 @keyframes peer-row-out { 0% { opacity: 1; transform: none; } 50% { opacity: 0; height: 36px; padding-top: 4px; padding-bottom: 4px; transform: translateX(-10px); } 100% { opacity: 0; height: 0; padding-top: 0; padding-bottom: 0; transform: translateX(-10px); } }
 .voice-user.peer-in { overflow: hidden; animation: peer-row-in .36s ease; }
 .voice-user.peer-out { overflow: hidden; animation: peer-row-out .26s ease forwards; pointer-events: none; }
-
 
 /* ===== Светлая тема: у поля ввода и под шапкой — то же тёмное затемнение, что и в тёмной теме (общее для всех тем) ===== */
 [data-theme="light"] .composer::before, [data-theme="light"] .app.glass-chat .composer::before, [data-theme="light"] .m-full .composer::before, [data-theme="light"] .side-chat .composer::before {
@@ -3316,7 +3267,6 @@ body:has(.m-full-chat:not(.out), .m-full-voice:not(.out))[data-theme='light'] .b
 /* Аватарка начинается на 102px ниже верха фона (150 − 48); у виджета под карточкой ещё ~12px полей — зазор до аватарки ~6px */
 .m-you .banner-top {
   height: max(env(safe-area-inset-top, 0px), calc(var(--call-h) - 90px));
-  background: linear-gradient(90deg, var(--grad-start) 0%, var(--grad-mid) 50%, var(--grad-end) 100%);
 }
 /* Светлая тема: виджет плотнее, чем стекло на 15–28 %, но фон по-прежнему просвечивает */
 [data-theme='light'] .m-call { background: linear-gradient(180deg, #ffffff99, #ffffff6b); backdrop-filter: blur(12px) saturate(1.6); -webkit-backdrop-filter: blur(12px) saturate(1.6); }
@@ -3576,7 +3526,6 @@ html.boot *:not(.backdrop *), html.boot *:not(.backdrop *)::before, html.boot *:
 .m-call-wrap.dragging .m-call-box > * { transition: none; }
 .m-call-box > .m-call { animation: m-call-in .32s cubic-bezier(.2, .8, .2, 1); }
 
-
 /* ===== Кнопка «вниз» в ленте и счётчик новых сообщений ===== */
 .chat { position: relative; }
 .to-bottom {
@@ -3606,7 +3555,6 @@ html.boot *:not(.backdrop *), html.boot *:not(.backdrop *)::before, html.boot *:
 @media (hover: hover) { .to-bottom:hover { filter: brightness(1.08); } }
 /* скрытый виджет (сидим на экране своего войса) при подключении не мелькает: анимация появления — только у видимого */
 .m-call-wrap.shut .m-call-box > *, .m-call-wrap.shut .m-call-box > .m-call { animation: none; opacity: 0; }
-
 
 /* ===== Затемнение сверху: одна маска на всю высоту — дырки под плашками шапки и под виджетом звонка =====
    Затемнение обычное (от верха до низа шапки), но стекло виджета и плашек им не темнеет. */
@@ -3819,7 +3767,6 @@ html[data-theme][data-glass='on'] :is(.m-call, .m-call-pill, .m-menu.glass, .tab
 }
 
 /* Старые градиентные кромки (::after) в стеклянном режиме не рисуем — кромку даёт волосяная линия выше */
-
 
 /* ===== Затемнение сверху и снизу в чате — сразу, вместе с экраном (дырки под плашками растут вместе с ними) =====
    Раньше верхнее проявлялось с задержкой, а при уходе гасло в начале — на миг была видна лента под виджетом. */
@@ -4154,7 +4101,6 @@ html[data-theme='light'] .pin-banner, html[data-theme='light'][data-glass] .pin-
 /* ===== Смена темы: фон (тор и свечения) — отдельным слоем, он плавно перетекает, а не открывается кругом вместе со всем
    (свечения слева-сверху и справа-снизу при «разливе» появлялись резко) ===== */
 
-
 /* ===== Облачка: ширина в пикселях — текст не перескакивает со строки на строку при каждом изменении ширины окна ===== */
 .msg, .m-full .msg { max-width: min(560px, 88%); }
 .msg.selecting .bubble { max-width: none; }
@@ -4209,8 +4155,6 @@ html[data-theme='light'][data-glass='on'] { --set-shade: color-mix(in srgb, #f4f
 /* ===== Экран входа: тор ярче (фон теперь общий на всё приложение, а не свой у входа) ===== */
 html:not([data-theme='light']) body:has(.signin) .backdrop .bd-ring:not(.m) { opacity: .55; }
 
-
-
 /* во время смены темы у тора не должно быть своего перехода прозрачности (правило с !important перебивало общий запрет) */
 html[data-vt] .backdrop .bd-ring, html[data-vt] .backdrop .bd-ring.m { transition: none !important; }
 
@@ -4256,7 +4200,6 @@ html.boot .unread-badge { animation: none; }
 .icon-btn.has-badge { position: relative; }
 .unread-badge.corner { position: absolute; top: -3px; right: -5px; min-width: 16px; height: 16px; font-size: 10px; padding: 0 4px; box-shadow: 0 0 0 2px var(--bg-base); }
 
-
 /* ===== Уведомления о новых сообщениях — карточки справа внизу ===== */
 .msg-alerts { position: fixed; right: 20px; bottom: 20px; z-index: 900; display: flex; flex-direction: column; gap: 8px; align-items: flex-end; pointer-events: none; }
 .msg-alert {
@@ -4291,7 +4234,7 @@ html.boot .unread-badge { animation: none; }
 
 /* ===== Бейдж упоминания на канале: циановый «@» рядом с красным числом ===== */
 .ch-badges { display: inline-flex; align-items: center; gap: 4px; }
-.mention-badge { background: var(--accent-cyan); color: #04121f; font-weight: 700; min-width: 18px; padding: 0; }
+.mention-badge { background: var(--accent-cyan); color: #04121f; font-weight: 600; min-width: 18px; padding: 0; }
 
 /* ===== Линия «Новое» в чате: красная черта с подписью справа — отсюда начинаются непрочитанные ===== */
 .new-line { position: relative; flex: none; display: flex; align-items: center; margin: 10px 0 6px; height: 16px; }
@@ -4305,7 +4248,6 @@ html.boot .unread-badge { animation: none; }
 /* ===== Линия «Новое»: подпись посередине, черта с обеих сторон ===== */
 .new-line::after { content: ''; flex: 1; height: 1px; background: var(--danger); opacity: .85; }
 .new-line > span { margin: 0 8px; }
-
 
 /* ===== Смена темы: внутри «разлива» фон сразу новый =====
    Переход и так делает сам разлив; если фон ещё и проявлялся, внутри круга новая тема лежала на полупроявленном
@@ -4362,10 +4304,11 @@ html[data-vt] .backdrop .bd-layer.one, html[data-vt] .backdrop .bd-layer.one > s
 .pm-avatar .avatar { margin: 0; }
 .pm-avatar .status-dot { border-color: var(--bg-elevated); }
 .pm-identity { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.pm-identity h2 { margin: 0; font-size: 22px; line-height: 1.25; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pm-identity h2 { margin: 0; font-size: 22px; line-height: 1.25; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pm-actions { display: flex; gap: 8px; }
 .pm-actions .mc-btn { padding: 8px 12px; font-size: 13px; }
-.pm-actions .mc-btn.primary { background: #1e6bff; border-color: transparent; }
+.pm-actions .mc-btn.primary { background: var(--btn-fill); border-color: transparent; }
+.pm-actions .mc-btn.primary:hover { background: var(--btn-fill-hover); filter: none; }
 .pm-actions .mc-btn.icon { flex: 0 0 auto; width: 38px; padding: 0; }
 .profile-modal .mc-info { padding: 2px 14px; }
 .pm-server { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
@@ -4468,3 +4411,335 @@ html[data-theme='light'], html[data-theme='light'][data-glass] {
 [data-theme='light'] .composer .field:not(:focus-within) {
   box-shadow: 0 1px 2px #1a335014, 0 4px 12px -6px #1a33502e !important;
 }
+
+/* ===== Десктоп: открытие настроек — меню выезжает слева, панель проявляется, пункты меню появляются по очереди ===== */
+@keyframes set-nav-in { from { opacity: 0; transform: translateX(-18px); } to { opacity: 1; transform: none; } }
+@keyframes set-body-in { from { opacity: 0; transform: translateY(12px) scale(.985); } to { opacity: 1; transform: none; } }
+@keyframes set-item-in { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: none; } }
+.settings > .settings-nav { animation: set-nav-in .36s cubic-bezier(.2, .8, .2, 1) both; }
+.settings > .settings-body { animation: set-body-in .42s cubic-bezier(.2, .8, .2, 1) .05s both; transform-origin: 50% 0; }
+.settings > .settings-nav > .nav-item:not(.danger) { animation: set-item-in .3s cubic-bezier(.2, .8, .2, 1) both; animation-delay: calc(.08s + var(--i, 0) * .03s); }
+.settings > .settings-nav > .nav-item.danger { animation: set-item-in .3s cubic-bezier(.2, .8, .2, 1) .3s both; }
+
+/* ===== Иконки меню настроек: своя анимация у каждой — по нажатию на пункт (атрибут data-press ставит pressIcon) ===== */
+.settings-nav .nav-item .si { position: relative; display: inline-flex; flex: none; }
+.settings-nav .nav-item .si svg { overflow: visible; transform-origin: 50% 50%; }
+.settings-nav .nav-item[data-press] .si > svg:first-child { animation-duration: .5s; animation-timing-function: cubic-bezier(.3, .7, .4, 1); }
+/* учётная запись: человечек подпрыгивает — присел, прыжок, приземлился */
+@keyframes si-jump {
+  0% { transform: none; } 15% { transform: scale(1.08, .86); } 45% { transform: translateY(-6px) scale(.95, 1.06); }
+  72% { transform: scale(1.06, .9); } 88% { transform: translateY(-1px); } 100% { transform: none; }
+}
+.settings-nav .nav-item[data-ico='user'][data-press] .si > svg { animation-name: si-jump; transform-origin: 50% 100%; animation-duration: .55s; }
+/* профиль: карандаш пишет — кончик ведёт короткую строчку и возвращается */
+@keyframes si-write {
+  0% { transform: none; } 10% { transform: translate(-3px, 1px) rotate(-8deg); }
+  22% { transform: translate(-1px, -1px) rotate(-8deg); } 34% { transform: translate(1px, 1px) rotate(-8deg); }
+  46% { transform: translate(3px, -1px) rotate(-8deg); } 58% { transform: translate(5px, 1px) rotate(-8deg); }
+  76% { transform: translate(2px, 0) rotate(-4deg); } 100% { transform: none; }
+}
+.settings-nav .nav-item[data-ico='pencil'][data-press] .si > svg { animation-name: si-write; transform-origin: 15% 85%; animation-duration: .7s; animation-timing-function: ease-in-out; }
+/* конфиденциальность: щит резко выставляют на нас и он чуть пружинит */
+@keyframes si-shield {
+  0% { transform: none; } 22% { transform: scale(1.34); filter: drop-shadow(0 0 5px color-mix(in srgb, var(--accent-cyan) 70%, transparent)); }
+  48% { transform: scale(.94); } 70% { transform: scale(1.05); } 100% { transform: none; filter: none; }
+}
+.settings-nav .nav-item[data-ico='shield'][data-press] .si > svg { animation-name: si-shield; animation-timing-function: cubic-bezier(.2, .9, .3, 1); }
+/* тот же рывок на нас, но без свечения (для «Заблокированных») */
+@keyframes si-thrust { 0% { transform: none; } 22% { transform: scale(1.34); } 48% { transform: scale(.94); } 70% { transform: scale(1.05); } 100% { transform: none; } }
+/* уведомления: колокольчик качается */
+@keyframes si-ring { 0%, 100% { transform: none; } 15% { transform: rotate(16deg); } 35% { transform: rotate(-13deg); } 55% { transform: rotate(8deg); } 75% { transform: rotate(-4deg); } }
+.settings-nav .nav-item[data-ico='bell'][data-press] .si > svg { animation-name: si-ring; transform-origin: 50% 12%; animation-duration: .6s; }
+/* голос и звук: микрофон заполняется по «уровню голоса», как на панели каналов */
+.settings-nav .nav-item .si-fill {
+  position: absolute; inset: 0; color: var(--accent-cyan); pointer-events: none;
+  clip-path: inset(100% 0 0 0);
+}
+@keyframes si-talk {
+  0% { clip-path: inset(89.6% 0 0 0); } 12% { clip-path: inset(38% 0 0 0); } 24% { clip-path: inset(62% 0 0 0); }
+  38% { clip-path: inset(26% 0 0 0); } 52% { clip-path: inset(58% 0 0 0); } 64% { clip-path: inset(36% 0 0 0); }
+  74% { clip-path: inset(52% 0 0 0); } 100% { clip-path: inset(0 0 0 0); }
+}
+.settings-nav .nav-item[data-ico='mic'] .si > svg:first-child { transition: none; }
+.settings-nav .nav-item[data-ico='mic'][data-press] .si > svg:first-child { color: var(--text-muted); }
+.settings-nav .nav-item[data-ico='mic'][data-press] .si-fill { animation: si-talk 1s cubic-bezier(.4, 0, .6, 1) forwards; }
+/* внешний вид: тёмная половина перекрашивается в светлую и наоборот — заливка «перетекает» слева направо,
+   как при смене темы, и затем так же возвращается. Сверху лежит зеркальная копия иконки (.si-paint). */
+.settings-nav .nav-item .si-paint { position: absolute; inset: 0; pointer-events: none; transform: scaleX(-1); clip-path: inset(0 0 0 100%); }
+@keyframes si-paint-in {
+  0% { clip-path: inset(0 0 0 100%); } 38%, 62% { clip-path: inset(0 0 0 0); } 100% { clip-path: inset(0 100% 0 0); }
+}
+@keyframes si-paint-out {
+  0% { clip-path: inset(0 0 0 0); } 38%, 62% { clip-path: inset(0 0 0 100%); } 62.01% { clip-path: inset(0 100% 0 0); } 100% { clip-path: inset(0 0 0 0); }
+}
+.settings-nav .nav-item[data-ico='appearance'][data-press] .si-paint { animation: si-paint-in .9s cubic-bezier(.6, 0, .3, 1); }
+.settings-nav .nav-item[data-ico='appearance'][data-press] .si > svg:first-child > path { animation: si-paint-out .9s cubic-bezier(.6, 0, .3, 1); }
+/* заблокированные: черта резко прочерчивается, круг дёргается на нас, как щит */
+@keyframes si-strike { 0% { stroke-dashoffset: 17; } 100% { stroke-dashoffset: 0; } }
+.settings-nav .nav-item[data-ico='block'][data-press] .si > svg > path { stroke-dasharray: 17; animation: si-strike .16s cubic-bezier(.5, 0, .2, 1) both; }
+.settings-nav .nav-item[data-ico='block'][data-press] .si > svg { animation-name: si-thrust; animation-delay: .1s; animation-timing-function: cubic-bezier(.2, .9, .3, 1); }
+/* настройки сервера */
+@keyframes si-spin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
+@keyframes si-turn { 0% { transform: none; } 70% { transform: rotate(100deg); } 100% { transform: rotate(90deg); } }
+@keyframes si-tilt { 0%, 100% { transform: none; } 35% { transform: rotate(-10deg) scale(1.1); } 70% { transform: rotate(4deg); } }
+@keyframes si-drop { 0% { transform: translateY(-5px) rotate(-12deg); } 60% { transform: translateY(1px) rotate(3deg); } 100% { transform: none; } }
+@keyframes si-bob { 0%, 100% { transform: none; } 40% { transform: translateY(-3px); } 70% { transform: translateY(1px); } }
+.settings-nav .nav-item[data-ico='settings'][data-press] .si > svg { animation-name: si-spin; animation-duration: .7s; }
+.settings-nav .nav-item[data-ico='chats'][data-press] .si > svg { animation-name: si-tilt; }
+.settings-nav .nav-item[data-ico='pin'][data-press] .si > svg { animation-name: si-drop; }
+.settings-nav .nav-item[data-ico='users'][data-press] .si > svg { animation-name: si-bob; }
+.settings-nav .nav-item[data-ico='plus'][data-press] .si > svg { animation-name: si-turn; }
+.settings-nav .nav-item[data-ico='search'][data-press] .si > svg { animation-name: si-tilt; }
+@keyframes si-slide { 0%, 100% { transform: none; } 45% { transform: translateX(3px); } }
+.settings-nav .nav-item.danger:hover svg { animation: si-slide .45s cubic-bezier(.3, .7, .4, 1); }
+
+/* ===== Закрытие настроек: меню уезжает влево, панель опускается и тает; основной экран затем проявляется ===== */
+@keyframes set-nav-out { to { opacity: 0; transform: translateX(-18px); } }
+@keyframes set-body-out { to { opacity: 0; transform: translateY(10px) scale(.985); } }
+.settings.closing > .settings-nav { animation: set-nav-out .15s cubic-bezier(.4, 0, 1, 1) forwards; }
+.settings.closing > .settings-body { animation: set-body-out .15s cubic-bezier(.4, 0, 1, 1) forwards; }
+.settings.closing { pointer-events: none; }
+@keyframes app-back-in { from { opacity: 0; transform: scale(.99); } to { opacity: 1; transform: none; } }
+.app.from-settings > * { animation: app-back-in .24s cubic-bezier(.2, .8, .2, 1) both; }
+
+/* ===== Профиль: подпись автосохранения вместо кнопки «Сохранить» ===== */
+.profile-form .autosave { text-align: right; color: var(--text-muted); transition: color .2s ease; }
+.profile-form .autosave.on { color: var(--accent-cyan); }
+
+/* смена раздела — содержимое мягко проявляется */
+@keyframes set-sec-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.settings > .settings-body > .settings-head + * { animation: set-sec-in .28s cubic-bezier(.2, .8, .2, 1) both; }
+
+/* ===== Веса: иерархию задают размер и цвет, 600 — только заголовки и инициалы ===== */
+.section-title, .m-section-title, .msg-fwd .fwd-from b, .msg-reply b, .date-pill .sn-nick b, .pin-banner .pb-body b, .msg-replies { font-weight: 500; }
+
+/* ===== Учётная запись: шапка с аватаром и баннером не проявляется заново при переходе просмотр ↔ редактирование ===== */
+/* подраздел «Пароль и безопасность» внутри карточки данных аккаунта; пустое «О себе» — приглушённо */
+.account-data .acc-sub { display: flex; flex-direction: column; gap: 10px; padding-top: 14px; border-top: 1px solid var(--border-subtle); }
+.account-data .v.muted { color: var(--text-muted); }
+.account-data .v.bio { white-space: pre-wrap; overflow-wrap: anywhere; }
+.account-data .upload-actions, .acc-form .upload-actions { display: flex; gap: 8px; flex: none; }
+.acc-form .acc-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.acc-form .acc-input + .acc-row, .acc-form .acc-grid + .acc-input { margin-top: 12px; }
+
+/* ===== Плашка закреплённого: без анимации появления — при каждом входе в чат она не «дёргается» ===== */
+.pin-banner { animation: none; }
+
+/* ===== Поле пароля с «глазком» ===== */
+.pw-wrap { position: relative; display: block; }
+.pw-wrap > .input { width: 100%; padding-right: 44px; }
+.pw-eye {
+  position: absolute; right: 6px; top: 50%; translate: 0 -50%; width: 32px; height: 32px; border: 0; border-radius: 8px;
+  display: grid; place-items: center; background: none; color: var(--text-muted); cursor: pointer; transition: color .15s ease, background-color .15s ease;
+}
+.pw-eye:hover { color: var(--text-primary); background: var(--surface-glass, #ffffff14); }
+
+/* ===== Полный профиль другого пользователя: аватар, имя и кнопки — по центру ===== */
+.pm-avatar { align-self: center; }
+.pm-identity { align-items: center; text-align: center; }
+.pm-identity h2 { max-width: 100%; }
+.pm-actions { justify-content: center; }
+
+/* ===== Учётная запись: карточки «Данные профиля» / «Данные аккаунта» — поля в одну колонку, между ними линии ===== */
+.acc-card { display: grid; gap: 6px; padding: 16px 20px; }
+.acc-card h3 { margin: 0; font-size: 18px; line-height: 23px; font-weight: 600; }
+.acc-list { display: flex; flex-direction: column; }
+.acc-list > * { padding: 14px 0; }
+.acc-list > :first-child { padding-top: 6px; }
+.acc-list > :last-child { padding-bottom: 2px; }
+.acc-list > * + * { border-top: 1px solid var(--border-subtle); }
+html[data-theme='light'] .acc-list > * + * { border-top-color: #0a1a2e14; }
+.acc-list .acc-field .overline { margin-bottom: 4px; }
+.acc-list .acc-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.acc-list .upload-actions { display: flex; gap: 8px; flex: none; }
+.acc-list .acc-input { gap: 8px; }
+/* «О себе»: у многострочного поля свои отступы — текст стоит ровно, как в однострочных полях */
+.acc-input textarea.input.textarea {
+  height: auto; min-height: 96px; padding: 12px 14px; line-height: 1.45; font: inherit; font-size: 14px; resize: vertical;
+}
+/* «Редактировать» — внизу справа, где в редактировании «Отмена» и «Сохранить» */
+.acc-actions-end .btn-primary .icon, .acc-actions-end .btn-primary svg { flex: none; }
+.acc-actions-end .btn { display: inline-flex; align-items: center; gap: 8px; }
+
+/* ===== Просмотр ↔ редактирование: карточки проявляются из размытия, без сдвига ===== */
+@keyframes acc-blur-in { from { opacity: 0; filter: blur(10px); } to { opacity: 1; filter: blur(0); } }
+.acc-list .v.muted { color: var(--text-muted); }
+.acc-list .v.bio { white-space: pre-wrap; overflow-wrap: anywhere; }
+/* подписи полей в редактировании — как в просмотре (overline), чтобы при переключении ничего не «прыгало» */
+.acc-list .acc-input .field-label { font-size: 12px; line-height: 16px; font-weight: 500; color: var(--text-muted); }
+
+/* ===== Смена вкладки настроек: всё содержимое раздела проявляется одинаково (как у других вкладок) =====
+   Просмотр ↔ редактирование учётной записи (.swap): шапка с аватаром стоит, карточки проявляются из размытия. */
+.settings > .settings-body > .settings-head ~ * { animation: set-sec-in .28s cubic-bezier(.2, .8, .2, 1) both; }
+.settings > .settings-body.swap > .settings-head + .account-head { animation: none; }
+.settings > .settings-body.swap > .account-head ~ * { animation: acc-blur-in .32s ease both; }
+
+/* Редактирование: кнопки фото под аватаром — на месте имени */
+.account-head .acc-photo-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 12px; padding: 0 16px; }
+
+/* Просмотр: «О себе» внутри карточки профиля, под именем и юзернеймом */
+.account-head .acc-head-list { align-self: stretch; margin: 12px 20px 0; padding-top: 0; border-top: 1px solid var(--border-subtle); text-align: left; }
+html[data-theme='light'] .account-head .acc-head-list { border-top-color: #0a1a2e14; }
+.account-head .acc-head-list > :first-child { padding-top: 14px; }
+
+/* Учётная запись: три смысловые группы — данные (+ «Редактировать»), пароль и безопасность, удаление — разделены крупным отступом */
+.settings-body > .account-head ~ .acc-actions-end { margin-bottom: 60px; }
+.settings-body > .account-head ~ .account-security { margin-bottom: 60px; }
+
+/* Юзернейм: «@» внутри поля */
+.input-at { position: relative; display: block; }
+.input-at .at { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-weight: 500; pointer-events: none; }
+.input-at .input { padding-left: 28px; width: 100%; }
+
+/* Статус в учётной записи */
+.status-picker { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 12px; padding: 0 16px; }
+.status-chip { display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 14px; border-radius: 999px; border: 1px solid transparent; background: var(--glass-el); box-shadow: var(--glass-el-shadow); color: var(--text-secondary); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; transition: background .15s, color .15s, box-shadow .15s; }
+.status-chip:hover { color: var(--text-primary); background: var(--surface-selected); }
+.status-chip.on { color: var(--text-primary); background: var(--surface-selected); box-shadow: var(--glass-el-shadow), inset 0 0 0 1.5px var(--accent-primary); }
+/* Светлая тема: чёткая тонкая рамка вместо размытого кольца; выбранный — та же рамка, только синяя */
+[data-theme='light'] .status-chip { background: #ffffff38; border-color: #0a1a2e24; box-shadow: inset 0 1px 0 #ffffffb3; }
+[data-theme='light'] .status-chip:hover { background: #ffffff66; border-color: #0a1a2e38; }
+[data-theme='light'] .status-chip.on { background: #ffffff59; border-color: var(--accent-primary); box-shadow: inset 0 1px 0 #ffffffb3, 0 0 0 3px color-mix(in srgb, var(--accent-primary) 14%, transparent); }
+
+/* Точка статуса на аватаре в учётной записи — вырез цвета карточки, как в профиле и меню аккаунта */
+/* Карточка стеклянная — сплошное кольцо цвета фона не совпадает (особенно в светлой теме).
+   Поэтому вырез настоящий: маска прозрачным кольцом вокруг точки, сквозь него видна сама карточка. */
+.settings-body > .account-head .avatar {
+  /* скругление даёт сама маска: с border-radius Chrome обрезал бы по кругу и выступающую точку */
+  border-radius: 0; box-shadow: none;
+  --dot: calc(100% - 13px) calc(100% - 13px);
+  -webkit-mask:
+    radial-gradient(circle at var(--dot), #000 11px, transparent 11.5px, transparent 14px, #000 14.5px),
+    radial-gradient(circle at var(--dot), #000 11px, transparent 11.5px),
+    radial-gradient(circle at 50% 50%, #000 39.5px, transparent 40px);
+  -webkit-mask-composite: source-in, source-over;
+  mask:
+    radial-gradient(circle at var(--dot), #000 11px, transparent 11.5px, transparent 14px, #000 14.5px),
+    radial-gradient(circle at var(--dot), #000 11px, transparent 11.5px),
+    radial-gradient(circle at 50% 50%, #000 39.5px, transparent 40px);
+  mask-composite: intersect, add;
+}
+.settings-body > .account-head .avatar .status-dot { right: 0 !important; bottom: 0 !important; border-color: transparent; background-clip: padding-box; }
+
+/* Точка статуса: при смене статуса сжимается и «выщёлкивается» новым цветом */
+/* точка не уменьшается (иначе в вырезе вокруг неё мелькает пустое кольцо) — новый цвет вспыхивает и точка мягко пульсирует */
+/* без transform и filter: внутри маски аватара они давали артефакт («крест») — только перерисовка тенью:
+   точка вспыхивает светлой и новый цвет «распускается» из центра к краю */
+@keyframes dot-pop { 0% { box-shadow: inset 0 0 0 16px #ffffffb3; } 100% { box-shadow: inset 0 0 0 0 #ffffff00; } }
+.status-dot.dot-pop { animation: dot-pop .75s cubic-bezier(.3, .7, .4, 1) both; }
+
+/* «Редактировать»: карандаш пишет при наведении, как в меню настроек */
+.acc-edit-btn:hover:not(:disabled) svg { animation: si-write .7s ease-in-out; transform-origin: 15% 85%; }
+
+/* Десктопные настройки: без жёлоба прокрутки — шапка и стекло доходят до скруглённого края, без прямого угла справа */
+.settings > .settings-body { scrollbar-width: none; }
+.settings > .settings-body::-webkit-scrollbar { display: none; width: 0; }
+/* «О себе»: поле растёт по тексту — без жёлоба прокрутки и уголка растягивания, края остаются скруглёнными */
+.acc-input textarea.input.textarea { resize: none; field-sizing: content; max-height: 220px; scrollbar-width: none; }
+.acc-input textarea.input.textarea::-webkit-scrollbar { display: none; width: 0; }
+
+/* Телефон: «глазок» пароля крупнее — зона касания 44px, иконка 22px */
+@media (max-width: 767px), (pointer: coarse) {
+  .pw-wrap > .input { padding-right: 52px; }
+  .pw-eye { right: 2px; width: 44px; height: 44px; border-radius: 10px; }
+  .pw-eye svg { width: 22px; height: 22px; }
+}
+
+/* Кнопки статуса: при нажатии кнопка пружинит, а её точка «щёлкает» */
+@keyframes chip-press { 0% { transform: scale(1); } 30% { transform: scale(.93); } 65% { transform: scale(1.03); } 100% { transform: scale(1); } }
+@keyframes chip-dot { 0% { transform: scale(1); } 35% { transform: scale(.4); } 70% { transform: scale(1.35); } 100% { transform: scale(1); } }
+.status-chip[data-press] { animation: chip-press .34s cubic-bezier(.3, .7, .4, 1); }
+.status-chip[data-press] .acct-dot { animation: chip-dot .42s cubic-bezier(.3, .7, .4, 1); }
+
+/* Упоминания в чужих сообщениях — с подчёркиванием */
+.msg:not(.mine) .mention { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; text-decoration-color: color-mix(in srgb, currentColor 50%, transparent); }
+
+/* ===== Телефон: развёрнутая шторка участника = полный профиль, как окно профиля на десктопе ===== */
+.member-card.sheet .mc-full { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.member-card.sheet .mc-full .pm-body { padding: 0 12px calc(16px + env(safe-area-inset-bottom)); }
+.member-card.sheet .mc-full .pm-avatar { box-shadow: 0 0 0 5px var(--bg-elevated); }
+.member-card.sheet .mc-full .pm-actions .mc-btn { height: 44px; flex: 1; justify-content: center; font-size: 14px; }
+.member-card.sheet .mc-full .pm-actions .mc-btn.icon { flex: 0 0 44px; width: 44px; }
+.member-card.sheet .mc-full .mc-info { width: 100%; padding: 2px 14px; }
+/* Карточка → профиль: аватар вырастает из размера карточки (72 → 96), остальное поднимается по очереди */
+.member-card.sheet .mc-full .pm-avatar { animation: mc-ava-grow .36s cubic-bezier(.2, .8, .2, 1) both; transform-origin: 50% 40%; }
+.member-card.sheet .mc-full .pm-body > :not(.pm-avatar) { animation: mc-rise .34s cubic-bezier(.2, .8, .2, 1) both; }
+.member-card.sheet .mc-full .pm-body > :nth-child(2) { animation-delay: .03s; }
+.member-card.sheet .mc-full .pm-body > :nth-child(3) { animation-delay: .07s; }
+.member-card.sheet .mc-full .pm-body > :nth-child(4) { animation-delay: .11s; }
+.member-card.sheet .mc-full .pm-body > :nth-child(5) { animation-delay: .15s; }
+.member-card.sheet .mc-full .pm-body > :nth-child(n+6) { animation-delay: .19s; }
+@keyframes mc-ava-grow { from { transform: translateY(-6px) scale(.75); } }
+@keyframes mc-rise { from { opacity: 0; transform: translateY(14px); } }
+/* Обратно (профиль → карточка): аватар уменьшается из размера профиля (96 → 72), остальное опускается на место по очереди */
+.member-card.sheet .body.from-full .mc-avatar { animation: mc-ava-shrink .36s cubic-bezier(.2, .8, .2, 1) both; transform-origin: 50% 40%; }
+.member-card.sheet .body.from-full > :not(.mc-avatar) { animation: mc-settle .32s cubic-bezier(.2, .8, .2, 1) both; }
+.member-card.sheet .body.from-full > :nth-child(2) { animation-delay: .03s; }
+.member-card.sheet .body.from-full > :nth-child(3) { animation-delay: .06s; }
+.member-card.sheet .body.from-full > :nth-child(n+4) { animation-delay: .09s; }
+@keyframes mc-ava-shrink { from { transform: translateY(6px) scale(1.33); } }
+@keyframes mc-settle { from { opacity: 0; transform: translateY(-12px); } }
+
+/* Язычок шторки виден на любом фоне: светлый с тенью */
+.sheet-grab { background: #fff; box-shadow: 0 0 0 1px #0a1a2e1f, 0 1px 3px #0a1a2e40; }
+[data-theme='light'] .sheet-grab { background: #0a1a2e47; box-shadow: 0 0 0 1px #ffffff99; }
+.member-card.sheet .mc-full { align-self: stretch; width: 100%; }
+.member-card.sheet .mc-full .pm-actions { width: 100%; }
+
+/* Светлая тема, десктопные настройки: вторичные кнопки прозрачные, как на телефоне (на светлой карточке 50% белого выглядело сплошным) */
+html[data-theme='light'] .settings > .settings-body .btn-secondary:not(:focus) { background: #ffffff38; border-color: #0a1a2e24; box-shadow: inset 0 1px 0 #ffffffb3; }
+html[data-theme='light'] .settings > .settings-body .btn-secondary:hover:not(:disabled) { background: #ffffff66; }
+
+/* Профиль: сервер кликабельный, общие серверы раскрываются списком */
+.pm-server { width: 100%; border: 0; background: none; padding: 6px; margin: -6px -6px 2px; width: calc(100% + 12px); border-radius: 12px; font: inherit; color: inherit; text-align: left; cursor: pointer; transition: background .15s; }
+.pm-server:hover { background: var(--surface-glass); }
+.pm-server > span:nth-child(2) { flex: 1; min-width: 0; }
+.pm-server > svg { color: var(--text-muted); flex: none; }
+.pm-shared-wrap { padding: 0 !important; }
+.pm-shared { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; padding: 12px 0; border: 0; background: none; font: inherit; color: inherit; cursor: pointer; text-align: left; }
+.pm-shared:disabled { cursor: default; }
+.pm-shared .mc-over { margin: 0; }
+.pm-shared-icons { display: inline-flex; align-items: center; gap: 4px; }
+.pm-shared-icons > svg { color: var(--text-muted); margin-left: 4px; transition: transform .25s cubic-bezier(.2, .8, .2, 1); }
+.pm-shared-wrap.open .pm-shared-icons > svg { transform: rotate(180deg); }
+.pm-shared-list { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .28s cubic-bezier(.2, .8, .2, 1); }
+.pm-shared-wrap.open .pm-shared-list { grid-template-rows: 1fr; }
+.pm-shared-list > div { min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: 2px; }
+.pm-shared-wrap.open .pm-shared-list > div { padding-bottom: 10px; }
+.pm-shared-list .pm-server { margin: 0 -6px; }
+
+/* Светлая тема: в фокусе у поля ввода снималась маска с кромки — серый градиент заливал всё поле. Кольцо фокуса даёт box-shadow */
+[data-theme='light'] .composer .field:focus-within::after { display: none !important; }
+
+/* ---------- Телефон: смена сервера во вкладке «Серверы» ---------- */
+@keyframes srv-name-in { from { opacity: 0; transform: translateY(10px); filter: blur(3px); } to { opacity: 1; transform: none; filter: none; } }
+@keyframes srv-users-hop {
+  0% { transform: translateY(0) scale(1); }
+  30% { transform: translateY(-6px) scale(1.08); }
+  55% { transform: translateY(0) scale(.94, 1.06); }
+  75% { transform: translateY(-2px) scale(1); }
+  100% { transform: translateY(0) scale(1); }
+}
+@keyframes srv-ch-in { from { opacity: 0; transform: translateX(-14px); } to { opacity: 1; transform: none; } }
+.m-app .sidebar.srv-switch .srv-name > span { display: inline-block; animation: srv-name-in .32s cubic-bezier(.2,.8,.2,1) both; }
+.m-app .sidebar.srv-switch .srv-members svg { animation: srv-users-hop .55s cubic-bezier(.3,.7,.3,1) both; }
+.m-app .sidebar.srv-switch .srv-channels > * { animation: srv-ch-in .34s cubic-bezier(.2,.8,.2,1) both; }
+.m-app .sidebar.srv-switch .srv-channels > :nth-child(2) { animation-delay: 30ms; }
+.m-app .sidebar.srv-switch .srv-channels > :nth-child(3) { animation-delay: 60ms; }
+.m-app .sidebar.srv-switch .srv-channels > :nth-child(4) { animation-delay: 90ms; }
+.m-app .sidebar.srv-switch .srv-channels > :nth-child(5) { animation-delay: 120ms; }
+.m-app .sidebar.srv-switch .srv-channels > :nth-child(6) { animation-delay: 150ms; }
+.m-app .sidebar.srv-switch .srv-channels > :nth-child(7) { animation-delay: 180ms; }
+.m-app .sidebar.srv-switch .srv-channels > :nth-child(n+8) { animation-delay: 210ms; }
+
+/* ---------- Таб-панель: упругий пузырь (движение — useJellyTabs в Mobile.tsx) ---------- */
+.tabbar { overflow: visible; touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.tabbar .tab-glider { transition: background-color .2s ease, box-shadow .2s ease; will-change: transform; transform-origin: center; }
+.tabbar[data-drag] .tab-glider { background: #ffffff2e; box-shadow: 0 6px 18px #00000040, inset 0 0 0 1px #ffffff1f; }
+[data-theme='light'] .tabbar[data-drag] .tab-glider { background: var(--surface-selected); box-shadow: 0 6px 16px #0a1a2e24, inset 0 0 0 1px #ffffff80; }
+.tabbar .tab { -webkit-tap-highlight-color: transparent; }
+/* Перетаскивание пузыря: цвет активной вкладки переходит к той, над которой пузырь сейчас */
+.tabbar[data-drag] .tab.on:not([data-peek]) { color: var(--text-muted); font-weight: 400; }
+.tabbar[data-drag] .tab.on:not([data-peek]) .tab-ico .ico-oreol { color: inherit; }
+.tabbar[data-drag] .tab[data-peek] { color: var(--accent-cyan-text); font-weight: 600; }
+.tabbar[data-drag] .tab[data-peek] .tab-ico .ico-oreol { color: var(--accent-cyan); }

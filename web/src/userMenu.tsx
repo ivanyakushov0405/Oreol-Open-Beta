@@ -7,15 +7,16 @@ import { getPeerVolume, setPeerVolume, subscribePeerVolume } from './peerVolume'
 import type { AppState } from './App';
 
 /* ---------- Открыть меню можно откуда угодно: openUserMenu(имя, x, y) ---------- */
-type Open = { name: string; x: number; y: number } | null;
+type Open = { name: string; x: number; y: number; mentionOnly?: boolean } | null;
 let state: Open = null;
 const subs = new Set<() => void>();
 const set = (v: Open) => {
   state = v;
   subs.forEach((f) => f());
 };
-export function openUserMenu(name: string, x: number, y: number) {
-  set({ name, x, y });
+/** mentionOnly — короткое меню (только «Упомянуть»): кнопка «…» в полном профиле. */
+export function openUserMenu(name: string, x: number, y: number, mentionOnly?: boolean) {
+  set({ name, x, y, mentionOnly });
 }
 /** Обработчик ПКМ для элемента с пользователем. */
 export const userMenuProps = (name: string) => ({
@@ -26,7 +27,7 @@ export const userMenuProps = (name: string) => ({
   },
 });
 
-/** Меню пользователя по ПКМ: громкость, упомянуть, написать, добавить в друзья. Ставится один раз в корне приложения. */
+/** Меню пользователя по ПКМ: громкость, упомянуть, написать. Ставится один раз в корне приложения. */
 export function UserMenuHost({ app }: { app: AppState }) {
   const open = useSyncExternalStore(
     (f) => (subs.add(f), () => void subs.delete(f)),
@@ -36,7 +37,21 @@ export function UserMenuHost({ app }: { app: AppState }) {
   return <UserMenu app={app} {...open} onClose={() => set(null)} />;
 }
 
-function UserMenu({ app, name, x, y, onClose }: { app: AppState; name: string; x: number; y: number; onClose: () => void }) {
+function UserMenu({
+  app,
+  name,
+  x,
+  y,
+  mentionOnly,
+  onClose,
+}: {
+  app: AppState;
+  name: string;
+  x: number;
+  y: number;
+  mentionOnly?: boolean;
+  onClose: () => void;
+}) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ left: x, top: y, origin: 'top left' });
   const self = name === app.name;
@@ -73,6 +88,10 @@ function UserMenu({ app, name, x, y, onClose }: { app: AppState; name: string; x
     <>
       <div className="msg-menu-backdrop" onClick={onClose} onContextMenu={(e) => (e.preventDefault(), onClose())} />
       <div ref={ref} className="msg-menu user-menu" role="menu" style={{ left: pos.left, top: pos.top, transformOrigin: pos.origin }}>
+        {mentionOnly ? (
+          item('at', 'Упомянуть', () => window.dispatchEvent(new CustomEvent(MENTION_EVENT, { detail: name })))
+        ) : (
+        <>
         <div className="um-head">
           <Avatar name={name} size={32} />
           <span className="um-who">
@@ -101,9 +120,10 @@ function UserMenu({ app, name, x, y, onClose }: { app: AppState; name: string; x
           </label>
         )}
         {!self && item('at', 'Упомянуть', () => window.dispatchEvent(new CustomEvent(MENTION_EVENT, { detail: name })))}
-        {!self && item('chats', 'Написать сообщение', () => app.notify('Личные сообщения появятся позже'))}
-        {!self && item('user-plus', 'Добавить в друзья', () => app.notify('Друзья появятся позже'))}
+        {!self && item('chats', 'Написать сообщение', () => app.notify('Личные сообщения — скоро будут'))}
         {self && item('copy', 'Копировать юзернейм', () => void navigator.clipboard?.writeText(handleOf(name)))}
+        </>
+        )}
       </div>
     </>,
     document.body,

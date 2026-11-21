@@ -1,4 +1,4 @@
-import { openProfile, EDIT_PROFILE_EVENT } from './profile';
+import { openProfile, EDIT_PROFILE_EVENT, ProfileDetails, setProfileOpener } from './profile';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { AppState } from './App';
 import { Icon, StrikeIcon, type IconName } from './icons';
@@ -6,7 +6,7 @@ import { useMicLevel } from './micLevel';
 import { handleOf, type Channel, type ServerId } from './mock';
 import { STATUS_LABEL } from './Desktop';
 import { SERVER_NAV, ServerSettingsBody, isServerSection, isUserSection, USER_NAV, UserSettingsBody, userSectionTitle, type ServerSection, type UserSection } from './Settings';
-import { Avatar, Banner, BannerTop, MemberCard, MemberRow, TypingLine } from './ui';
+import { Avatar, Banner, BannerTop, MENTION_EVENT, MemberCard, MemberRow, TypingLine } from './ui';
 import { parseRoute, paths, useUrlSync } from './router';
 import { ChannelList, ChatBody, PinnedButton, QUALITY_TITLE, Rail, STATUS_ITEMS, SignalIcon, VoiceStage, pingClass, useElapsed, UnreadBadge, chatUnread } from './views';
 
@@ -26,7 +26,7 @@ const TABS: { id: Tab; label: string; icon: IconName }[] = [
 /** Функции текстового канала в меню «Ещё» (как кнопки в шапке канала на десктопе). */
 const CHAT_MENU: { icon: IconName; label: string; soon?: string }[] = [
   { icon: 'pin', label: 'Закреплённые' },
-  { icon: 'bell', label: 'Уведомления', soon: 'Настройка уведомлений появится позже' },
+  { icon: 'bell', label: 'Уведомления', soon: 'Настройка уведомлений — скоро будет' },
   { icon: 'copy', label: 'Копировать название' },
 ];
 
@@ -342,6 +342,173 @@ function useTabShadeClip(stage: React.RefObject<HTMLDivElement>) {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 }
 
+/** Подсветка вкладки — упругий «пузырь»: едет к выбранной вкладке на пружине, тянется по ходу движения,
+ *  набухает при нажатии, его можно зажать и перетащить пальцем — отпустишь, и он встанет на ближайшую вкладку. */
+function useJellyTabs(
+  nav: React.RefObject<HTMLElement>,
+  glider: React.RefObject<HTMLElement>,
+  index: number,
+  count: number,
+  onPick: (i: number) => void,
+) {
+  const st = useRef({ x: 0, v: 0, target: 0, p: 0, pv: 0, pTarget: 0, drag: false, finger: 0, grab: 0, raf: 0, last: 0, ready: false, startX: 0, id: -1, moved: false, eat: false });
+  const pickRef = useRef(onPick);
+  pickRef.current = onPick;
+  const width = () => (nav.current ? nav.current.clientWidth / count : 0);
+
+  const paint = () => {
+    const g = glider.current;
+    if (!g) return;
+    const s = st.current;
+    const k = Math.max(-1, Math.min(1, s.v / 2600));
+    const sx = 1 + Math.abs(k) * 0.32 + s.p * 0.1;
+    const sy = 1 - Math.abs(k) * 0.2 + s.p * 0.06;
+    // пузырь (вместе с растяжением) никогда не выходит за края панели
+    const w = width();
+    const ext = (w * (sx - 1)) / 2;
+    const x = Math.min(w * (count - 1) - ext, Math.max(ext, s.x));
+    g.style.transform = `translateX(${x}px) scale(${sx}, ${sy})`;
+    // пока тащим — подсвечиваем вкладку, над которой сейчас пузырь
+    const tabs = nav.current?.querySelectorAll<HTMLElement>(':scope > .tab');
+    if (tabs) {
+      const peek = s.drag && w ? Math.max(0, Math.min(count - 1, Math.round(x / w))) : -1;
+      tabs.forEach((t, i) => {
+        if (i === peek) t.dataset.peek = '';
+        else delete t.dataset.peek;
+      });
+    }
+  };
+  const tick = (t: number) => {
+    const s = st.current;
+    const dt = Math.min(0.032, s.last ? (t - s.last) / 1000 : 0.016);
+    s.last = t;
+    const w = width();
+    const max = w * (count - 1);
+    if (s.drag) {
+      // за пальцем — с лёгкой пружинкой, но не дальше крайних вкладок
+      const want = s.finger - s.grab - w / 2;
+      s.target = Math.max(0, Math.min(max, want));
+    }
+    const kx = s.drag ? 900 : 380;
+    const cx = s.drag ? 52 : 24;
+    s.v += (kx * (s.target - s.x) - cx * s.v) * dt;
+    s.x += s.v * dt;
+    s.pv += (520 * (s.pTarget - s.p) - 18 * s.pv) * dt;
+    s.p += s.pv * dt;
+    paint();
+    const still = Math.abs(s.target - s.x) < 0.3 && Math.abs(s.v) < 4 && Math.abs(s.pTarget - s.p) < 0.002 && Math.abs(s.pv) < 0.01;
+    if (still && !s.drag) {
+      s.x = s.target;
+      s.v = 0;
+      s.p = s.pTarget;
+      s.pv = 0;
+      s.raf = 0;
+      s.last = 0;
+      paint();
+      return;
+    }
+    s.raf = requestAnimationFrame(tick);
+  };
+  const kick = () => {
+    if (!st.current.raf) st.current.raf = requestAnimationFrame(tick);
+  };
+
+  // вкладка сменилась (касанием, перетаскиванием или из кода) — пузырь едет к ней
+  useLayoutEffect(() => {
+    const s = st.current;
+    s.target = index * width();
+    if (!s.ready) {
+      s.ready = true;
+      s.x = s.target;
+      paint();
+      return;
+    }
+    kick();
+  }, [index]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const el = nav.current;
+    if (!el) return;
+    const s = st.current;
+    const ro = new ResizeObserver(() => {
+      if (s.drag) return;
+      s.target = s.x = index * width();
+      paint();
+    });
+    ro.observe(el);
+    const local = (e: PointerEvent) => e.clientX - el.getBoundingClientRect().left;
+    const down = (e: PointerEvent) => {
+      if (e.button !== 0 || s.id !== -1) return;
+      s.id = e.pointerId;
+      s.startX = e.clientX;
+      s.moved = false;
+      s.finger = local(e);
+      const w = width();
+      // зажали сам пузырь — держим его за то место, где взяли; иначе пузырь подъедет под палец
+      const onBubble = s.finger >= s.x && s.finger <= s.x + w;
+      s.grab = onBubble ? s.finger - (s.x + w / 2) : 0;
+      s.pTarget = onBubble ? 1 : 0.45;
+      kick();
+    };
+    const move = (e: PointerEvent) => {
+      if (e.pointerId !== s.id) return;
+      s.finger = local(e);
+      if (!s.moved && Math.abs(e.clientX - s.startX) > 6) {
+        s.moved = true;
+        s.drag = true;
+        s.pTarget = 1;
+        el.dataset.drag = '';
+        try {
+          el.setPointerCapture(e.pointerId);
+        } catch {
+          /* указатель уже отпущен */
+        }
+      }
+      if (s.drag) kick();
+    };
+    const up = (e: PointerEvent) => {
+      if (e.pointerId !== s.id) return;
+      s.id = -1;
+      s.pTarget = 0;
+      if (s.drag) {
+        s.drag = false;
+        delete el.dataset.drag;
+        paint();
+        s.eat = true; // клик после перетаскивания не должен выбрать вкладку под пальцем
+        const w = width();
+        // куда «бросили» пузырь: положение под пальцем плюс немного по инерции
+        const flick = s.finger - s.grab - w / 2 + s.v * 0.08;
+        const i = Math.max(0, Math.min(count - 1, Math.round(flick / w)));
+        s.target = i * w;
+        if (i !== index) pickRef.current(i);
+      }
+      kick();
+    };
+    const click = (e: MouseEvent) => {
+      if (s.eat) {
+        s.eat = false;
+        e.stopPropagation();
+        e.preventDefault();
+      }
+    };
+    el.addEventListener('pointerdown', down);
+    el.addEventListener('pointermove', move);
+    el.addEventListener('pointerup', up);
+    el.addEventListener('pointercancel', up);
+    el.addEventListener('click', click, true);
+    return () => {
+      ro.disconnect();
+      el.removeEventListener('pointerdown', down);
+      el.removeEventListener('pointermove', move);
+      el.removeEventListener('pointerup', up);
+      el.removeEventListener('pointercancel', up);
+      el.removeEventListener('click', click, true);
+    };
+  }, [index, count]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => () => cancelAnimationFrame(st.current.raf), []);
+}
+
 export function Mobile({ app }: { app: AppState }) {
   const stageRef = useRef<HTMLDivElement>(null);
   useTabShadeClip(stageRef);
@@ -357,6 +524,9 @@ export function Mobile({ app }: { app: AppState }) {
     }
     setTab(t);
   };
+  const navRef = useRef<HTMLElement>(null);
+  const gliderRef = useRef<HTMLSpanElement>(null);
+  useJellyTabs(navRef, gliderRef, TABS.findIndex((t) => t.id === tab), TABS.length, (i) => pickTab(TABS[i].id));
   const [open, setOpen] = useState<Channel | null>(null);
   const [voiceChat, setVoiceChat] = useState(false);
   const [settings, setSettings] = useState<UserSection | null>(null);
@@ -374,6 +544,24 @@ export function Mobile({ app }: { app: AppState }) {
   const [serverHome, setServerHome] = useState(false);
   const [serverSection, setServerSection] = useState<ServerSection | null>(null);
   const [card, setCard] = useState<string | null>(null);
+  // Смена сервера во вкладке «Серверы»: анимируем название, кнопку участников и каналы (не при первом показе вкладки)
+  const lastSrv = useRef(app.server.id);
+  const srvSwitch = useRef(false);
+  if (lastSrv.current !== app.server.id) {
+    lastSrv.current = app.server.id;
+    srvSwitch.current = true;
+  }
+  if (tab !== 'servers') srvSwitch.current = false;
+  // Профиль из чата, упоминаний и т.п. открывается той же шторкой, что и из списка участников
+  useEffect(() => {
+    setProfileOpener((name) => setCard(name));
+    const close = () => setCard(null);
+    window.addEventListener(MENTION_EVENT, close);
+    return () => {
+      setProfileOpener(null);
+      window.removeEventListener(MENTION_EVENT, close);
+    };
+  }, []);
   const online = app.membersOnline;
   const elapsed = useElapsed(app.voice.startedAt);
   /** Какой экран сейчас уезжает вправо (по «Назад»). */
@@ -615,17 +803,18 @@ export function Mobile({ app }: { app: AppState }) {
         <div className={'m-servers' + underMain}>
           <div className="m-servers-row">
           <Rail app={app} home={false} noHome onHome={() => setTab('chats')} onServer={(id: ServerId) => app.setServerId(id)} />
-          <aside className="sidebar glass">
+          <aside className={'sidebar glass' + (srvSwitch.current ? ' srv-switch' : '')}>
             <div className="sidebar-head">
               <button className="grow srv-name" title="Настройки сервера" onClick={() => setServerHome(true)}>
-                <span>{app.server.name}</span>
+                <span key={app.server.id}>{app.server.name}</span>
                 <Icon name="chevron-down" size={18} />
               </button>
-              <button className="icon-btn" title="Участники" aria-label="Участники" onClick={() => setMembers(true)}>
-                <Icon name="users" />
+              <button className="icon-btn srv-members" title="Участники" aria-label="Участники" onClick={() => setMembers(true)}>
+                <Icon key={app.server.id} name="users" />
               </button>
             </div>
             <div className="sidebar-scroll">
+              <div key={app.server.id} className="srv-channels">
               <ChannelList
                 app={app}
                 active={null}
@@ -634,6 +823,7 @@ export function Mobile({ app }: { app: AppState }) {
                   if (c.kind === 'voice') app.joinVoice();
                 }}
               />
+              </div>
             </div>
           </aside>
           </div>
@@ -673,18 +863,8 @@ export function Mobile({ app }: { app: AppState }) {
               </button>
             ))}
           </div>
-          {/* Профиль (Figma «Mobile · You»): статус, друзья, профиль; настройки — отдельным экраном */}
+          {/* Профиль (Figma «Mobile · You»): статус, профиль; настройки — отдельным экраном */}
           <div className="m-list glass">
-            <button className="m-item" onClick={() => app.notify('Друзья появятся с полноценным бэкендом')}>
-              <Icon name="users" />
-              <span className="grow">Друзья</span>
-              <Icon name="chevron-right" size={18} />
-            </button>
-            <button className="m-item" onClick={() => app.notify('Запросы в друзья появятся с полноценным бэкендом')}>
-              <Icon name="plus" />
-              <span className="grow">Запросы в друзья</span>
-              <Icon name="chevron-right" size={18} />
-            </button>
             <button className="m-item" onClick={() => setSettings('account-edit')}>
               <Icon name="pencil" />
               <span className="grow">Редактировать профиль</span>
@@ -711,9 +891,9 @@ export function Mobile({ app }: { app: AppState }) {
       )}
 
       {!covered && (
-      <nav className={'tabbar glass' + underMain}>
-        {/* Подсветка активной вкладки — одна на всю панель, плавно переезжает к выбранной */}
-        <span className="tab-glider" style={{ transform: `translateX(${TABS.findIndex((t) => t.id === tab) * 100}%)` }} aria-hidden="true" />
+      <nav ref={navRef} className={'tabbar glass' + underMain}>
+        {/* Подсветка активной вкладки — одна на всю панель, упругий пузырь (см. useJellyTabs) */}
+        <span ref={gliderRef} className="tab-glider" aria-hidden="true" />
         {TABS.map((t) => (
           <button key={t.id} className={'tab' + (tab === t.id ? ' on' : '') + (hop === t.id ? ' hop' : '')} onClick={() => pickTab(t.id)}>
             <span className="tab-ico">
@@ -737,7 +917,7 @@ export function Mobile({ app }: { app: AppState }) {
             onBack={() => close('chat', () => setOpen(null))}
             actions={
               <>
-                <button className="icon-btn" title="Поиск" aria-label="Поиск" onClick={() => app.notify('Поиск по каналу появится позже')}>
+                <button className="icon-btn" title="Поиск" aria-label="Поиск" onClick={() => app.notify('Поиск по каналу — скоро будет')}>
                   <Icon name="search" />
                 </button>
                 <button className={'icon-btn' + (chatMenu ? ' active' : '')} title="Ещё" aria-label="Ещё" aria-expanded={chatMenu} onClick={() => setChatMenu((v) => !v)}>
@@ -865,9 +1045,10 @@ export function Mobile({ app }: { app: AppState }) {
 
       {card && (
         <MemberCard
+          key={card}
           sheet
           serverIcon={{ short: app.server.short, gradient: app.server.gradient }}
-          onCall={() => app.notify('Личные звонки появятся с полноценным бэкендом')}
+          onCall={() => app.notify('Личные звонки — скоро будут')}
           name={card}
           me={card === app.name}
           at={{ x: 0, y: 0 }}
@@ -876,6 +1057,7 @@ export function Mobile({ app }: { app: AppState }) {
           serverName={app.server.name}
           since={cardMember?.joinedAt ? new Date(cardMember.joinedAt) : new Date()}
           onClose={() => setCard(null)}
+          full={<ProfileDetails app={app} name={card} onClose={() => setCard(null)} />}
           onProfile={() => {
             const mine = card === app.name;
             setCard(null);
@@ -898,7 +1080,7 @@ export function Mobile({ app }: { app: AppState }) {
             </div>
             <div className="overline m-group-title">Настройки пользователя</div>
             <div className="m-list glass">
-              {USER_NAV.slice(0, 4).map((n) => (
+              {USER_NAV.slice(0, USER_NAV.findIndex((x) => x.group)).map((n) => (
                 <button key={n.id} className="m-item" onClick={() => setSettings(n.id)}>
                   <Icon name={n.icon} />
                   <span className="grow">{n.label}</span>
@@ -908,7 +1090,7 @@ export function Mobile({ app }: { app: AppState }) {
             </div>
             <div className="overline m-group-title">Приложение</div>
             <div className="m-list glass">
-              {USER_NAV.slice(4).map((n) => (
+              {USER_NAV.slice(USER_NAV.findIndex((x) => x.group)).map((n) => (
                 <button key={n.id} className="m-item" onClick={() => setSettings(n.id)}>
                   <Icon name={n.icon} />
                   <span className="grow">{n.label}</span>
