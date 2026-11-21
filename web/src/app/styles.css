@@ -4748,3 +4748,13 @@ html[data-theme='light'] .settings > .settings-body .btn-secondary:hover:not(:di
 .pb-body, .info, .msg-reply { gap: 2px; }
 .bubble .meta, .msg.mine .bubble .meta, .fwd-title, .msg-fwd, .msg-replies { gap: 4px; }
 .date-pill.sys-note { padding: 4px 12px; gap: 4px; }
+.msg-reply { padding: 4px 12px; }
+
+/* ===== «Личные сообщения» на десктопе — прозрачная кнопка: без заливки, размытия и тени, видна по кромке ===== */
+.app .rail-home, [data-theme='light'] .app .rail-home {
+  background: transparent !important; box-shadow: none !important;
+  backdrop-filter: none !important; -webkit-backdrop-filter: none !important;
+}
+.app .rail-home:hover, [data-theme='light'] .app .rail-home:hover { background: var(--glass-el-hover) !important; }
+.app .rail-home.on, .app .rail-home.on:hover,
+[data-theme='light'] .app .rail-home.on, [data-theme='light'] .app .rail-home.on:hover { box-shadow: 0 0 0 2px var(--accent-cyan) !important; }
