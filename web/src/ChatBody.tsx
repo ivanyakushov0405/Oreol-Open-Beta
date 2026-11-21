@@ -1,3 +1,4 @@
+import { useOpenChat } from './notifications';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type { AppState } from './App';
@@ -115,6 +116,7 @@ export function ChatBody({ app, chat, channel, compact }: { app: AppState; chat:
   const cls = 'chat' + (app.glassChat ? ' transparent' : '');
   const title = channel.kind === 'voice' ? `чат «${channel.name}»` : `#${channel.name}`;
   const me = app.name;
+  useOpenChat(channel.room);
 
   const [menu, setMenu] = useState<{ m: ChatMessage; x: number; y: number } | null>(null);
   const [reply, setReply] = useState<ChatMessage | null>(null);
@@ -283,6 +285,15 @@ export function ChatBody({ app, chat, channel, compact }: { app: AppState; chat:
   }, [lastId, chat.markRead]); // eslint-disable-line react-hooks/exhaustive-deps
   // Свои сообщения прочитаны, если кто-то другой дочитал до них
   const readUpTo = Object.entries(chat.reads).reduce((acc, [u, id]) => (u !== me && id > acc ? id : acc), 0);
+  // Линия «Новое»: что было прочитано в момент открытия чата (фиксируем один раз, когда пришла история)
+  // Считаем прямо при отрисовке (а не эффектом после неё): иначе лента сначала рисовалась без линии,
+  // а через кадр линия вставлялась и всё под ней дёргалось вниз.
+  const [mark, setMark] = useState<{ room: string; id: number } | null>(null);
+  let newAfter = mark?.room === channel.room ? mark.id : 0;
+  if (mark?.room !== channel.room && chat.room === channel.room) {
+    newAfter = chat.myRead;
+    setMark({ room: channel.room, id: chat.myRead });
+  }
 
   // Плашка закрепа под шапкой: последний закреп не ниже текущего места в ленте
   const rootRef = useRef<HTMLDivElement>(null);
@@ -380,6 +391,7 @@ export function ChatBody({ app, chat, channel, compact }: { app: AppState; chat:
         onJump={jump}
         focus={focus}
         readUpTo={readUpTo}
+        newAfter={pinnedView ? 0 : newAfter}
         onView={setViewPin}
       />
       {selected ? (

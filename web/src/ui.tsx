@@ -3,7 +3,9 @@ import { createPortal } from 'react-dom';
 import type { Track } from 'livekit-client';
 import { Icon, type IconName } from './icons';
 import { avatarGradient, handleOf, initials, nameColor, type ChatMessage, type Status } from './mock';
-import { useUser } from './auth';
+import { useUser, userByTag } from './auth';
+import { openProfile } from './profile';
+import { userMenuProps } from './userMenu';
 
 /** Диаметр точки статуса из компонента Avatar в Figma: XS22/S28→8, M34→10, L38→11, XL48→13, 2XL80→22. */
 function dotStyle(size: number): CSSProperties {
@@ -42,7 +44,7 @@ export function Avatar({
   );
 }
 
-/** Фон профиля: загруженная картинка или фирменный градиент. */
+/** Фон профиля: загруженная картинка; без неё — пусто. */
 export function Banner({ name, ...rest }: { name: string } & React.HTMLAttributes<HTMLDivElement>) {
   const img = useUser(name)?.banner;
   return <div className={'banner' + (img ? ' has-img' : '')} style={img ? { backgroundImage: `url("${img}")` } : undefined} {...rest} />;
@@ -147,9 +149,52 @@ export interface MessageActions {
   onView?: (pinId: number) => void;
   /** Свои сообщения с id ≤ этого прочитаны кем-то из собеседников (две галочки). */
   readUpTo?: number;
+  /** Линия «Новое» — перед первым чужим сообщением с id больше этого (что было прочитано при открытии чата). */
+  newAfter?: number;
 }
 
+/** Событие «упомянуть пользователя» (detail: имя) — поле ввода вставляет его @юзернейм. */
+export const MENTION_EVENT = 'oreol:mention';
+
 const LONG_PRESS_MS = 420;
+
+/** @юзернейм в тексте сообщения. */
+// латиница и кириллица; точка в конце («@ivan.») к упоминанию не относится
+const MENTION_RE = /(^|[^\p{L}\p{N}_.@])(@[\p{L}\p{N}_](?:[\p{L}\p{N}._]*[\p{L}\p{N}_])?)/giu;
+export function mentionsMe(text: string, myTag: string) {
+  for (const m of text.matchAll(MENTION_RE)) if (m[2].toLowerCase() === myTag) return true;
+  return false;
+}
+/** Текст с подсвеченными упоминаниями (циановые; своё — с подложкой). */
+function withMentions(text: string, myTag: string): ReactNode {
+  const out: ReactNode[] = [];
+  let last = 0;
+  for (const m of text.matchAll(MENTION_RE)) {
+    const start = (m.index ?? 0) + m[1].length;
+    if (start > last) out.push(text.slice(last, start));
+    const tag = m[2];
+    out.push(
+      <span
+        key={start}
+        className={'mention' + (tag.toLowerCase() === myTag ? ' me' : '')}
+        role="button"
+        tabIndex={0}
+        onClick={(e) => {
+          const u = userByTag(tag, handleOf);
+          if (!u) return;
+          e.stopPropagation();
+          openProfile(u.username);
+        }}
+      >
+        {tag}
+      </span>,
+    );
+    last = start + tag.length;
+  }
+  if (!out.length) return text;
+  if (last < text.length) out.push(text.slice(last));
+  return out;
+}
 
 export function MessageList({
   messages,
@@ -162,10 +207,60 @@ export function MessageList({
   onJump,
   focus,
   readUpTo = 0,
+  newAfter = 0,
   onView,
 }: { messages: ChatMessage[]; me: string; empty: ReactNode } & MessageActions) {
   const ref = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
+  // «Запас» сверху ленты: в самом начале истории можно долистать дальше — первое сообщение
+  // останавливается ближе к середине экрана. Появляется, только когда лента не помещается в экран.
+  const head = useRef<HTMLDivElement>(null);
+  const rest = (el: HTMLElement) => Math.max(0, el.scrollHeight - el.clientHeight);
+  // Градиент своих сообщений — один на всё окно чата: каждому облачку сообщаем, где оно в окне (--by, --bh),
+  // а окну — его высоту (--vh). Раньше это делал background-attachment: fixed, но пока экран выезжал (transform),
+  // fixed переставал работать и градиент на миг становился у каждого облачка своим — мигал.
+  const gradRaf = useRef(0);
+  const paintGrad = (now = false) => {
+    if (now) {
+      cancelAnimationFrame(gradRaf.current);
+      gradRaf.current = 0;
+      paintNow();
+      return;
+    }
+    if (gradRaf.current) return;
+    gradRaf.current = requestAnimationFrame(() => {
+      gradRaf.current = 0;
+      paintNow();
+    });
+  };
+  /** Градиент своих облачков и их хвостиков — по положению в окне чата (сразу, до отрисовки кадра). */
+  const paintNow = () => {
+    {
+      const el = ref.current;
+      if (!el) return;
+      const top = el.getBoundingClientRect().top;
+      const h = el.clientHeight;
+      el.style.setProperty('--vh', h + 'px');
+      el.querySelectorAll<HTMLElement>('.msg.mine .bubble').forEach((b) => {
+        // у всех своих облачков, а не только у видимых: иначе у облачка без значений хвостик оставался пустым
+        const r = b.getBoundingClientRect();
+        b.style.setProperty('--by', String(Math.round(r.top - top)));
+        b.style.setProperty('--bh', String(Math.round(r.height)));
+      });
+    }
+  };
+  useEffect(() => () => cancelAnimationFrame(gradRaf.current), []);
+  const sizeHead = (el: HTMLElement) => {
+    const t = head.current;
+    if (!t) return;
+    const cur = t.offsetHeight;
+    const overflow = el.scrollHeight - cur > el.clientHeight + 1;
+    const h = overflow ? Math.round(el.clientHeight * 0.4) : 0;
+    if (h === cur) return;
+    // высота запаса меняется — сохраняем то, что сейчас на экране (если не прилипли к низу)
+    t.style.height = h + 'px';
+    if (!stick.current) el.scrollTop += h - cur;
+  };
   const press = useRef<{ t: number; x: number; y: number } | null>(null);
   // Кнопка «вниз»: появляется, когда ушли от низа ленты; на ней — сколько новых сообщений пришло, пока смотрели выше
   const [away, setAway] = useState(false);
@@ -178,7 +273,7 @@ export function MessageList({
     if (!el) return;
     stick.current = true;
     setUnread(0);
-    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+    el.scrollTo({ top: rest(el), behavior: 'smooth' });
   };
 
   // «Линия чтения»: обычно сразу под плашкой закрепа, но к концам ленты нелинейно уходит к краям —
@@ -198,7 +293,7 @@ export function MessageList({
       const bottom = box.bottom - parseFloat(cs.paddingBottom || '0');
       // Линия — по нижнему краю плашки и ниже не опускается; только на последнем экране прокрутки
       // она плавно уходит к краю ленты (вверху — к верхнему, внизу — к нижнему)
-      const max = el.scrollHeight - el.clientHeight;
+      const max = rest(el);
       const h = Math.max(bottom - top, 1);
       let limit = top;
       if (max <= 1) limit = bottom;
@@ -235,8 +330,10 @@ export function MessageList({
       if (fresh) setUnread((n) => n + fresh);
     }
     lastSeen.current = Math.max(lastSeen.current, last);
-    if (el && stick.current) el.scrollTop = el.scrollHeight;
+    if (el) sizeHead(el);
+    if (el && stick.current) el.scrollTop = rest(el);
     report();
+    paintGrad(true);
   }, [messages]); // eslint-disable-line react-hooks/exhaustive-deps
   // Высота поля ввода (--composer-h) приходит после первой отрисовки и меняет отступ снизу —
   // без этого последние сообщения оставались под полем ввода, лента «начиналась не снизу».
@@ -244,8 +341,10 @@ export function MessageList({
     const el = ref.current;
     if (!el) return;
     const pin = () => {
-      if (stick.current) el.scrollTop = el.scrollHeight;
+      sizeHead(el);
+      if (stick.current) el.scrollTop = rest(el);
       report();
+      paintGrad(true);
     };
     const ro = new ResizeObserver(pin);
     ro.observe(el);
@@ -282,8 +381,10 @@ export function MessageList({
     press.current = null;
   };
 
+  const myTag = handleOf(me);
   const items: ReactNode[] = [];
   let lastDay = '';
+  let newPlaced = false;
   /** ПКМ и долгое нажатие на сообщение — меню. */
   const pressProps = (m: ChatMessage) => ({
     onContextMenu: (e: React.MouseEvent) => {
@@ -321,6 +422,14 @@ export function MessageList({
       items.push(
         <div className="date-pill" key={'d' + day}>
           {dayLabel(d)}
+        </div>,
+      );
+    }
+    if (newAfter > 0 && !newPlaced && !m.sys && m.user !== me && Number(m.id) > newAfter) {
+      newPlaced = true;
+      items.push(
+        <div className="new-line" key="new-line" role="separator" aria-label="Новые сообщения">
+          <span>Новое</span>
         </div>,
       );
     }
@@ -369,7 +478,7 @@ export function MessageList({
     ) : null;
     items.push(
       <div
-        className={'msg' + (mine ? ' mine' : '') + (selecting ? ' selecting' : '') + (isSel ? ' selected' : '')}
+        className={'msg' + (mine ? ' mine' : '') + (selecting ? ' selecting' : '') + (isSel ? ' selected' : '') + (!mine && mentionsMe(m.content, myTag) ? ' mention-me' : '')}
         key={m.id}
         data-mid={m.id}
         data-pin={m.pinned ? '' : undefined}
@@ -379,11 +488,19 @@ export function MessageList({
         }}
       >
         {selecting && <span className={'msg-check' + (isSel ? ' on' : '')}>{isSel && <Icon name="check" size={14} />}</span>}
-        {!mine && <Avatar name={m.user} size={34} />}
+        {!mine && (
+          <span className="msg-ava" {...userMenuProps(m.user)} onClick={(e) => (e.stopPropagation(), !selecting && openProfile(m.user))}>
+            <Avatar name={m.user} size={34} />
+          </span>
+        )}
         <div className="bubble">
           {/* Шапка: имя · пин · время · ответы; у своих — наоборот, без имени и с галочками в конце */}
           <div className="meta">
-            {!mine && <Nick name={m.user} />}
+            {!mine && (
+              <span className="msg-nick" role="button" tabIndex={0} {...userMenuProps(m.user)} onClick={(e) => (e.stopPropagation(), !selecting && openProfile(m.user))}>
+                <Nick name={m.user} />
+              </span>
+            )}
             {mine && replyCount}
             {!mine && pinMark}
             <time title={m.edited ? 'Изменено' : undefined}>
@@ -430,7 +547,7 @@ export function MessageList({
               )}
             </button>
           )}
-          <div className="text">{m.content}</div>
+          <div className="text">{withMentions(m.content, myTag)}</div>
         </div>
       </div>,
     );
@@ -442,14 +559,16 @@ export function MessageList({
       ref={ref}
       onScroll={(e) => {
         const el = e.currentTarget;
-        const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
+        const gap = rest(el) - el.scrollTop;
         stick.current = gap < 80;
         setAway(gap > 240);
         if (stick.current) setUnread(0);
         cancelPress();
         report();
+        paintGrad(true);
       }}
     >
+      <div className="chat-head-room" ref={head} aria-hidden />
       {messages.length ? items : <div className="empty-state">{empty}</div>}
       {dock &&
         createPortal(
@@ -511,6 +630,20 @@ export function Composer({
   const submit = () => {
     if (onSend(text)) setText('');
   };
+  // «Упомянуть» из меню пользователя — вставляем его @юзернейм в конец текста
+  useEffect(() => {
+    const onMention = (e: Event) => {
+      const tag = handleOf((e as CustomEvent<string>).detail) + ' ';
+      setText((t) => (t && !/\s$/.test(t) ? t + ' ' : t) + tag);
+      const el = inputRef.current;
+      if (el) {
+        el.focus();
+        requestAnimationFrame(() => el.setSelectionRange(el.value.length, el.value.length));
+      }
+    };
+    window.addEventListener(MENTION_EVENT, onMention);
+    return () => window.removeEventListener(MENTION_EVENT, onMention);
+  }, []);
   // Лента сообщений уходит под поле ввода до самого низа: сообщаем её контейнеру высоту поля
   const formRef = useRef<HTMLFormElement>(null);
   useLayoutEffect(() => {
@@ -611,7 +744,7 @@ export function MemberRow({
   onClick?: (e: React.MouseEvent) => void;
 }) {
   return (
-    <button className={'member' + (status === 'offline' ? ' offline' : '')} onClick={onClick}>
+    <button className={'member' + (status === 'offline' ? ' offline' : '')} onClick={onClick} {...userMenuProps(name)}>
       <Avatar name={name} size={34} status={status} />
       <span className="info">
         <Nick name={name}>{me && <span className="you-tag"> · вы</span>}</Nick>
@@ -780,7 +913,19 @@ export function MemberCard({
   }, [at.x, at.y]);
   return (
     <Modal onClose={onClose}>
-      <div className="popover-backdrop" onClick={onClose} />
+      <div
+        className="popover-backdrop"
+        onClick={onClose}
+        onContextMenu={(e) => {
+          // ПКМ мимо карточки: закрываем её и передаём ПКМ тому, что под курсором (например, меню пользователя)
+          e.preventDefault();
+          const { clientX, clientY } = e;
+          const self = e.currentTarget;
+          const under = document.elementsFromPoint(clientX, clientY).find((el) => el !== self && !el.closest('.member-card'));
+          onClose();
+          if (under) under.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX, clientY }));
+        }}
+      />
       <div
         className={'member-card' + (sheet ? ' sheet' : '') + (sheet && expanded ? ' expanded' : '') + (drag ? ' dragging' : '')}
         ref={ref}

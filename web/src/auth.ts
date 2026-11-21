@@ -135,3 +135,9 @@ export function useUser(name: string): PublicUser | undefined {
 export function useUsers() {
   return useSyncExternalStore(subscribeUsers, () => users);
 }
+
+/** Пользователь по @упоминанию (по юзернейму или его @-форме). */
+export function userByTag(tag: string, handle: (name: string) => string): PublicUser | undefined {
+  const t = tag.toLowerCase();
+  return Object.values(users).find((u) => '@' + key(u.username) === t || handle(u.username) === t);
+}

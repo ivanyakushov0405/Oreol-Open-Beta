@@ -28,43 +28,62 @@ const LAYOUT = {
   },
 };
 
+/** Фон — один слой; цвета берёт из темы страницы. При смене темы его меняет сам «разлив» (View Transition),
+ *  поэтому своего перехода у фона нет: внутри круга он сразу новый. */
 export function Backdrop({ torus = 0.35, mobile = false }: { torus?: number; mobile?: boolean }) {
-  const L = LAYOUT[mobile ? 'mobile' : 'desktop'];
-  const r = L.ring;
   return (
     <div className="backdrop" aria-hidden="true">
+      <Layer th="one" torus={torus} mobile={mobile} />
+    </div>
+  );
+}
+
+function Layer({ th, torus, mobile }: { th: string; torus: number; mobile: boolean }) {
+  const L = LAYOUT[mobile ? 'mobile' : 'desktop'];
+  const r = L.ring;
+  const id = (n: string) => `bd-${th}-${n}`;
+  return (
+    <div className={'bd-layer ' + th}>
       <svg viewBox={L.box} preserveAspectRatio="xMidYMid slice">
         <defs>
-          <filter id="bd-glow" x="-50%" y="-50%" width="200%" height="200%">
-            <feGaussianBlur stdDeviation={L.glowBlur} />
-          </filter>
-          <filter id="bd-torus" x="-30%" y="-40%" width="160%" height="180%">
+          {/* Свечения — радиальные градиенты, а не размытие фильтром: фильтр перерисовывался при каждой смене темы
+              и перерисовке страницы, и пятна на миг появлялись резкими («мигали»). Градиент рисуется сразу мягким. */}
+          {(['glow-1', 'glow-2', 'glow-3'] as const).map((g) => (
+            <radialGradient key={g} id={id(g)}>
+              <stop offset="0" stopColor={`var(--${g})`} />
+              <stop offset="0.45" stopColor={`var(--${g})`} stopOpacity="0.92" />
+              <stop offset="0.7" stopColor={`var(--${g})`} stopOpacity="0.45" />
+              <stop offset="0.86" stopColor={`var(--${g})`} stopOpacity="0.12" />
+              <stop offset="1" stopColor={`var(--${g})`} stopOpacity="0" />
+            </radialGradient>
+          ))}
+          <filter id={id('torus')} x="-30%" y="-40%" width="160%" height="180%">
             <feGaussianBlur stdDeviation={L.torusBlur} />
           </filter>
-          <linearGradient id="bd-torus-g" x1="0" y1="0" x2="1" y2="0">
+          <linearGradient id={id('torus-g')} x1="0" y1="0" x2="1" y2="0">
             <stop stopColor="var(--glow-3)" />
             <stop offset="0.5" stopColor="var(--glow-1)" />
             <stop offset="1" stopColor="var(--glow-2)" />
             <animateTransform attributeName="gradientTransform" type="rotate" from="0 0.5 0.5" to="360 0.5 0.5" dur="48s" repeatCount="indefinite" />
           </linearGradient>
-          <linearGradient id="bd-torus-g2" x1="0" y1="0" x2="1" y2="1">
+          <linearGradient id={id('torus-g2')} x1="0" y1="0" x2="1" y2="1">
             <stop stopColor="var(--glow-2)" />
             <stop offset="0.5" stopColor="var(--glow-3)" />
             <stop offset="1" stopColor="var(--glow-1)" />
             <animateTransform attributeName="gradientTransform" type="rotate" from="360 0.5 0.5" to="0 0.5 0.5" dur="64s" repeatCount="indefinite" />
           </linearGradient>
         </defs>
-        <ellipse className="bd-glow a" cx={L.glows[0][0]} cy={L.glows[0][1]} rx={L.glows[0][2]} ry={L.glows[0][3]} fill="var(--glow-1)" opacity="0.35" filter="url(#bd-glow)" />
-        <ellipse className="bd-glow b" cx={L.glows[1][0]} cy={L.glows[1][1]} rx={L.glows[1][2]} ry={L.glows[1][3]} fill="var(--glow-2)" opacity="0.3" filter="url(#bd-glow)" />
-        <ellipse className="bd-glow c" cx={L.glows[2][0]} cy={L.glows[2][1]} rx={L.glows[2][2]} ry={L.glows[2][3]} fill="var(--glow-3)" opacity="0.16" filter="url(#bd-glow)" />
+        <ellipse className="bd-glow a" cx={L.glows[0][0]} cy={L.glows[0][1]} rx={L.glows[0][2] + 2 * L.glowBlur} ry={L.glows[0][3] + 2 * L.glowBlur} fill={`url(#${id('glow-1')})`} opacity="0.35" />
+        <ellipse className="bd-glow b" cx={L.glows[1][0]} cy={L.glows[1][1]} rx={L.glows[1][2] + 2 * L.glowBlur} ry={L.glows[1][3] + 2 * L.glowBlur} fill={`url(#${id('glow-2')})`} opacity="0.3" />
+        <ellipse className="bd-glow c" cx={L.glows[2][0]} cy={L.glows[2][1]} rx={L.glows[2][2] + 2 * L.glowBlur} ry={L.glows[2][3] + 2 * L.glowBlur} fill={`url(#${id('glow-3')})`} opacity="0.16" />
         {/* Halo torus: эллипс 900×540, повёрнут на 24°, обводка 50 внутрь */}
         {/* На телефоне кольцо занимает пол-экрана — делаем его прозрачнее, чтобы фон не был «плотным» */}
         <g className={mobile ? 'bd-ring m' : 'bd-ring'} opacity={mobile ? torus * 0.6 : torus}>
-          <g filter="url(#bd-torus)" className="bd-torus">
+          <g filter={`url(#${id('torus')})`} className="bd-torus">
             <g transform={r.transform}>
-              <ellipse cx={r.cx} cy={r.cy} rx={r.rx} ry={r.ry} fill="none" stroke="url(#bd-torus-g)" strokeWidth={r.w} />
+              <ellipse cx={r.cx} cy={r.cy} rx={r.rx} ry={r.ry} fill="none" stroke={`url(#${id('torus-g')})`} strokeWidth={r.w} />
               {/* Второй слой цвета: всё кольцо целиком плавно перетекает в другие оттенки */}
-              <ellipse cx={r.cx} cy={r.cy} rx={r.rx} ry={r.ry} fill="none" stroke="url(#bd-torus-g2)" strokeWidth={r.w} opacity="0">
+              <ellipse cx={r.cx} cy={r.cy} rx={r.rx} ry={r.ry} fill="none" stroke={`url(#${id('torus-g2')})`} strokeWidth={r.w} opacity="0">
                 <animate attributeName="opacity" values="0;0.75;0" dur="22s" calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1" repeatCount="indefinite" />
               </ellipse>
               {/* Мягкое свечение всего кольца — дышит вместе с тором */}

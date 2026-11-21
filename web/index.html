@@ -15,6 +15,15 @@
       href="https://fonts.googleapis.com/css2?family=Geologica:wght@400;500;600;700&family=Unbounded:wght@800&display=swap"
       rel="stylesheet"
     />
+    <script>
+      // Тема, прозрачность и живой фон — до первой отрисовки, иначе при перезагрузке на миг мелькал тор и тёмная тема
+      try {
+        var d = document.documentElement.dataset, ls = localStorage;
+        d.theme = ls.getItem('oreol.theme') === 'light' ? 'light' : 'dark';
+        d.glass = ls.getItem('oreol.glassUi') === '1' ? 'on' : 'off';
+        d.backdrop = ls.getItem('oreol.liveBg') === '0' ? 'off' : 'on';
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

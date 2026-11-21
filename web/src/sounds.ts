@@ -2,7 +2,7 @@ import { getAudioPrefs } from './audioPrefs';
 
 /** Звуки интерфейса синтезируются на лету (WebAudio) — без файлов.
  *  Мягкие «стеклянные» тоны: синус + тихий обертон, быстрая атака, плавное затухание. */
-export type SoundName = 'join' | 'leave' | 'peer-join' | 'peer-leave' | 'mic-on' | 'mic-off' | 'deafen' | 'undeafen' | 'share-on' | 'share-off';
+export type SoundName = 'join' | 'leave' | 'peer-join' | 'peer-leave' | 'mic-on' | 'mic-off' | 'deafen' | 'undeafen' | 'share-on' | 'share-off' | 'message' | 'mention';
 
 type Note = { f: number; at: number; dur: number; gain?: number };
 
@@ -24,6 +24,9 @@ const SOUNDS: Record<SoundName, Note[]> = {
   // Демонстрация: светлое арпеджио
   'share-on': [{ f: D5, at: 0, dur: 0.12 }, { f: G5, at: 0.07, dur: 0.12 }, { f: C6, at: 0.14, dur: 0.3 }],
   'share-off': [{ f: C6, at: 0, dur: 0.12 }, { f: G5, at: 0.07, dur: 0.12 }, { f: D5, at: 0.14, dur: 0.3 }],
+  // Новое сообщение — короткий мягкий «дзынь»; упоминание — то же, но с третьей, верхней нотой
+  message: [{ f: G5, at: 0, dur: 0.12, gain: 0.55 }, { f: C6, at: 0.07, dur: 0.26, gain: 0.5 }],
+  mention: [{ f: E5, at: 0, dur: 0.1, gain: 0.6 }, { f: G5, at: 0.06, dur: 0.12, gain: 0.6 }, { f: C6, at: 0.12, dur: 0.3, gain: 0.55 }],
 };
 
 let ctx: AudioContext | null = null;

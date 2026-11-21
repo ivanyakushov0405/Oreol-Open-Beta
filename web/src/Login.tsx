@@ -1,6 +1,5 @@
 import { useLayoutEffect, useRef, useState } from 'react';
-import { Backdrop } from './Backdrop';
-import { HaloMark, Icon, Wordmark } from './icons';
+import { HaloMark, Wordmark } from './icons';
 import { NAME_RE, handleOf, normalizeName } from './mock';
 import { ApiError, api, type Me } from './auth';
 
@@ -109,7 +108,6 @@ export function Login({ onLogin }: { onLogin: (token: string, user: Me) => void 
 
   return (
     <>
-      <Backdrop torus={0.55} />
       <div className={'signin mode-' + mode}>
         <div className="signin-hero">
           <div className="brand-card">
@@ -121,24 +119,10 @@ export function Login({ onLogin }: { onLogin: (token: string, user: Me) => void 
               С возвращением в Ореол
             </h1>
             <h1 className={mode === 'signup' ? 'on' : ''} aria-hidden={mode !== 'signup'}>
-              Твой новый круг общения
+              Твой новый ореол друзей
             </h1>
           </div>
-          <p>Серверы, голосовые каналы и чаты с друзьями — в одном месте. Быстро, красиво и без лишнего.</p>
-          <div className="chips">
-            <span className="chip">
-              <Icon name="voice" size={18} />
-              Голос без задержек
-            </span>
-            <span className="chip">
-              <Icon name="chats" size={18} />
-              Каналы и ЛС
-            </span>
-            <span className="chip">
-              <Icon name="users" size={18} />
-              Сообщества
-            </span>
-          </div>
+          <p>Собери свой сервер и позови друзей: текстовые и голосовые каналы, личные сообщения и звонки — в одном приложении.</p>
         </div>
 
         <div className="auth-card">
@@ -162,7 +146,7 @@ export function Login({ onLogin }: { onLogin: (token: string, user: Me) => void 
               >
                 <div className="auth-head">
                   <h2>Войти в аккаунт</h2>
-                  <p className="sub">Рады видеть тебя снова!</p>
+                  <p className="sub">Твои серверы и переписки ждут на месте</p>
                 </div>
                 <label className="auth-field">
                   <span className="field-label">Email</span>
@@ -184,7 +168,7 @@ export function Login({ onLogin }: { onLogin: (token: string, user: Me) => void 
                     type="password"
                     autoComplete="current-password"
                     value={password}
-                    placeholder="Ваш пароль"
+                    placeholder="Пароль"
                     tabIndex={tabL}
                     onChange={(e) => setPassword(e.target.value)}
                   />

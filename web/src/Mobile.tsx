@@ -1,12 +1,14 @@
+import { openProfile, EDIT_PROFILE_EVENT } from './profile';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { AppState } from './App';
-import { Icon, type IconName } from './icons';
+import { Icon, StrikeIcon, type IconName } from './icons';
+import { useMicLevel } from './micLevel';
 import { handleOf, type Channel, type ServerId } from './mock';
 import { STATUS_LABEL } from './Desktop';
 import { SERVER_NAV, ServerSettingsBody, isServerSection, isUserSection, USER_NAV, UserSettingsBody, userSectionTitle, type ServerSection, type UserSection } from './Settings';
 import { Avatar, Banner, BannerTop, MemberCard, MemberRow, TypingLine } from './ui';
 import { parseRoute, paths, useUrlSync } from './router';
-import { ChannelList, ChatBody, PinnedButton, QUALITY_TITLE, Rail, STATUS_ITEMS, SignalIcon, VoiceStage, pingClass, useElapsed } from './views';
+import { ChannelList, ChatBody, PinnedButton, QUALITY_TITLE, Rail, STATUS_ITEMS, SignalIcon, VoiceStage, pingClass, useElapsed, UnreadBadge, chatUnread } from './views';
 
 type Tab = 'servers' | 'chats' | 'you';
 
@@ -27,90 +29,6 @@ const CHAT_MENU: { icon: IconName; label: string; soon?: string }[] = [
   { icon: 'bell', label: 'Уведомления', soon: 'Настройка уведомлений появится позже' },
   { icon: 'copy', label: 'Копировать название' },
 ];
-
-/** Скруглённые «дырки» в затемнении сверху: под плашками шапки и под виджетом звонка. Затемнение лежит за ними,
- *  и без дырок оно просвечивало сквозь полупрозрачное стекло — плашки и виджет темнели. */
-function useHoleMask(head: React.RefObject<HTMLDivElement>, deps: unknown[]) {
-  useLayoutEffect(() => {
-    const el = head.current;
-    if (!el) return;
-    const hole = (x: number, y: number, w: number, h: number, raw: string) => {
-      let r = raw.endsWith('%') ? (Math.min(w, h) * parseFloat(raw)) / 100 : parseFloat(raw) || 0;
-      r = Math.min(r, w / 2, h / 2);
-      return `M${x + r} ${y}H${x + w - r}A${r} ${r} 0 0 1 ${x + w} ${y + r}V${y + h - r}A${r} ${r} 0 0 1 ${x + w - r} ${y + h}H${x + r}A${r} ${r} 0 0 1 ${x} ${y + h - r}V${y + r}A${r} ${r} 0 0 1 ${x + r} ${y}Z`;
-    };
-    const update = () => {
-      const pseudo = getComputedStyle(el, '::before');
-      if (pseudo.content === 'none' || pseudo.display === 'none') return;
-      // Маска — на всё затемнение: от верха экрана (pseudo top < 0) до его низа под шапкой
-      const W = el.clientWidth;
-      const off = -(parseFloat(pseudo.top) || 0);
-      const H = parseFloat(pseudo.height) || 0;
-      if (!W || H <= 0) return;
-      let d = `M0 0H${W}V${H}H0Z`;
-      for (const c of Array.from(el.children) as HTMLElement[]) {
-        if (c.classList.contains('gone') || !c.offsetWidth || !c.offsetHeight) continue;
-        d += hole(c.offsetLeft, c.offsetTop + off, c.offsetWidth, c.offsetHeight, getComputedStyle(c).borderTopLeftRadius);
-      }
-      // Виджет звонка (развёрнутый или свёрнутый в плашку) — тоже дырка, по его текущему месту на экране
-      const base = el.getBoundingClientRect();
-      const top0 = base.top - off;
-      for (const w of Array.from(document.querySelectorAll<HTMLElement>('.m-call-wrap .m-call, .m-call-pill'))) {
-        const r = w.getBoundingClientRect();
-        if ((parseFloat(getComputedStyle(w).opacity) || 0) < 0.05 || !r.width || !r.height || r.bottom <= top0 || r.top >= top0 + H) continue;
-        d += hole(r.left - base.left, r.top - top0, r.width, r.height, getComputedStyle(w).borderTopLeftRadius);
-      }
-      // clip-path применяется сразу (в отличие от картинки-маски, которую браузер декодирует асинхронно и на кадр
-      // показывает затемнение без неё — при покадровом пересчёте оно мигало)
-      el.style.setProperty('--hole-clip', `path(evenodd, '${d}')`);
-    };
-    let raf = 0;
-    const later = () => {
-      if (!raf) raf = window.setTimeout(() => ((raf = 0), update()), 16);
-    };
-    // Пока идут переходы (виджет сворачивается/разворачивается, шапка едет за ним) — пересчёт каждый кадр
-    let until = 0;
-    let loop = 0;
-    const follow = () => {
-      until = performance.now() + 520;
-      if (loop) return;
-      const step = () => {
-        update();
-        loop = performance.now() < until ? window.setTimeout(step, 16) : 0;
-      };
-      step();
-    };
-    update();
-    const ro = new ResizeObserver(later);
-    ro.observe(el);
-    Array.from(el.children).forEach((c) => ro.observe(c));
-    // виджет появляется/прячется/сворачивается и меняет высоту — дырка идёт за ним
-    const watch = () => document.querySelectorAll('.m-call-wrap, .m-call-box, .m-call-pill').forEach((n) => ro.observe(n));
-    watch();
-    const app = el.closest('.m-app');
-    const mo = new MutationObserver(() => (watch(), follow()));
-    if (app) mo.observe(app, { childList: true, attributes: true, attributeFilter: ['class', 'style'] });
-    // выезд экрана и сворачивание виджета идут трансформациями — после них место дырки уточняем
-    app?.addEventListener('animationend', later);
-    app?.addEventListener('transitionend', later);
-    // выезд/уезд экрана чата и сворачивание виджета — следим покадрово, пока идёт анимация
-    app?.addEventListener('animationstart', follow);
-    app?.addEventListener('transitionrun', follow);
-    const wrapMo = new MutationObserver(follow);
-    document.querySelectorAll('.m-call-wrap').forEach((n) => wrapMo.observe(n, { attributes: true, attributeFilter: ['class'] }));
-    return () => {
-      window.clearTimeout(raf);
-      window.clearTimeout(loop);
-      ro.disconnect();
-      mo.disconnect();
-      wrapMo.disconnect();
-      app?.removeEventListener('animationend', later);
-      app?.removeEventListener('transitionend', later);
-      app?.removeEventListener('animationstart', follow);
-      app?.removeEventListener('transitionrun', follow);
-    };
-  }, deps); // eslint-disable-line react-hooks/exhaustive-deps
-}
 
 function Head({
   title,
@@ -163,7 +81,6 @@ function Head({
     const id = window.setTimeout(() => setGhost(null), 320);
     return () => window.clearTimeout(id);
   }, [ghost]);
-  useHoleMask(ref, [title, actionsHidden, !!actions, sub == null]);
   // Перезапуск анимации без пересоздания элементов: чередуем два одинаковых класса
   const bumpCls = pop || (bump === 1 && !fromTitle) ? '' : bump % 2 ? ' bump-a' : ' bump-b';
   const swapIn = bump > 1 || ghost ? ' sw-in' : '';
@@ -214,8 +131,10 @@ function MobileCall({
   min,
   onMin,
   onOpen,
+  onOpenChat,
   onMore,
   onMeasure,
+  liveMic,
 }: {
   app: AppState;
   /** Открыт экран этого же войса — виджет не нужен, уезжает вверх. */
@@ -224,11 +143,16 @@ function MobileCall({
   min: boolean;
   onMin: () => void;
   onOpen: () => void;
+  onOpenChat: () => void;
   onMore: (btn: HTMLElement) => void;
   /** Высота виджета и смещение пальца — по ним сдвигаются шапки и содержимое экранов. */
   onMeasure: (h: number | null, drag: number | null) => void;
+  /** Подсвечивать микрофон, пока говоришь (на панели серверов и каналов это видно в списке войса). */
+  liveMic: boolean;
 }) {
   const v = app.voice;
+  const micBtn = useRef<HTMLButtonElement>(null);
+  useMicLevel(micBtn, liveMic && v.micOn && v.state === 'connected', v.micTrack);
   const elapsed = useElapsed(v.startedAt);
   const box = useRef<HTMLDivElement>(null);
   const [h, setH] = useState<number | null>(null);
@@ -271,7 +195,7 @@ function MobileCall({
             <span className={'m-call-signal ' + q} title={v.rtt != null ? `Пинг ${v.rtt} мс` : undefined}>
               <SignalIcon size={24} />
             </span>
-            <button className="m-call-text" onClick={onOpen} title="Открыть голосовой канал" tabIndex={shut ? -1 : undefined}>
+            <button className="m-call-text" onClick={onOpenChat} title="Открыть чат голосового канала" tabIndex={shut ? -1 : undefined}>
               <span className="t">
                 <b className={'st ' + q}>{connecting ? 'Подключение…' : QUALITY_TITLE[v.quality]}</b>
                 {!connecting && <span className={'ping ' + pingClass(v.rtt, v.quality)}>{v.rtt != null ? `${v.rtt} мс` : '… мс'}</span>}
@@ -294,11 +218,17 @@ function MobileCall({
             <button className={'m-call-btn' + (v.cameraOn ? ' on' : '')} title={v.cameraOn ? 'Выключить камеру' : 'Включить камеру'} onClick={v.toggleCamera}>
               <Icon name={v.cameraOn ? 'video' : 'video-off'} size={22} />
             </button>
-            <button className={'m-call-btn' + (v.micOn ? '' : ' off')} title={v.micOn ? 'Выключить микрофон' : 'Включить микрофон'} onClick={() => void v.toggleMic()}>
-              <Icon name={v.micOn ? 'mic' : 'mic-off'} size={22} />
+            <button
+              ref={micBtn}
+              className={'m-call-btn mic-lvl' + (v.micOn ? '' : ' off')}
+              title={v.micOn ? 'Выключить микрофон' : 'Включить микрофон'}
+              onClick={() => void v.toggleMic()}
+            >
+              <StrikeIcon name="mic" off={!v.micOn} size={22} />
+              {liveMic && v.micOn && <Icon name="mic" size={22} className="mic-fill" />}
             </button>
             <button className={'m-call-btn' + (v.deafened ? ' off' : '')} title={v.deafened ? 'Включить звук' : 'Выключить звук'} onClick={v.toggleDeafen}>
-              <Icon name={v.deafened ? 'headphones-off' : 'headphones'} size={22} />
+              <StrikeIcon name="headphones" off={v.deafened} size={22} />
             </button>
             <button className="m-call-btn" title="Ещё" aria-label="Ещё" onClick={(e) => onMore(e.currentTarget)}>
               <Icon name="more" size={22} />
@@ -430,6 +360,12 @@ export function Mobile({ app }: { app: AppState }) {
   const [open, setOpen] = useState<Channel | null>(null);
   const [voiceChat, setVoiceChat] = useState(false);
   const [settings, setSettings] = useState<UserSection | null>(null);
+  // «Редактировать профиль» из окна полного профиля
+  useEffect(() => {
+    const edit = () => setSettings('account-edit');
+    window.addEventListener(EDIT_PROFILE_EVENT, edit);
+    return () => window.removeEventListener(EDIT_PROFILE_EVENT, edit);
+  }, []);
   const [members, setMembers] = useState(false);
   /** Меню «Ещё» в шапке текстового канала. */
   const [chatMenu, setChatMenu] = useState(false);
@@ -519,7 +455,31 @@ export function Mobile({ app }: { app: AppState }) {
   }, [animKey]);
   const callSpace = !inCall || onOwnVoice ? 0 : callSize.drag != null ? Math.max(pillSpace, callH + callSize.drag) : callMin ? pillSpace : callH;
   /** Из виджета — в свой голосовой канал: всё, что открыто поверх, закрываем. */
+  /** Куда вернуться, когда закроют чат войса, открытый нажатием на текст виджета: тот же экран, что был под ним. */
+  const ret = useRef<null | (() => void)>(null);
+  useEffect(() => {
+    if (!open || open.kind !== 'voice') ret.current = null;
+  }, [open]);
   const openVoice = (withChat = false) => {
+    const onVoice = !!open && open.kind === 'voice';
+    if (withChat && !onVoice) {
+      const was = { tab, open, members, settingsHome, settings, serverHome, serverSection, sid: app.serverId };
+      ret.current = () => {
+        app.setServerId(was.sid as ServerId);
+        setTab(was.tab);
+        setOpen(was.open);
+        setVoiceChat(false);
+        setMembers(was.members);
+        setSettingsHome(was.settingsHome);
+        setSettings(was.settings);
+        setServerHome(was.serverHome);
+        setServerSection(was.serverSection);
+      };
+    } else if (!withChat) {
+      // в сам войс: по выходу из него — список каналов этого сервера
+      ret.current = null;
+      setTab('servers');
+    }
     if (app.voice.server) app.setServerId(app.voice.server as ServerId);
     setSettings(null);
     setSettingsHome(false);
@@ -621,7 +581,10 @@ export function Mobile({ app }: { app: AppState }) {
         min={callMin}
         onMin={() => setCallMin(true)}
         onOpen={() => openVoice()}
+        onOpenChat={() => openVoice(true)}
         onMeasure={(h, drag) => setCallSize((s) => (s.h === h && s.drag === drag ? s : { h, drag }))}
+        // подсветка микрофона в виджете — везде, кроме списка каналов того сервера, где сидим (там светится сам список)
+        liveMic={covered || tab !== 'servers' || app.serverId !== app.voice.server}
         onMore={(btn) => {
           const r = btn.getBoundingClientRect();
           setCallMenu((m) => (m ? null : { top: r.bottom + 8, right: Math.max(12, window.innerWidth - r.right) }));
@@ -822,7 +785,12 @@ export function Mobile({ app }: { app: AppState }) {
             swapKey={vchatShown ? 'chat' : 'voice'}
             title={vchatShown ? `Чат · ${open.name}` : open.name}
             icon={vchatShown ? 'chats' : 'voice'}
-            onBack={() => (voiceChat ? close('vchat', () => setVoiceChat(false)) : close('voice', () => setOpen(null)))}
+            onBack={() => {
+              const back = ret.current;
+              if (voiceChat && back) close('voice', back);
+              else if (voiceChat) close('vchat', () => setVoiceChat(false));
+              else close('voice', () => setOpen(null));
+            }}
             sub={
               app.inVoiceHere && app.voice.state === 'connected' ? (
                 <>
@@ -846,8 +814,9 @@ export function Mobile({ app }: { app: AppState }) {
               vchatShown ? (
                 <PinnedButton chat={app.lobby} />
               ) : (
-                <button className="icon-btn" title="Чат канала" aria-label="Чат канала" onClick={(e) => { e.currentTarget.blur(); setVoiceChat(true); }}>
+                <button className="icon-btn has-badge" title="Чат канала" aria-label="Чат канала" onClick={(e) => { e.currentTarget.blur(); setVoiceChat(true); }}>
                   <Icon name="chats" />
+                  <UnreadBadge n={chatUnread(app, app.lobby)} className="corner" />
                 </button>
               )
             }
@@ -911,7 +880,7 @@ export function Mobile({ app }: { app: AppState }) {
             const mine = card === app.name;
             setCard(null);
             if (mine) setSettings('account-edit');
-            else app.notify('Полный профиль появится с полноценным бэкендом');
+            else openProfile(card);
           }}
         />
       )}

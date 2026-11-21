@@ -50,6 +50,7 @@ export const ICONS: Record<string, string> = {
   copy: `<rect x="8" y="8" width="12" height="12" rx="2" ${S}/><path d="M16 8V6C16 5.47 15.79 4.96 15.41 4.59C15.04 4.21 14.53 4 14 4H6C5.47 4 4.96 4.21 4.59 4.59C4.21 4.96 4 5.47 4 6V14C4 14.53 4.21 15.04 4.59 15.41C4.96 15.79 5.47 16 6 16H8" ${S}/>`,
   pencil: `<path d="M4 20H8L19 9C19.53 8.47 19.83 7.75 19.83 7C19.83 6.25 19.53 5.53 19 5C18.47 4.47 17.75 4.17 17 4.17C16.25 4.17 15.53 4.47 15 5L4 16V20Z" ${S}/><path d="M13.5 6.5L17.5 10.5" ${S}/>`,
   'user-minus': `<circle cx="9" cy="8.5" r="3.5" ${S}/><path d="M2.5 20C2.5 18.28 3.18 16.62 4.4 15.4C5.62 14.18 7.28 13.5 9 13.5C10.72 13.5 12.38 14.18 13.6 15.4C14.82 16.62 15.5 18.28 15.5 20" ${S}/><path d="M16 11H22" ${S}/>`,
+  'user-plus': `<circle cx="9" cy="8.5" r="3.5" ${S}/><path d="M2.5 20C2.5 18.28 3.18 16.62 4.4 15.4C5.62 14.18 7.28 13.5 9 13.5C10.72 13.5 12.38 14.18 13.6 15.4C14.82 16.62 15.5 18.28 15.5 20" ${S}/><path d="M16 11H22M19 8V14" ${S}/>`,
   wifi: `<path d="M2.5 9.2C7.9 4.4 16.1 4.4 21.5 9.2" ${S}/><path d="M5.6 12.6C9.3 9.4 14.7 9.4 18.4 12.6" ${S}/><path d="M8.8 15.9C10.7 14.4 13.3 14.4 15.2 15.9" ${S}/><circle cx="12" cy="19" r="1.4" ${F}/>`,
   shield: `<path d="M12 3L19 6V11.5C19 15.6 16 19.3 12 21C8 19.3 5 15.6 5 11.5V6L12 3Z" ${S}/>`,
   alert: `<circle cx="12" cy="12" r="9" ${S}/><path d="M12 7.5V13" ${S}/><circle cx="12" cy="16.3" r="1.1" fill="currentColor"/>`,
@@ -74,12 +75,34 @@ export function Icon({ name, size = 20, className }: { name: IconName; size?: nu
   );
 }
 
+/** Микрофон/наушники с анимированным перечёркиванием, как у открепления пина:
+ *  при выключении линия прорисовывается по диагонали, под ней прорезь в иконке; при включении — стирается обратно. */
+export function StrikeIcon({ name, off, size = 20, className }: { name: 'mic' | 'headphones'; off: boolean; size?: number; className?: string }) {
+  const cut = 'strike-cut-' + useId().replace(/:/g, '');
+  const html =
+    `<mask id="${cut}" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff"/>` +
+    `<path class="strike" pathLength="1" d="M4 4L20 20" stroke="#000" stroke-width="4.4" stroke-linecap="round"/></mask>` +
+    `<g mask="url(#${cut})">${ICONS[name]}</g>` +
+    `<path class="strike" pathLength="1" d="M4 4L20 20" ${S}/>`;
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden="true"
+      className={'strike-ico' + (off ? ' is-off' : '') + (className ? ' ' + className : '')}
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  );
+}
+
 const GRAD = (id: string) =>
   `<linearGradient id="${id}" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#00E5FF"/><stop offset="0.5" stop-color="#2F7BFF"/><stop offset="1" stop-color="#7A5CFF"/></linearGradient>`;
 
-/** Логотип «Ореол · люди» (Logo/Oreol people). */
+/** Логотип «Ореол · люди» (Logo/Oreol people): форма из logo.svg, цвет — currentColor, без градиента. */
 export function LogoPeople({ size = 28 }: { size?: number }) {
-  return <img src="/assets/logo.svg" width={size} height={size} alt="Ореол" draggable={false} />;
+  return <span className="logo-people" role="img" aria-label="Ореол" style={{ width: size, height: size }} />;
 }
 
 /** Кольцо-знак Ореола (используется на экране входа). */
@@ -104,18 +127,11 @@ export function HaloMark({ size = 104 }: { size?: number }) {
   );
 }
 
-/** Градиентный вордмарк OREOL (Unbounded ExtraBold с наклонённой «О»). */
+/** Вордмарк OREOL (Unbounded ExtraBold с наклонённой «О»), сплошной циан. */
 export function Wordmark({ height = 36 }: { height?: number }) {
   return (
     <svg height={height} viewBox="0 0 286 53" fill="none" aria-label="OREOL">
-      <defs>
-        <linearGradient id="wm-g" x1="0" y1="26" x2="285.5" y2="26" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#00E5FF" />
-          <stop offset="0.5" stopColor="#2F7BFF" />
-          <stop offset="1" stopColor="#7A5CFF" />
-        </linearGradient>
-      </defs>
-      <g fill="url(#wm-g)">
+      <g style={{ fill: 'var(--wordmark, #1e6bff)' }}>
         <path d="M42.89 45.74C36.37 48.65 30.28 50.38 24.62 50.94C19.01 51.48 14.17 50.89 10.11 49.18C6.1 47.45 3.22 44.62 1.46 40.68C-0.29 36.74 -0.47 32.71 0.93 28.56C2.38 24.4 5.18 20.42 9.33 16.61C13.54 12.78 18.9 9.41 25.43 6.5C31.95 3.6 38.02 1.88 43.63 1.34C49.29 0.78 54.12 1.36 58.14 3.1C62.2 4.8 65.11 7.63 66.86 11.57C68.61 15.5 68.76 19.55 67.32 23.72C65.92 27.86 63.12 31.84 58.91 35.67C54.76 39.48 49.42 42.84 42.89 45.74ZM38.28 35.38C41.52 33.94 44.14 32.34 46.13 30.57C48.16 28.75 49.49 26.87 50.14 24.94C50.77 22.98 50.67 21.05 49.82 19.15C48.97 17.25 47.62 15.89 45.75 15.09C43.87 14.24 41.58 13.98 38.89 14.3C36.23 14.57 33.28 15.42 30.04 16.86C26.8 18.31 24.17 19.94 22.14 21.76C20.15 23.53 18.83 25.39 18.2 27.35C17.55 29.28 17.65 31.19 18.5 33.1C19.35 35 20.71 36.37 22.59 37.21C24.46 38.02 26.72 38.29 29.38 38.03C32.08 37.71 35.04 36.82 38.28 35.38Z" />
         <path d="M82.03 22.73H99.5C101.45 22.73 102.97 22.29 104.03 21.4C105.14 20.51 105.7 19.22 105.7 17.53C105.7 15.84 105.14 14.56 104.03 13.67C102.97 12.78 101.45 12.33 99.5 12.33H79.83L86.83 5.13V51.13H71.3V1.13H101.83C105.7 1.13 109.1 1.82 112.03 3.2C114.97 4.58 117.25 6.49 118.9 8.93C120.54 11.38 121.37 14.24 121.37 17.53C121.37 20.73 120.54 23.58 118.9 26.07C117.25 28.51 114.97 30.42 112.03 31.8C109.1 33.13 105.7 33.8 101.83 33.8H82.03V22.73ZM88.7 27.73H105.97L123.17 51.13H105.37L88.7 27.73Z" />
         <path d="M171.23 20.67V31.6H134.1V20.67H171.23ZM144.7 26.13L141.57 45.47L135.5 38.73H173.57V51.13H126.17L129.9 26.13L126.17 1.13H173.23V13.53H135.5L141.57 6.8L144.7 26.13Z" />

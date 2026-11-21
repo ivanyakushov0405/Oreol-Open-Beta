@@ -28,6 +28,10 @@ export function useChat(room: string | null, user: string) {
   /** До какого сообщения дочитал каждый участник комнаты — для галочек «прочитано». */
   const [reads, setReads] = useState<Record<string, number>>({});
   const readSent = useRef(0);
+  /** Новичок в чате (ни разу не отмечал прочитанное): история до его прихода не считается непрочитанной. */
+  const [floor, setFloor] = useState(0);
+  /** Комната, чья история сейчас загружена (null — ещё не пришла). */
+  const [loaded, setLoaded] = useState<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const lastTypingSent = useRef(0);
 
@@ -36,6 +40,8 @@ export function useChat(room: string | null, user: string) {
     setMessages([]);
     setPinned([]);
     setReads({});
+    setFloor(0);
+    setLoaded(null);
     readSent.current = 0;
     setView('all');
     setTyping({});
@@ -57,9 +63,25 @@ export function useChat(room: string | null, user: string) {
         const ev = JSON.parse(e.data) as ServerEvent;
         if (ev.type === 'history') {
           setMessages(ev.messages);
+          setLoaded(room);
           setPinned(ev.pinned ?? ev.messages.filter((m) => m.pinned));
           setReads(ev.reads ?? {});
           readSent.current = ev.reads?.[user] ?? 0;
+          if (ev.reads?.[user] == null) {
+            // запоминаем «точку входа» на устройстве, чтобы после перезагрузки старое снова не стало новым
+            const key = `oreol.chatFloor.${user}.${room}`;
+            const saved = localStorage.getItem(key);
+            let f = Number(saved) || 0;
+            if (saved == null) {
+              f = ev.messages.length ? Number(ev.messages[ev.messages.length - 1].id) || 0 : 0;
+              try {
+                localStorage.setItem(key, String(f));
+              } catch {
+                /* хранилище недоступно */
+              }
+            }
+            setFloor(f);
+          }
         } else if (ev.type === 'read') {
           setReads((r) => (ev.id > (r[ev.user] ?? 0) ? { ...r, [ev.user]: ev.id } : r));
         } else if (ev.type === 'update') {
@@ -190,8 +212,12 @@ export function useChat(room: string | null, user: string) {
 
   return {
     messages,
+    /** Комната загруженной истории: пока она не совпала с открытой, в messages может быть прошлый чат. */
+    room: loaded,
     pinned,
     reads,
+    /** До какого сообщения прочитал сам пользователь (с учётом «точки входа» новичка). */
+    myRead: Math.max(reads[user] ?? 0, floor),
     markRead,
     view,
     setView,

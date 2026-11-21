@@ -5,6 +5,7 @@ import {
   Participant,
   DisconnectReason,
   RemoteTrack,
+  type RemoteAudioTrack,
   Room,
   RoomEvent,
   Track,
@@ -15,6 +16,7 @@ import {
 import { getAudioPrefs, subscribeAudioPrefs } from './audioPrefs';
 import { createMicProcessor } from './micProcessor';
 import { playSound } from './sounds';
+import { getPeerVolume, subscribePeerVolume } from './peerVolume';
 
 export interface VoicePeer {
   identity: string;
@@ -110,6 +112,11 @@ function saveVoice(v: SavedVoice | null) {
   }
 }
 
+/** Событие «идёт проверка микрофона» (detail: true/false) — шлёт экран настроек звука. */
+export const MIC_TEST_EVENT = 'oreol:mic-test';
+
+const BYE = '{"t":"bye"}';
+
 export function useVoice(user: string) {
   const roomRef = useRef<Room | null>(null);
   // Закрыли/перезагрузили страницу, будучи в канале: сервер уберёт нас, если не переподключимся за ~15 с
@@ -118,6 +125,12 @@ export function useVoice(user: string) {
       if (e.persisted || !roomRef.current || !serverRef.current) return;
       const body = JSON.stringify({ server: serverRef.current, auth: getToken() ?? '' });
       navigator.sendBeacon('/api/voice/leaving', new Blob([body], { type: 'text/plain' }));
+      // Собеседникам — «ухожу»: сервер уберёт нас только через ~15 с, а звук выхода у них должен прозвучать сразу
+      try {
+        void roomRef.current.localParticipant.publishData(new TextEncoder().encode(BYE), { reliable: true });
+      } catch {
+        /* не успели — звук прозвучит, когда сервер уберёт участника */
+      }
     };
     window.addEventListener('pagehide', onHide);
     return () => window.removeEventListener('pagehide', onHide);
@@ -162,18 +175,18 @@ export function useVoice(user: string) {
     if (room) setPeers(snapshot(room, deafRef.current));
   }, []);
 
-  const applyDeafen = useCallback((on: boolean) => {
-    audioBox.current?.querySelectorAll('audio').forEach((a) => {
-      (a as HTMLAudioElement).muted = on;
-    });
-  }, []);
+  /** Звук собеседников идёт через WebAudio (webAudioMix): так громкость можно поднять выше 100%.
+   *  Аудио-элементы LiveKit держит заглушёнными — громкость и «заглушить всех» ставим усилением дорожки. */
+  const audioTracks = useRef(new Map<RemoteAudioTrack, string>());
+  const gainFor = (who: string) => (deafRef.current ? 0 : getAudioPrefs().outputVolume * getPeerVolume(who));
+  const applyGains = useCallback(() => {
+    audioTracks.current.forEach((who, t) => t.setVolume(gainFor(who)));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const applyDeafen = useCallback((_on: boolean) => applyGains(), [applyGains]);
 
-  /** Громкость собеседников (0…1) — на всех их аудио-элементах. */
-  const applyVolume = useCallback((v: number) => {
-    audioBox.current?.querySelectorAll('audio').forEach((a) => {
-      (a as HTMLAudioElement).volume = v;
-    });
-  }, []);
+  /** Громкость собеседников: общая громкость × личная громкость собеседника (меню по ПКМ, до 200%). */
+  const applyVolume = useCallback((_v: number) => applyGains(), [applyGains]);
+  useEffect(() => subscribePeerVolume(() => applyVolume(getAudioPrefs().outputVolume)), [applyVolume]);
 
   const join = useCallback(async (serverId: string, resumeFrom?: number) => {
     const prev = roomRef.current;
@@ -203,6 +216,8 @@ export function useVoice(user: string) {
         videoCaptureDefaults: getAudioPrefs().videoId ? { deviceId: getAudioPrefs().videoId } : undefined,
         audioOutput: getAudioPrefs().outputId ? { deviceId: getAudioPrefs().outputId } : undefined,
         publishDefaults: { dtx: false, red: true },
+        // звук собеседников — через WebAudio: личная громкость до 200% (усиление дорожки, а не volume элемента)
+        webAudioMix: true,
         // Перезагрузка страницы не должна выкидывать из канала: не отправляем «выход» при уходе со страницы.
         // После перезагрузки заходим с тем же именем — LiveKit заменяет старое подключение новым,
         // и остальные не видят выхода/входа. Если вкладку закрыли насовсем, сервер уберёт участника сам по таймауту.
@@ -227,6 +242,19 @@ export function useVoice(user: string) {
       // Звуки входа/выхода собеседников. Перезагрузка у собеседника = замена подключения с тем же именем
       // (выход и вход почти одновременно) — такие пары не озвучиваем.
       const leaveTimers = new Map<string, number>();
+      // кто уже «озвучен» как ушедший (по сигналу «ухожу») — когда сервер уберёт его позже, второй раз не звучит
+      const announced = new Set<string>();
+      const leaveSoon = (who: string, ms: number) => {
+        window.clearTimeout(leaveTimers.get(who));
+        leaveTimers.set(
+          who,
+          window.setTimeout(() => {
+            leaveTimers.delete(who);
+            announced.add(who);
+            playSound('peer-leave');
+          }, ms),
+        );
+      };
       room.on(RoomEvent.ParticipantConnected, (p: Participant) => {
         const t = leaveTimers.get(p.identity);
         if (t != null) {
@@ -234,28 +262,31 @@ export function useVoice(user: string) {
           leaveTimers.delete(p.identity);
           return;
         }
+        announced.delete(p.identity); // ушёл (звук был) и вернулся — это новый вход
         playSound('peer-join');
       });
       room.on(RoomEvent.ParticipantDisconnected, (p: Participant) => {
         if (room.remoteParticipants.has(p.identity)) return; // уже переподключился
-        window.clearTimeout(leaveTimers.get(p.identity));
-        leaveTimers.set(
-          p.identity,
-          window.setTimeout(() => {
-            leaveTimers.delete(p.identity);
-            playSound('peer-leave');
-          }, 2500),
-        );
+        if (announced.delete(p.identity)) return; // выход уже прозвучал по сигналу «ухожу»
+        // короткая пауза — только чтобы не озвучивать перезагрузку (выход и вход почти одновременно)
+        leaveSoon(p.identity, 700);
       });
-      room.on(RoomEvent.TrackSubscribed, (track: RemoteTrack, _pub: RemoteTrackPublication) => {
+      // Собеседник закрыл/перезагрузил страницу: ждём чуть-чуть — если не вернулся, звучит выход
+      room.on(RoomEvent.DataReceived, (data: Uint8Array, who?: Participant) => {
+        if (!who || new TextDecoder().decode(data) !== BYE) return;
+        leaveSoon(who.identity, 2500);
+      });
+      room.on(RoomEvent.TrackSubscribed, (track: RemoteTrack, _pub: RemoteTrackPublication, who: Participant) => {
         if (track.kind === Track.Kind.Audio) {
           const el = track.attach();
-          (el as HTMLAudioElement).muted = deafRef.current;
-          (el as HTMLAudioElement).volume = getAudioPrefs().outputVolume;
+          (el as HTMLAudioElement).dataset.peer = who.identity;
           audioBox.current?.appendChild(el);
+          audioTracks.current.set(track as RemoteAudioTrack, who.identity);
+          (track as RemoteAudioTrack).setVolume(gainFor(who.identity));
         }
       });
       room.on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack) => {
+        audioTracks.current.delete(track as RemoteAudioTrack);
         track.detach().forEach((el) => el.remove());
       });
       room.on(RoomEvent.ConnectionQualityChanged, (q: ConnectionQuality, p: Participant) => {
@@ -352,6 +383,26 @@ export function useVoice(user: string) {
       setError('Нет доступа к микрофону');
     }
     refresh();
+  }, [refresh]);
+
+  // Проверка микрофона в настройках: на время теста микрофон в звонке по-настоящему выключается
+  // (собеседники не слышат проверку, а виджет и панель показывают «выключен»), после — возвращается как было.
+  useEffect(() => {
+    let held = false;
+    const onTest = (e: Event) => {
+      const on = (e as CustomEvent<boolean>).detail;
+      const pub = roomRef.current?.localParticipant.getTrackPublication(Track.Source.Microphone);
+      if (on) {
+        if (!pub || pub.isMuted || roomRef.current?.state !== 'connected') return;
+        held = true;
+        void pub.mute().finally(refresh);
+      } else if (held) {
+        held = false;
+        if (pub && micWantedRef.current) void pub.unmute().finally(refresh);
+      }
+    };
+    window.addEventListener(MIC_TEST_EVENT, onTest);
+    return () => window.removeEventListener(MIC_TEST_EVENT, onTest);
   }, [refresh]);
 
   const toggleDeafen = useCallback(async () => {
@@ -490,6 +541,8 @@ export function useVoice(user: string) {
     toggleDeafen,
     toggleCamera,
     toggleScreen,
+    /** Дорожка своего микрофона (после обработки) — для индикатора уровня в виджете звонка. */
+    micTrack: () => roomRef.current?.localParticipant.getTrackPublication(Track.Source.Microphone)?.track?.mediaStreamTrack,
   };
 }
 
@@ -512,10 +565,15 @@ export function useVoiceRoster(enabled: boolean, server: string) {
     };
     setList([]);
     load();
-    const id = window.setInterval(load, 5000);
+    // Пока сам не в голосе, состав узнаём опросом — раньше раз в 5 с, и вошедшие появлялись с задержкой.
+    // Теперь чаще, а при возвращении на вкладку — сразу.
+    const id = window.setInterval(() => document.visibilityState === 'visible' && load(), 1500);
+    const onVis = () => document.visibilityState === 'visible' && load();
+    document.addEventListener('visibilitychange', onVis);
     return () => {
       alive = false;
       window.clearInterval(id);
+      document.removeEventListener('visibilitychange', onVis);
     };
   }, [enabled, server]);
   return list;
@@ -542,7 +600,7 @@ export function useVoiceCounts(servers: string[]) {
       if (alive) setCounts(Object.fromEntries(entries));
     };
     void load();
-    const id = window.setInterval(load, 5000);
+    const id = window.setInterval(() => document.visibilityState === 'visible' && load(), 3000);
     return () => {
       alive = false;
       window.clearInterval(id);

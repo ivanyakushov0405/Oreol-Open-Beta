@@ -1,3 +1,4 @@
+import { MIC_TEST_EVENT } from './useVoice';
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { SENS_MAX, SENS_MIN, canPickOutput, readLevel, setAudioPrefs, useAudioPrefs } from './audioPrefs';
@@ -12,7 +13,9 @@ import { flushSync } from 'react-dom';
 function switchTheme(app: AppState, t: 'dark' | 'light', from: HTMLElement) {
   if (app.theme === t) return;
   const doc = document as Document & { startViewTransition?: (cb: () => void) => { ready: Promise<void> } };
-  if (!doc.startViewTransition) {
+  // Firefox рисует снимки «разлива» без насыщенности стекла (backdrop-filter): во время анимации всё тусклее,
+  // а в конце фон и панели «вспыхивают». Там тема меняется плавными переходами цветов, без снимков.
+  if (!doc.startViewTransition || /firefox/i.test(navigator.userAgent)) {
     app.setTheme(t);
     return;
   }
@@ -142,17 +145,78 @@ function DeviceSelect({
 }) {
   const list = devices.filter((d) => d.kind === kind && d.deviceId && d.deviceId !== 'default' && d.deviceId !== 'communications');
   const word = kind === 'audioinput' ? 'Микрофон' : kind === 'videoinput' ? 'Камера' : 'Динамики';
+  const opts = [{ id: '', label: 'По умолчанию (системное)' }, ...list.map((d, i) => ({ id: d.deviceId, label: d.label || `${word} ${i + 1}` }))];
+  const cur = opts.find((o) => o.id === value) ?? opts[0];
+  const btn = useRef<HTMLButtonElement>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number; w: number; up: boolean } | null>(null);
+  const open = () => {
+    const r = btn.current?.getBoundingClientRect();
+    if (!r) return;
+    const h = Math.min(opts.length * 44 + 12, 320);
+    const up = r.bottom + 6 + h > innerHeight - 12 && r.top - 6 - h > 12;
+    setMenu({ x: r.left, y: up ? r.top - 6 - h : r.bottom + 6, w: r.width, up });
+  };
+  useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenu(null);
+    // Escape закрывает только список, а не весь экран настроек (ловим раньше общего обработчика)
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.stopImmediatePropagation();
+      close();
+    };
+    window.addEventListener('resize', close);
+    window.addEventListener('keydown', onKey, true);
+    document.addEventListener('scroll', close, true);
+    return () => {
+      window.removeEventListener('resize', close);
+      window.removeEventListener('keydown', onKey, true);
+      document.removeEventListener('scroll', close, true);
+    };
+  }, [menu]);
   return (
     <div className="select">
-      <select className="input" value={list.some((d) => d.deviceId === value) ? value : ''} onChange={(e) => onChange(e.target.value)}>
-        <option value="">По умолчанию (системное)</option>
-        {list.map((d, i) => (
-          <option key={d.deviceId} value={d.deviceId}>
-            {d.label || `${word} ${i + 1}`}
-          </option>
-        ))}
-      </select>
+      {/* Свой список вместо системного <select>: системный рисуется ОС и не бывает стеклянным */}
+      <button
+        ref={btn}
+        type="button"
+        className={'input select-btn' + (menu ? ' open' : '')}
+        aria-haspopup="listbox"
+        aria-expanded={!!menu}
+        onClick={() => (menu ? setMenu(null) : open())}
+      >
+        <span>{cur.label}</span>
+      </button>
       <Icon name="chevron-down" size={18} />
+      {menu &&
+        createPortal(
+          <>
+            <div className="popover-backdrop" onClick={() => setMenu(null)} />
+            <div
+              className={'select-menu' + (menu.up ? ' up' : '')}
+              role="listbox"
+              style={{ left: menu.x, top: menu.y, width: menu.w }}
+            >
+              {opts.map((o) => (
+                <button
+                  key={o.id || 'default'}
+                  type="button"
+                  role="option"
+                  aria-selected={o.id === cur.id}
+                  className={'select-opt' + (o.id === cur.id ? ' on' : '')}
+                  onClick={() => {
+                    onChange(o.id);
+                    setMenu(null);
+                  }}
+                >
+                  <span>{o.label}</span>
+                  {o.id === cur.id && <Icon name="check" size={16} />}
+                </button>
+              ))}
+            </div>
+          </>,
+          document.body,
+        )}
     </div>
   );
 }
@@ -226,6 +290,14 @@ function VoiceDevices() {
   const prefsRef = useRef(prefs);
   prefsRef.current = prefs;
   const getPrefs = () => prefsRef.current;
+
+  // На время проверки микрофон в звонке выключается (см. MIC_TEST_EVENT в useVoice)
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent(MIC_TEST_EVENT, { detail: testing }));
+    return () => {
+      if (testing) window.dispatchEvent(new CustomEvent(MIC_TEST_EVENT, { detail: false }));
+    };
+  }, [testing]);
 
   // Проверка: захватываем выбранный микрофон, показываем уровень и возвращаем звук в выбранные наушники.
   useEffect(() => {
@@ -1209,6 +1281,17 @@ export function UserSettingsBody({
                 </div>
                 <Toggle on={app.glassVoice} onChange={app.setGlassVoice} disabled={!app.glassUi} />
               </div>
+            </div>
+          </div>
+          <div className="card">
+            <div className="row-between">
+              <div>
+                <h3>Живой фон</h3>
+                <p className="hint" style={{ margin: 0 }}>
+                  Кольцо и мягкие свечения за панелями. Выключите — фон станет спокойным однотонным
+                </p>
+              </div>
+              <Toggle on={app.liveBg} onChange={app.setLiveBg} />
             </div>
           </div>
           <div className="card">

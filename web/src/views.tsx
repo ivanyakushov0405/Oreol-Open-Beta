@@ -1,10 +1,12 @@
 import { useEffect, useLayoutEffect, useReducer, useRef, useState, type CSSProperties, type MouseEvent as RMouseEvent, type ReactNode } from 'react';
+import { userMenuProps } from './userMenu';
 import { createPortal } from 'react-dom';
 import type { AppState } from './App';
-import { Icon, LogoPeople } from './icons';
+import { Icon, LogoPeople, StrikeIcon } from './icons';
+import { useMicLevel } from './micLevel';
 import { handleOf, type Channel, type ServerId, type Status } from './mock';
 import { useVoiceCounts, type VoicePeer } from './useVoice';
-import { Avatar, Banner, DisplayName, VideoView } from './ui';
+import { Avatar, Banner, DisplayName, VideoView, mentionsMe } from './ui';
 
 
 /** Анимация входа/выхода участников голосового: новые помечаются «in», ушедшие ещё ~0.25 с
@@ -33,7 +35,9 @@ function usePeerAnim<T>(items: T[], keyOf: (t: T) => string, scope: string, sett
     s.seen = new Set(keys);
     s.fresh.clear();
     s.ghosts.clear();
-  } else if (now - s.at < settleMs) {
+  } else if (now - s.at < settleMs || (s.prev.length === 0 && items.length > 0)) {
+    // сразу после смены источника списка (вошли/вышли из канала сами) список «доезжает» — без анимаций;
+    // так же и когда список пришёл впервые (участники сервера подгружаются после открытия канала)
     // сразу после смены источника списка (вошли/вышли из канала сами) список «доезжает» — без анимаций
     s.seen = new Set(keys);
     s.ghosts.clear();
@@ -149,7 +153,7 @@ export function Rail({
 /* ---------- Список каналов ---------- */
 export function VoiceUserRow({ p, anim }: { p: VoicePeer; anim?: Anim }) {
   return (
-    <div className={'voice-user' + animClass(anim)}>
+    <div className={'voice-user' + animClass(anim)} {...userMenuProps(p.identity)}>
       <Avatar name={p.identity} size={28} speaking={p.speaking} />
       <span className={'name' + (p.speaking ? ' speaking' : '')}>
         {p.mobile && <Icon name="smartphone" size={14} className="dev-phone" />}
@@ -161,6 +165,43 @@ export function VoiceUserRow({ p, anim }: { p: VoicePeer; anim?: Anim }) {
       </span>
     </div>
   );
+}
+
+/** Сколько чужих сообщений пришло после последнего прочитанного. */
+/** Красный бейдж непрочитанного: при каждом новом числе — «выпрыгивает»; больше 99 — «99+». */
+export function UnreadBadge({ n, className = '' }: { n: number; className?: string }) {
+  if (!n) return null;
+  return (
+    <span key={n} className={'badge unread-badge ' + className} aria-label={`Непрочитанных: ${n}`}>
+      {n > 99 ? '99+' : n}
+    </span>
+  );
+}
+/** Сколько непрочитанных в чате (чужие сообщения после отметки «прочитано»). */
+export function chatUnread(app: AppState, chat: AppState['lobby']) {
+  return unreadCount(chat.messages, chat.myRead, app.name);
+}
+
+/** Сколько непрочитанных сообщений упоминают тебя. */
+function unreadMentions(messages: { id: string | number; user: string; sys?: string | null; content?: string | null }[], readId: number, me: string) {
+  const tag = handleOf(me);
+  let n = 0;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (Number(m.id) <= readId) break;
+    if (!m.sys && m.user !== me && mentionsMe(m.content || '', tag)) n++;
+  }
+  return n;
+}
+
+function unreadCount(messages: { id: string | number; user: string; sys?: string | null }[], readId: number, me: string) {
+  let n = 0;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (Number(m.id) <= readId) break;
+    if (!m.sys && m.user !== me) n++;
+  }
+  return n;
 }
 
 export function ChannelList({
@@ -176,6 +217,24 @@ export function ChannelList({
   const voice = app.server.channels.filter((c) => c.kind === 'voice');
   // Анимация — только когда кто-то сам зашёл/вышел; при своём входе/выходе список меняет источник и не «прыгает»
   const voiceRows = usePeerAnim(app.voiceUsers, (p) => p.identity, `${app.server.id}:${app.voiceSource}`, 1500);
+  // Непрочитанное: красный бейдж с числом (первый текстовый канал — общий чат, голосовой — его чат)
+  const badge = (c: Channel, i: number) => {
+    const chat = c.kind === 'voice' ? app.lobby : i === 0 ? app.general : null;
+    if (!chat || active === c.id) return null;
+    const n = unreadCount(chat.messages, chat.myRead, app.name);
+    if (!n) return null;
+    const at = unreadMentions(chat.messages, chat.myRead, app.name);
+    return (
+      <span className="ch-badges">
+        {at > 0 && (
+          <span key={'@' + at} className="badge unread-badge mention-badge" title={`Упоминаний: ${at}`}>
+            @
+          </span>
+        )}
+        <UnreadBadge n={n} />
+      </span>
+    );
+  };
   return (
     <>
       <div className="section-title overline">Текстовые каналы</div>
@@ -187,6 +246,7 @@ export function ChannelList({
         >
           <Icon name="chats" size={18} />
           <span className="name">{c.name}</span>
+          {badge(c, text.indexOf(c))}
         </button>
       ))}
       <div className="section-title overline">Голосовые каналы</div>
@@ -198,6 +258,7 @@ export function ChannelList({
           >
             <Icon name="voice" size={18} />
             <span className="name">{c.name}</span>
+            {badge(c, 0)}
           </button>
           {voiceRows.length > 0 && (
             <div className="voice-users">
@@ -404,15 +465,23 @@ export function UserPanel({
   app,
   onSettings,
   onProfile,
+  onStage = false,
 }: {
   app: AppState;
   onSettings: () => void;
   onProfile?: () => void;
+  /** Открыт сервер, в войсе которого мы сидим, — нас уже видно (и подсвечивает) в списке каналов, кольца на аватарке не нужно. */
+  onStage?: boolean;
 }) {
   const v = app.voice;
   const [menu, setMenu] = useState(false);
+  // В звонке иконка микрофона заполняется цианом по уровню голоса, а пока говоришь — кольцо вокруг аватарки.
+  // Если открыт сервер, в войсе которого сидим, кольца нет: нас уже подсвечивает список каналов.
+  const micLive = v.micOn && v.state === 'connected';
+  const panel = useRef<HTMLDivElement>(null);
+  useMicLevel(panel, micLive, v.micTrack);
   return (
-    <div className="user-panel">
+    <div className={'user-panel' + (onStage ? ' on-stage' : '')} ref={panel}>
       {menu && (
         <AccountMenu
           app={app}
@@ -439,18 +508,19 @@ export function UserPanel({
         <span>{handleOf(app.name)}</span>
       </button>
       <button
-        className={'icon-btn' + (!v.micOn ? ' danger' : '')}
+        className={'icon-btn mic-lvl' + (!v.micOn ? ' danger' : '')}
         title={v.micOn ? 'Выключить микрофон' : 'Включить микрофон'}
         onClick={() => void v.toggleMic()}
       >
-        <Icon name={!v.micOn ? 'mic-off' : 'mic'} />
+        <StrikeIcon name="mic" off={!v.micOn} />
+        {micLive && <Icon name="mic" className="mic-fill" />}
       </button>
       <button
         className={'icon-btn' + (v.deafened ? ' danger' : '')}
         title={v.deafened ? 'Включить звук' : 'Выключить звук'}
         onClick={v.toggleDeafen}
       >
-        <Icon name={v.deafened ? 'headphones-off' : 'headphones'} />
+        <StrikeIcon name="headphones" off={v.deafened} />
       </button>
       <button className="icon-btn" title="Настройки" onClick={onSettings}>
         <Icon name="settings" />
@@ -509,7 +579,10 @@ function Tile({ p, kind, wide, avatar = 80, anim }: { p: VoicePeer; kind: 'cam' 
     </>
   );
   return (
-    <div className={'tile' + (p.speaking && kind === 'cam' ? ' speaking' : '') + (track ? '' : ' novideo') + (wide ? ' wide' : '') + animClass(anim)}>
+    <div
+      className={'tile' + (p.speaking && kind === 'cam' ? ' speaking' : '') + (track ? '' : ' novideo') + (wide ? ' wide' : '') + animClass(anim)}
+      {...userMenuProps(p.identity)}
+    >
       {track ? (
         <>
           <VideoView track={track} mirror={p.isLocal && kind === 'cam'} contain={kind === 'screen'} />
@@ -537,10 +610,10 @@ export function VoiceControls({ app, full }: { app: AppState; full?: boolean }) 
       {full && (
         <>
           <button className={'ctrl' + (v.micOn ? '' : ' off')} title={v.micOn ? 'Выключить микрофон' : 'Включить микрофон'} onClick={v.toggleMic}>
-            <Icon name={v.micOn ? 'mic' : 'mic-off'} size={30} />
+            <StrikeIcon name="mic" off={!v.micOn} size={30} />
           </button>
           <button className={'ctrl' + (v.deafened ? ' off' : '')} title={v.deafened ? 'Включить звук' : 'Выключить звук'} onClick={v.toggleDeafen}>
-            <Icon name={v.deafened ? 'headphones-off' : 'headphones'} size={30} />
+            <StrikeIcon name="headphones" off={v.deafened} size={30} />
           </button>
         </>
       )}

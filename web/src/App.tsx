@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { UserMenuHost } from './userMenu';
+import { ProfileHost } from './profile';
 import { Login } from './Login';
 import { Desktop } from './Desktop';
 import { Mobile } from './Mobile';
@@ -6,18 +8,31 @@ import { useChat } from './useChat';
 import { IS_MOBILE_DEVICE, savedVoice, useVoice, useVoiceRoster, type VoicePeer } from './useVoice';
 import { ConnBanner, useToast, type ToastKind } from './ui';
 import { Backdrop } from './Backdrop';
+import { MessageAlerts } from './notifications';
 import type { Server, ServerId, Status } from './mock';
 import { api, clearUsers, getToken, putUser, refreshUsers, SESSION_EXPIRED, setToken, type Me, type Member } from './auth';
 
 export type Theme = 'dark' | 'light';
 
 /** Старый «вход по имени» — ключ чистим, теперь вход по email и паролю. */
+/** Смена темы или прозрачности — плавно: на полсекунды включаем переходы фона, размытия и кромок у поверхностей
+ *  (иначе размытый цвет панелей и меню прыгал разом, и казалось, что резко меняется тор за ними). */
+function animateSurfaces() {
+  const html = document.documentElement;
+  // тему меняет «разлив» (View Transition) — он сам анимирует смену; свои переходы поверх него давали второе мигание
+  if (html.dataset.vt) return;
+  html.classList.add('glass-anim');
+  window.clearTimeout(Number(html.dataset.glassAnimT));
+  html.dataset.glassAnimT = String(window.setTimeout(() => html.classList.remove('glass-anim'), 560));
+}
+
 const LS_NAME = 'oreol.name';
 const LS_THEME = 'oreol.theme';
 const LS_GLASS = 'oreol.glassChat';
 const LS_GLASS_VOICE = 'oreol.glassVoice';
 const LS_GLASS_UI = 'oreol.glassUi';
 const LS_PATTERN = 'oreol.chatPattern';
+const LS_LIVE_BG = 'oreol.liveBg';
 const LS_SERVER = 'oreol.server';
 /** Статус раньше хранился локально — теперь он на сервере, старый ключ чистим. */
 const LS_STATUS = 'oreol.status';
@@ -74,7 +89,8 @@ function useAppState(
   };
   // Внешний вид. «Прозрачность интерфейса» — главный переключатель: без неё панели непрозрачные,
   // а прозрачный чат и прозрачный войс (её подпункты) выключаются вместе с ней.
-  const [glassUi, setGlassUiState] = useState(() => lsGet(LS_GLASS_UI) !== '0');
+  // По умолчанию прозрачность выключена — включается в «Внешнем виде»
+  const [glassUi, setGlassUiState] = useState(() => lsGet(LS_GLASS_UI) === '1');
   const setGlassUi = (v: boolean) => {
     setGlassUiState(v);
     lsSet(LS_GLASS_UI, v ? '1' : '0');
@@ -94,13 +110,23 @@ function useAppState(
     setChatPatternState(v);
     lsSet(LS_PATTERN, v ? '1' : '0');
   };
+  // Живой фон (тор и свечения) — отдельно от прозрачности; без него — спокойный однотонный фон
+  const [liveBg, setLiveBgState] = useState(() => lsGet(LS_LIVE_BG) !== '0');
+  const setLiveBg = (v: boolean) => {
+    setLiveBgState(v);
+    lsSet(LS_LIVE_BG, v ? '1' : '0');
+  };
   const glassChat = glassUi && glassChatPref;
   const glassVoice = glassUi && glassVoicePref;
   useEffect(() => {
     const d = document.documentElement.dataset;
-    d.glass = glassUi ? 'on' : 'off';
+    const next = glassUi ? 'on' : 'off';
+    // смена режима — плавно: на полсекунды включаем переходы фона/размытия у стеклянных поверхностей
+    if (d.glass && d.glass !== next) animateSurfaces();
+    d.glass = next;
     d.pattern = chatPattern ? 'on' : 'off';
-  }, [glassUi, chatPattern]);
+    d.backdrop = liveBg ? 'on' : 'off';
+  }, [glassUi, chatPattern, liveBg]);
   // Серверы — те, где пользователь участник (с бэкенда). Выбранный запоминаем локально.
   const serverById = useCallback((id: string | null | undefined) => servers.find((s) => s.id === id), [servers]);
   const [serverId, setServerIdState] = useState<ServerId>(() => (serverById(lsGet(LS_SERVER)) ?? servers[0]).id);
@@ -242,6 +268,8 @@ function useAppState(
     setTheme,
     glassUi,
     setGlassUi,
+    liveBg,
+    setLiveBg,
     glassChat,
     glassChatPref,
     setGlassChat,
@@ -289,15 +317,12 @@ function Shell(props: {
 }) {
   const app = useAppState(props.me, props.servers, props.setMe, props.logout, props.theme, props.setTheme);
   const mobile = useIsMobile();
-  // Первые мгновения после загрузки — без анимаций и переходов: интерфейс встаёт сразу в итоговом виде
-  useEffect(() => {
-    const id = window.setTimeout(() => document.documentElement.classList.remove('boot'), 700);
-    return () => window.clearTimeout(id);
-  }, []);
   return (
     <>
-      <Backdrop mobile={mobile} />
       {mobile ? <Mobile app={app} /> : <Desktop app={app} />}
+      <ProfileHost app={app} />
+      <UserMenuHost app={app} />
+      <MessageAlerts app={app} />
       {app.connBanner && <ConnBanner text={app.connBanner} tone={app.connBanner.startsWith('Нет') ? 'error' : 'warn'} />}
       {app.toast}
     </>
@@ -308,7 +333,6 @@ function Shell(props: {
 function ErrorScreen({ text, retry, onLogout }: { text: string; retry: () => void; onLogout?: () => void }) {
   return (
     <>
-      <Backdrop />
       <div className="empty-state error-screen" role="alert">
         <b>Не удалось загрузить Ореол</b>
         <span>{text}</span>
@@ -327,13 +351,32 @@ function ErrorScreen({ text, retry, onLogout }: { text: string; retry: () => voi
   );
 }
 
+/** Фон — один на всё приложение и не пересоздаётся при смене экранов (загрузка → вход → приложение):
+ *  раньше у каждого экрана был свой, и при переходах свечения и тор появлялись заново — «мигали». */
 export default function App() {
+  const mobile = useIsMobile();
+  return (
+    <>
+      <Backdrop mobile={mobile} />
+      <AppScreens />
+    </>
+  );
+}
+
+function AppScreens() {
   const [me, setMe] = useState<Me | null>(null);
   // Пока проверяем сохранённую сессию, экран входа не мигает
   const [checking, setChecking] = useState(() => !!getToken());
   /** Бэкенд недоступен при старте — экран ошибки с повтором вместо экрана входа. */
   const [bootError, setBootError] = useState<string | null>(null);
   const [bootTry, setBootTry] = useState(0);
+  // Первые мгновения после загрузки — без анимаций и переходов: интерфейс встаёт сразу в итоговом виде.
+  // Снимаем на любом экране, включая вход: раньше класс снимал только интерфейс после входа,
+  // и на экране входа переходы «Вход ⇄ Регистрация» не работали.
+  useEffect(() => {
+    const id = window.setTimeout(() => document.documentElement.classList.remove('boot'), 700);
+    return () => window.clearTimeout(id);
+  }, []);
   useEffect(() => {
     lsSet(LS_NAME, null);
     if (!getToken()) return;
@@ -371,7 +414,9 @@ export default function App() {
   const [theme, setThemeState] = useState<Theme>(() => (lsGet(LS_THEME) === 'light' ? 'light' : 'dark'));
 
   useEffect(() => {
-    document.documentElement.dataset.theme = theme;
+    const d = document.documentElement.dataset;
+    if (d.theme && d.theme !== theme) animateSurfaces();
+    d.theme = theme;
   }, [theme]);
 
   const setTheme = useCallback((t: Theme) => {
@@ -390,7 +435,7 @@ export default function App() {
     setMe(null);
   };
 
-  if (checking) return <Backdrop />;
+  if (checking) return null;
   if (bootError && !me) {
     return (
       <ErrorScreen
@@ -405,11 +450,10 @@ export default function App() {
   }
   if (!me) return <Login onLogin={login} />;
   if (serversError) return <ErrorScreen text={serversError} retry={() => setServersTry((n) => n + 1)} onLogout={logout} />;
-  if (!servers) return <Backdrop />;
+  if (!servers) return null;
   if (!servers.length) {
     return (
       <>
-        <Backdrop />
         <div className="empty-state" style={{ position: 'fixed', inset: 0, justifyContent: 'center' }}>
           <b>Вы пока не состоите ни в одном сервере</b>
           <button className="btn btn-secondary" onClick={logout} style={{ marginTop: 12 }}>

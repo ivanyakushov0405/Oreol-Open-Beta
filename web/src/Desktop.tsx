@@ -1,3 +1,4 @@
+import { openProfile, EDIT_PROFILE_EVENT } from './profile';
 import { useEffect, useState } from 'react';
 import type { AppState } from './App';
 import { Icon } from './icons';
@@ -17,7 +18,7 @@ import {
 } from './Settings';
 import { MemberCard, MemberRow, TypingLine } from './ui';
 import { parseRoute, paths, useUrlSync } from './router';
-import { ChannelList, ChatBody, Rail, UserPanel, VoiceStage, VoiceStatus, useElapsed, PinnedButton } from './views';
+import { ChannelList, ChatBody, Rail, UserPanel, VoiceStage, VoiceStatus, useElapsed, PinnedButton, UnreadBadge, chatUnread } from './views';
 
 type Overlay = { kind: 'user'; section: UserSection } | { kind: 'server'; section: ServerSection } | null;
 
@@ -37,6 +38,12 @@ export function Desktop({ app }: { app: AppState }) {
   const [showMembers, setShowMembers] = useState(true);
   const [voiceChat, setVoiceChat] = useState(false);
   const [overlay, setOverlay] = useState<Overlay>(null);
+  // «Редактировать профиль» из окна полного профиля
+  useEffect(() => {
+    const edit = () => setOverlay({ kind: 'user', section: 'account-edit' });
+    window.addEventListener(EDIT_PROFILE_EVENT, edit);
+    return () => window.removeEventListener(EDIT_PROFILE_EVENT, edit);
+  }, []);
   const [card, setCard] = useState<{ name: string; x: number; y: number } | null>(null);
 
   /** Время в голосовом — хук стоит до любых return, иначе React падает при открытии настроек. */
@@ -144,6 +151,12 @@ export function Desktop({ app }: { app: AppState }) {
       <Rail app={app} home={home} onHome={() => setHome(true)} onServer={(id: ServerId) => {
           setHome(false);
           app.setServerId(id);
+          // На сервер заходим в первый текстовый канал (general); если сидим в его войсе — сразу в войс
+          const srv = app.serverById(id);
+          const inHisVoice = app.voice.state !== 'idle' && app.voice.server === id;
+          const ch = srv?.channels.find((c) => (inHisVoice ? c.kind === 'voice' : c.kind !== 'voice'));
+          setChannelId(ch?.id ?? null);
+          setVoiceChat(false);
         }} />
 
       <aside className="sidebar glass">
@@ -176,7 +189,7 @@ export function Desktop({ app }: { app: AppState }) {
             setChannelId(app.serverById(app.voice.server)?.channels.find((c) => c.kind === 'voice')?.id ?? null);
           }}
         />
-        <UserPanel app={app} onSettings={openSettings} onProfile={() => setOverlay({ kind: 'user', section: 'account-edit' })} />
+        <UserPanel app={app} onStage={!home && app.inVoiceHere} onSettings={openSettings} onProfile={() => setOverlay({ kind: 'user', section: 'account-edit' })} />
       </aside>
 
       {home ? (
@@ -222,6 +235,7 @@ export function Desktop({ app }: { app: AppState }) {
                 <button type="button" className={'btn-chip' + (voiceChat ? ' on' : '')} onClick={() => setVoiceChat((v) => !v)}>
                   <Icon name="chats" size={16} />
                   Чат канала
+                  {!voiceChat && <UnreadBadge n={chatUnread(app, app.lobby)} />}
                 </button>
               </div>
             ) : (
@@ -320,7 +334,7 @@ export function Desktop({ app }: { app: AppState }) {
             const mine = card.name === app.name;
             setCard(null);
             if (mine) setOverlay({ kind: 'user', section: 'account-edit' });
-            else app.notify('Полный профиль появится с полноценным бэкендом');
+            else openProfile(card.name);
           }}
         />
       )}
