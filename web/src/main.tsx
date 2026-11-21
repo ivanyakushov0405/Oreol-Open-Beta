@@ -1,7 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import './styles.css';
-import App from './App';
+import './app/styles.css';
+import App from './app/App';
 
 // Полоса прокрутки видна только во время прокрутки и пропадает через ~1 с после неё.
 const hideTimers = new WeakMap<Element, number>();
