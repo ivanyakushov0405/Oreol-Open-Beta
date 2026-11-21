@@ -16,17 +16,18 @@
   --border-strong: #ffffff29;
   --border-focus: #00e5ff;
   --text-primary: #eaf6ff;
-  --text-secondary: #9db4cc;
-  --text-muted: #5c7590;
+  --text-secondary: #b4c7db; /* APCA Lc 70 / WCAG 10.3 на панели */
+  --text-muted: #8aa1ba;     /* APCA Lc 44–49 / WCAG ≥4.6 даже на выделенной строке */
   --text-link: #00e5ff;
   --accent-primary: #2f7bff;
   --accent-cyan: #00e5ff;
+  --accent-cyan-text: #00e5ff; /* циан для текста; в светлой — темнее, чем для иконок */
   --accent-violet: #7a5cff;
   --grad-start: #00e5ff;
   --grad-mid: #2f7bff;
   --grad-end: #7a5cff;
-  --bubble-mine-start: #1e6bff;
-  --bubble-mine-end: #1e6bff; /* сплошная заливка своих сообщений, как у кнопок */
+  --bubble-mine-start: #1a5fe8;
+  --bubble-mine-end: #1a5fe8; /* сплошная заливка своих сообщений, как у кнопок */
   --bubble-other: #0e2238;
   --status-online: #3ddc97;
   --status-idle: #ffc94d;
@@ -34,7 +35,7 @@
   --status-offline: #5c7590;
   --danger: #ff5c7a;
   --speaking: #00e5ff;
-  --name-1: #9a8bff;
+  --name-1: #b3a8ff;  /* APCA Lc ~60 на панели (было 47) */
   --name-2: #00e5ff;
   --name-3: #ffb36b;
   --role-admin: #ff5c7a;
@@ -42,7 +43,7 @@
   --role-raid-lead: #7a5cff;
   --role-healer: #3ddc97;
   --role-amber: #ffb840;
-  --role-blue: #548fff;
+  --role-blue: #7aa8ff;
   --role-pink: #fa78d9;
   --role-everyone: #5c7590;
   --wallpaper: #ffffff;
@@ -82,28 +83,29 @@
   --border-strong: #040a1429;
   --border-focus: #1e6bff;
   --text-primary: #1a3350;
-  --text-secondary: #5c7590;
-  --text-muted: #7f97b0;
-  --text-link: #1e6bff;
+  --text-secondary: #435c76; /* APCA Lc 72 / WCAG 5.8 на панели, 4.7 на выделенной */
+  --text-muted: #526b87;     /* APCA Lc 66 / WCAG 4.6 на панели */
+  --text-link: #1655d6;
   --accent-primary: #1e6bff;
-  --accent-cyan: #00a8cc;
+  --accent-cyan: #008fae;    /* иконки, кольца, обводки (нетекст.): ≥3:1 на панели */
+  --accent-cyan-text: #00718b; /* циан как текст: WCAG 4.7 / Lc 66 на панели, 5.6 / 78 на белом */
   --accent-violet: #6342e8;
   --grad-start: #00a8cc;
   --grad-mid: #1e6bff;
   --grad-end: #6342e8;
   --bubble-other: #ffffff;
-  --status-online: #1fae6f;
-  --status-idle: #d9a21f;
-  --status-dnd: #e0385a;
-  --status-offline: #7f97b0;
-  --danger: #e0385a;
-  --speaking: #00a8cc;
+  --status-online: #117a4b;
+  --status-idle: #8a6400;
+  --status-dnd: #bb2444;
+  --status-offline: #687f99;   /* точка статуса: 3.5:1 на панели */
+  --danger: #bb2444;
+  --speaking: #0098b8;  /* кольцо говорящего: ярче акцента (2.85:1 к панели, вместе с ореолом заметно) */
   --name-1: #6342e8;
-  --name-2: #00a8cc;
-  --name-3: #e08a2e;
-  --role-amber: #db8c0a;
-  --role-blue: #2966e5;
-  --role-pink: #d63dad;
+  --name-2: #00718b;
+  --name-3: #985600;
+  --role-amber: #875800;
+  --role-blue: #2560d8;
+  --role-pink: #b02e8c;
   --wallpaper: #040a14;
   --wallpaper-opacity: 0.06;
   --panel-bg: #ffffff66;
@@ -354,7 +356,8 @@ input, textarea { font: inherit; color: inherit; }
 .member .info { min-width: 0; }
 .member .info b { display: block; font-weight: 500; font-size: 14px; }
 .member .info span { display: block; font-size: 12px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.member.offline { opacity: 0.45; }
+.member.offline .avatar { opacity: .5; }
+.member.offline .info b { color: var(--text-secondary); } /* приглушаем цветом, а не opacity: контраст остаётся ≥4.5 */
 .you-tag { font-size: 11px; color: var(--text-muted); font-weight: 400; }
 
 /* ---------- Чат ---------- */
@@ -384,10 +387,10 @@ input, textarea { font: inherit; color: inherit; }
 .bubble .meta { display: flex; gap: 8px; align-items: baseline; font-size: 12px; }
 .bubble .meta b { font-weight: 600; }
 .bubble .meta time { color: var(--text-muted); }
-.msg.mine .bubble .meta time { color: #ffffffb3; }
+.msg.mine .bubble .meta time { color: #ffffffeb; }
 .bubble .text { font-size: 15px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
 .bubble .reply { margin: 4px 0 6px; padding-left: 8px; border-left: 2px solid var(--accent-cyan); font-size: 12px; }
-.bubble .reply b { color: var(--accent-cyan); display: block; }
+.bubble .reply b { color: var(--accent-cyan-text); display: block; }
 .bubble .reply span { color: var(--text-secondary); }
 .msg .avatar { margin-bottom: 2px; }
 .empty-state { margin: auto; text-align: center; color: var(--text-secondary); max-width: 320px; position: relative; }
@@ -699,7 +702,7 @@ input, textarea { font: inherit; color: inherit; }
 .bubble .meta { gap: 8px; font-size: 12px; line-height: 1.3; }
 .bubble .meta b { font-weight: 500; }
 .msg.mine .bubble .meta { gap: 4px; }
-.msg.mine .bubble .meta time { color: #fff; opacity: .75; }
+.msg.mine .bubble .meta time { color: #ffffffeb; }
 .bubble .text { font-size: 15px; line-height: 1.45; }
 
 /* Поле ввода + нижнее затемнение */
@@ -791,7 +794,7 @@ input, textarea { font: inherit; color: inherit; }
 .auth-field .input:focus { border-color: var(--accent-cyan); box-shadow: inset 0 0 0 1px var(--accent-cyan); }
 .auth-field .input.invalid { border-color: var(--danger); box-shadow: inset 0 0 0 1px var(--danger); }
 .field-hint { min-height: 16px; font-size: 12px; font-weight: 500; line-height: 1.3; color: var(--text-muted); }
-.field-hint b { color: var(--accent-cyan); font-weight: 500; }
+.field-hint b { color: var(--accent-cyan-text); font-weight: 500; }
 .field-hint.error { color: var(--danger); }
 .auth-submit {
   height: 40px; border-radius: 12px; font-size: 14px; border: 1px solid transparent;
@@ -799,7 +802,7 @@ input, textarea { font: inherit; color: inherit; }
 }
 .auth-submit:disabled { opacity: .55; }
 .auth-foot { display: flex; justify-content: center; gap: 6px; font-size: 14px; line-height: 1.45; color: var(--text-secondary); text-align: center; }
-.auth-foot .link { color: var(--accent-cyan); font-weight: 500; }
+.auth-foot .link { color: var(--accent-cyan-text); font-weight: 500; }
 
 @media (max-width: 1100px) {
   .signin { padding: 32px 48px; gap: 48px; }
@@ -951,9 +954,9 @@ input, textarea { font: inherit; color: inherit; }
 
 /* ===== Настройки сервера · Роли (Figma 152:35304) ===== */
 .settings-nav { padding: 20px 12px; gap: 2px; }
-.settings-nav .overline { padding: 12px 10px 6px; font-size: 12px; font-weight: 500; color: #5c7590; }
-.nav-item { height: 40px; padding: 10px; gap: 10px; border-radius: 10px; font-size: 14px; color: #9db4cc; }
-.nav-item svg { color: #5c7590; }
+.settings-nav .overline { padding: 12px 10px 6px; font-size: 12px; font-weight: 500; color: var(--text-muted); }
+.nav-item { height: 40px; padding: 10px; gap: 10px; border-radius: 10px; font-size: 14px; color: var(--text-secondary); }
+.nav-item svg { color: var(--text-muted); }
 .nav-item.on { background: #ffffff1f; color: #eaf6ff; font-weight: 500; }
 .nav-item.on svg { color: var(--accent-cyan); }
 .nav-item.danger { color: #ff5c7a; border-top: 0; position: relative; margin-top: auto; }
@@ -970,7 +973,7 @@ input, textarea { font: inherit; color: inherit; }
 .roles-layout > .roles-panel { flex: none; width: 340px; min-height: 726px; }
 .roles-head { display: flex; flex-direction: column; gap: 2px; }
 .roles-panel h3 { margin: 0; font-size: 18px; line-height: 23px; font-weight: 600; color: var(--text-primary); }
-.roles-head p { margin: 0; font-size: 14px; line-height: 20px; color: #9db4cc; }
+.roles-head p { margin: 0; font-size: 14px; line-height: 20px; color: var(--text-secondary); }
 .roles-list { display: flex; flex-direction: column; padding: 6px 0; border-radius: 20px; }
 .roles-divider { height: 1px; margin: 0 12px; background: #ffffff14; flex: none; }
 .role-row {
@@ -982,8 +985,8 @@ input, textarea { font: inherit; color: inherit; }
 .role-color { width: 20px; height: 20px; display: grid; place-items: center; flex: none; }
 .role-color i { width: 12px; height: 12px; border-radius: 50%; }
 .role-name { flex: 1; min-width: 0; font-size: 14px; font-weight: 500; line-height: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.role-count { font-size: 13px; font-weight: 500; color: #5c7590; }
-.role-row svg { color: #5c7590; flex: none; }
+.role-count { font-size: 13px; font-weight: 500; color: var(--text-muted); }
+.role-row svg { color: var(--text-muted); flex: none; }
 .btn-chip {
   position: relative; align-self: flex-start; display: inline-flex; align-items: center; gap: 8px; height: 30px; padding: 6px 14px;
   border-radius: 10px; font-size: 12px; font-weight: 500; color: #eaf6ff; background: #ffffff1a;
@@ -993,13 +996,13 @@ input, textarea { font: inherit; color: inherit; }
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude;
 }
 .btn-chip:hover { background: #ffffff26; }
-.roles-overline { padding: 12px 12px 6px; margin: 0; font-size: 12px; font-weight: 500; color: #5c7590; }
+.roles-overline { padding: 12px 12px 6px; margin: 0; font-size: 12px; font-weight: 500; color: var(--text-muted); }
 .roles-editor { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
 .roles-editor > .roles-overline { padding: 12px 12px 6px; }
 .role-input { font-weight: 500; }
 .role-input:disabled { opacity: 1; }
 .role-colors { display: flex; flex-direction: column; gap: 8px; }
-.role-colors .field-label { font-size: 12px; font-weight: 500; color: #9db4cc; }
+.role-colors .field-label { font-size: 12px; font-weight: 500; color: var(--text-secondary); }
 .swatches { display: flex; flex-wrap: wrap; gap: 10px; padding: 3px; }
 .swatch { width: 30px; height: 30px; border-radius: 50%; flex: none; transition: transform .15s, box-shadow .2s; }
 .swatch:active:not(:disabled) { transform: scale(.94); }
@@ -1013,7 +1016,7 @@ input, textarea { font: inherit; color: inherit; }
 .perm-row { display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 10px 12px; }
 .perm-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .perm-text b { font-size: 15px; line-height: 19px; font-weight: 500; color: var(--text-primary); }
-.perm-text span { font-size: 12px; line-height: 15px; color: #5c7590; }
+.perm-text span { font-size: 12px; line-height: 15px; color: var(--text-muted); }
 .toggle { width: 46px; height: 28px; border-radius: 14px; background: #0e2440; box-shadow: inset 0 0 0 1px #ffffff1f; }
 .toggle::after { top: 3px; left: 4px; width: 22px; height: 22px; box-shadow: 0 1px 3px #00000040; transition: transform .25s cubic-bezier(.3,.7,.2,1); }
 .toggle.on { background: var(--btn-fill); box-shadow: none; }
@@ -1031,7 +1034,7 @@ input, textarea { font: inherit; color: inherit; }
 .voice-user { height: 36px; padding: 4px 8px 4px 32px; gap: 8px; border-radius: 10px; font-size: 14px; }
 .voice-user .name { font-weight: 400; }
 .voice-user .name.speaking { font-weight: 500; }
-.voice-user .flags { gap: 8px; color: #9db4cc; }
+.voice-user .flags { gap: 8px; color: var(--text-secondary); }
 .voice-user .flags svg { width: 16px; height: 16px; }
 .off, .voice-user .flags .off, .tile .off { color: #ff5c7a; }
 
@@ -1047,7 +1050,7 @@ input, textarea { font: inherit; color: inherit; }
 .voice-status .signal { display: inline-flex; flex: none; }
 .voice-status .text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; text-align: left; }
 .voice-status .title { font-size: 12px; line-height: 15px; font-weight: 600; }
-.voice-status .sub { font-size: 11px; line-height: 14px; color: #5c7590; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.voice-status .sub { font-size: 11px; line-height: 14px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .voice-status .disconnect { width: 30px; height: 30px; border-radius: 10px; display: grid; place-items: center; color: #eaf6ff; flex: none; transition: background .15s; }
 .voice-status .disconnect:hover { background: #ff5c7a; }
 .q-good { color: #3ddc97; }
@@ -1057,14 +1060,14 @@ input, textarea { font: inherit; color: inherit; }
 
 /* Шапка: зелёная точка 6px + «Подключено · N участников · RTT» */
 .main-head .sub .live-dot { width: 6px; height: 6px; border-radius: 50%; background: #3ddc97; flex: none; }
-.main-head .sub { color: #9db4cc; }
+.main-head .sub { color: var(--text-secondary); }
 .main-head .actions .btn-chip { height: 30px; }
-.main-head .actions .btn-chip svg { color: #9db4cc; }
+.main-head .actions .btn-chip svg { color: var(--text-secondary); }
 .main-head .actions .btn-chip.on svg { color: var(--accent-cyan); }
 .side-chat .main-head { padding: 14px 16px; gap: 10px; }
 .side-chat .main-head .title { font-size: 14px; font-weight: 500; line-height: 18px; }
-.side-chat .main-head .sub { color: #5c7590; }
-.side-chat .main-head > svg { color: #9db4cc; }
+.side-chat .main-head .sub { color: var(--text-muted); }
+.side-chat .main-head > svg { color: var(--text-secondary); }
 
 /* Сцена: тайлы 210x196, r24, зазор 16, по центру */
 .stage { padding: 24px; display: flex; flex-direction: column; }
@@ -1078,14 +1081,14 @@ input, textarea { font: inherit; color: inherit; }
 .tile-pill {
   position: absolute; left: 12px; bottom: 12px; display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 5px 10px;
   border-radius: 12px; background: #080f1f8c; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
-  max-width: calc(100% - 24px); color: #9db4cc;
+  max-width: calc(100% - 24px); color: #b4c7db;
 }
 .tile-pill .nick, .tile-label .nick { font-size: 14px; line-height: 18px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .tile .dot { width: 3px; height: 3px; border-radius: 50%; background: #9db4cc; flex: none; opacity: 1; }
 .tile-pill svg, .tile-label svg { width: 16px; height: 16px; flex: none; }
 .tile.novideo { display: flex; flex-direction: column; align-items: center; padding: 12px 0 10px; gap: 6px; }
 .tile-media { width: 100%; height: 148px; display: grid; place-items: center; }
-.tile-label { display: inline-flex; align-items: center; gap: 6px; height: 18px; max-width: calc(100% - 24px); color: #9db4cc; }
+.tile-label { display: inline-flex; align-items: center; gap: 6px; height: 18px; max-width: calc(100% - 24px); color: var(--text-secondary); }
 
 /* Панель управления: «пилюля» r999, кнопки 48, иконки 30, отбой 80x48 #FF5C7A */
 .controls-bar { flex: none; display: flex; justify-content: center; padding: 8px 0 20px; margin: 0 -24px -24px; }
@@ -1095,7 +1098,7 @@ input, textarea { font: inherit; color: inherit; }
   backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); position: static; width: auto; margin: 0;
 }
 .ctrl {
-  width: 48px; height: 48px; border-radius: 15px; display: grid; place-items: center; color: #9db4cc; border: 0; background: none;
+  width: 48px; height: 48px; border-radius: 15px; display: grid; place-items: center; color: var(--text-secondary); border: 0; background: none;
   transition: background .15s, color .15s;
 }
 .ctrl svg { width: 30px; height: 30px; }
@@ -1129,23 +1132,23 @@ input, textarea { font: inherit; color: inherit; }
 .members { width: 240px; }
 .members-head { height: 60px; padding: 0 12px 0 16px; display: flex; flex-direction: column; justify-content: center; gap: 2px; }
 .members-head b { font-size: 18px; line-height: 23px; font-weight: 600; color: #eaf6ff; }
-.members-head span { font-size: 12px; line-height: 15px; color: #9db4cc; }
+.members-head span { font-size: 12px; line-height: 15px; color: var(--text-secondary); }
 .members .sidebar-scroll { padding: 12px 12px 16px; display: flex; flex-direction: column; gap: 4px; }
-.members .section-title { padding: 4px 0; margin: 0; font-size: 11px; line-height: 14px; font-weight: 600; color: #5c7590; }
+.members .section-title { padding: 4px 0; margin: 0; font-size: 11px; line-height: 14px; font-weight: 600; color: var(--text-muted); }
 .member { height: 47px; padding: 6px 8px; gap: 10px; border-radius: 10px; display: flex; align-items: center; width: 100%; text-align: left; }
 .member:hover { background: #ffffff0f; }
 .member .info { display: flex; flex-direction: column; gap: 1px; }
 .member .info b { font-size: 14px; line-height: 18px; font-weight: 500; }
-.member .info > span { font-size: 12px; line-height: 16px; color: #5c7590; }
+.member .info > span { font-size: 12px; line-height: 16px; color: var(--text-muted); }
 .member .status-dot, .user-panel .status-dot { width: 10px; height: 10px; min-width: 0; min-height: 0; right: 0; bottom: 0; border: 2px solid #0a1a2e; box-sizing: border-box; }
 [data-theme="light"] .members-head b { color: var(--text-primary); }
 [data-theme="light"] .status-dot { border-color: #fff; }
 
 /* Настройки: контент — сплошной #0A1A2E, кнопка закрытия 32x32 r10 (Figma) */
 .settings-body { background: var(--bg-chat); }
-.settings-close .icon-btn { width: 32px; height: 32px; border-radius: 10px; border: 0; position: relative; background: #ffffff1f; color: #9db4cc; }
+.settings-close .icon-btn { width: 32px; height: 32px; border-radius: 10px; border: 0; position: relative; background: #ffffff1f; color: var(--text-secondary); }
 .settings-close .icon-btn::after { content: ""; position: absolute; inset: 0; border-radius: inherit; padding: 1px; pointer-events: none; background: var(--outline-strong); -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; }
-.settings-close { font-size: 12px; color: #5c7590; gap: 4px; }
+.settings-close { font-size: 12px; color: var(--text-muted); gap: 4px; }
 
 /* Плитки подстраиваются под число участников; кольцо «говорит» — на плитке, в сайдбаре — ник ярче и кольцо на аватаре */
 .tiles { min-height: 0; overflow: hidden; }
@@ -1153,7 +1156,7 @@ input, textarea { font: inherit; color: inherit; }
 .tile.novideo { justify-content: center; padding: 12px 0; }
 .tile-media { height: auto; flex: 1; min-height: 0; }
 .tile-label .nick, .tile-pill .nick { color: #eaf6ff; }
-.voice-user .name { color: #9db4cc; transition: color .15s; }
+.voice-user .name { color: var(--text-secondary); transition: color .15s; }
 .voice-user .name.speaking { color: #eaf6ff; font-weight: 500; }
 [data-theme="light"] .voice-user .name { color: var(--text-secondary); }
 [data-theme="light"] .voice-user .name.speaking, [data-theme="light"] .tile-label .nick { color: var(--text-primary); }
@@ -1180,7 +1183,7 @@ input, textarea { font: inherit; color: inherit; }
 .voice-status .signal { position: relative; cursor: default; border-radius: 6px; }
 .ping-tip {
   position: absolute; left: -4px; bottom: calc(100% + 12px); z-index: 50; white-space: nowrap; pointer-events: none;
-  padding: 7px 10px; border-radius: 10px; font-size: 12px; font-weight: 500; color: #9db4cc;
+  padding: 7px 10px; border-radius: 10px; font-size: 12px; font-weight: 500; color: var(--text-secondary);
   background: var(--bg-elevated); border: 1px solid var(--panel-stroke); box-shadow: 0 8px 24px #00000066;
   opacity: 0; transform: translateY(4px); transition: opacity .15s ease, transform .15s ease;
 }
@@ -1299,11 +1302,11 @@ input, textarea { font: inherit; color: inherit; }
 .settings-head h1 { flex: 1; min-width: 0; margin: 0; font-size: 32px; line-height: 1.2; font-weight: 600; }
 .settings-close {
   position: static; flex: none; display: flex; flex-direction: column; align-items: center; gap: 4px;
-  font-size: 12px; line-height: 1.35; color: #5c7590;
+  font-size: 12px; line-height: 1.35; color: var(--text-muted);
 }
 .settings-x {
   position: relative; width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center;
-  background: #ffffff1f; color: #9db4cc; transition: background .15s, color .15s;
+  background: #ffffff1f; color: var(--text-secondary); transition: background .15s, color .15s;
 }
 .settings-x::after {
   content: ''; position: absolute; inset: 0; border-radius: inherit; padding: 1px; pointer-events: none;
@@ -1311,8 +1314,8 @@ input, textarea { font: inherit; color: inherit; }
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude;
 }
 .settings-x:hover { background: #ffffff2e; color: var(--text-primary); }
-[data-theme='light'] .settings-close { color: #7f97b0; }
-[data-theme='light'] .settings-x { background: #040a140f; color: #5c7590; }
+[data-theme='light'] .settings-close { color: var(--text-muted); }
+[data-theme='light'] .settings-x { background: #040a140f; color: var(--text-secondary); }
 [data-theme='light'] .settings-x::after { background: linear-gradient(135deg, #0a1a2e14, #0a1a2e0f 50%, #0a1a2e24); }
 [data-theme='light'] .settings-x:hover { background: #040a141a; color: var(--text-primary); }
 
@@ -1965,8 +1968,9 @@ input, textarea { font: inherit; color: inherit; }
 .m-head .title-pill { min-width: min(200px, calc(100% - 52px)); }
 .m-head .title-pill > div { flex: 0 1 auto; min-width: 0; overflow: hidden; }
 .m-head .title-pill .s { overflow: hidden; text-overflow: ellipsis; }
-.member.offline .info, .member.offline .avatar { opacity: .5; }
-.member.offline:hover .info, .member.offline:hover .avatar { opacity: .8; }
+.member.offline .avatar { opacity: .5; }
+.member.offline:hover .avatar { opacity: .8; }
+.member.offline:hover .info b { color: var(--text-primary); }
 .mc-activity i.status-idle { background: var(--status-idle); }
 .mc-activity i.status-dnd { background: var(--status-dnd); }
 .mc-activity i.status-offline { background: var(--status-offline); }
@@ -2083,7 +2087,7 @@ input, textarea { font: inherit; color: inherit; }
 .error-screen .row { display: flex; gap: 8px; margin-top: 12px; }
 
 /* ===== «печатает…» бирюзовым, точки чуть ниже — по базовой линии текста ===== */
-.typing-line, .typing-line .typing-verb { color: var(--accent-cyan); }
+.typing-line, .typing-line .typing-verb { color: var(--accent-cyan-text); }
 .typing-line .typing-dots { align-self: flex-end; margin-bottom: .32em; }
 .typing-line .typing-dots i, .typing-line .typing-dots i:nth-child(2), .typing-line .typing-dots i:nth-child(3) { background: var(--accent-cyan); }
 
@@ -2651,8 +2655,8 @@ input, textarea { font: inherit; color: inherit; }
 /* ===== Мобильная таб-панель: выделена вся вкладка сверху донизу, подпись бирюзовая ===== */
 .tabbar { padding: 0; overflow: hidden; }
 .tab { border-radius: 30px; transition: background-color .2s ease, color .2s ease; }
-.tab.on { background: #ffffff1f; color: var(--accent-cyan); font-weight: 600; }
-[data-theme='light'] .tab.on { background: var(--surface-selected); color: var(--accent-cyan); }
+.tab.on { background: #ffffff1f; color: var(--accent-cyan-text); font-weight: 600; }
+[data-theme='light'] .tab.on { background: var(--surface-selected); color: var(--accent-cyan-text); }
 .tab.on .tab-ico, [data-theme='light'] .tab.on .tab-ico { background: none; }
 
 /* ===== Мобильные настройки → Профиль: аватар и фон — сверху ===== */
@@ -2976,6 +2980,7 @@ svg.flip path { stroke-width: 2.3; }
   border: 2px solid var(--text-muted); display: grid; place-items: center; color: #04121f; transition: background-color .15s, border-color .15s;
 }
 .msg-check.on { background: var(--accent-cyan); border-color: var(--accent-cyan); }
+[data-theme='light'] .msg-check.on { color: #fff; }
 .chat.is-selecting .chat-scroll { gap: 4px; }
 
 /* Плашка ответа / редактирования — верхняя часть самого поля ввода */
@@ -2986,7 +2991,7 @@ svg.flip path { stroke-width: 2.3; }
 .composer-bar {
   flex: 0 0 100%; min-width: 0; max-width: 100%; display: flex; align-items: center; gap: 10px;
   margin: 0 -2px 4px -6px; padding: 4px 0 8px 6px; border-bottom: 1px solid var(--border-subtle);
-  color: var(--accent-cyan); animation: cb-in .18s cubic-bezier(.2, .8, .2, 1);
+  color: var(--accent-cyan-text); animation: cb-in .18s cubic-bezier(.2, .8, .2, 1);
 }
 @keyframes cb-in { from { opacity: 0; transform: translateY(6px); } }
 .composer-bar > svg { flex: none; }
@@ -2996,7 +3001,7 @@ svg.flip path { stroke-width: 2.3; }
   border: 0; border-left: 2px solid var(--accent-cyan); background: none; font: inherit; text-align: left; color: var(--text-primary); cursor: pointer;
 }
 .composer-bar .cb-text > * { display: block; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.composer-bar .cb-text b { font-size: 13px; font-weight: 600; color: var(--accent-cyan); }
+.composer-bar .cb-text b { font-size: 13px; font-weight: 600; color: var(--accent-cyan-text); }
 .composer-bar .cb-text span { font-size: 13px; color: var(--text-secondary); }
 
 /* Нижние панели вместо поля ввода: выделение и «Закреплённые» */
@@ -3006,7 +3011,7 @@ svg.flip path { stroke-width: 2.3; }
   background: var(--bg-elevated); box-shadow: var(--shadow-elevated);
 }
 .m-full .select-bar, .m-full .pinned-bar { margin-bottom: calc(12px + env(safe-area-inset-bottom)); }
-.pinned-bar { padding-left: 16px; color: var(--accent-cyan); }
+.pinned-bar { padding-left: 16px; color: var(--accent-cyan-text); }
 .sb-count { flex: 1; min-width: 0; font-size: 14px; font-weight: 600; color: var(--text-primary); }
 .sb-act { width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center; color: var(--text-primary); background: none; border: 0; flex: none; }
 .sb-act:hover:not(:disabled) { background: var(--surface-hover); }
@@ -3050,7 +3055,7 @@ svg.flip path { stroke-width: 2.3; }
 /* Шапка сообщения: пин, счётчик ответов, галочки прочтения */
 .bubble .meta { align-items: center; }
 .bubble .meta .msg-pin { flex: none; }
-.msg-replies { display: inline-flex; align-items: center; gap: 3px; font-size: 12px; font-weight: 600; color: var(--accent-cyan); }
+.msg-replies { display: inline-flex; align-items: center; gap: 3px; font-size: 12px; font-weight: 600; color: var(--accent-cyan-text); }
 .msg-replies svg { flex: none; }
 .msg.mine .msg-replies { color: #fff; }
 .msg-ticks { display: inline-flex; flex: none; margin-left: -1px; color: #ffffffa6; }
@@ -3083,7 +3088,7 @@ svg.flip path { stroke-width: 2.3; }
   font: inherit; text-align: left; color: var(--text-primary); cursor: pointer;
 }
 .pb-body > * { display: block; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pb-body b { font-size: 13px; font-weight: 600; color: var(--accent-cyan); }
+.pb-body b { font-size: 13px; font-weight: 600; color: var(--accent-cyan-text); }
 .pb-body span { font-size: 13px; color: var(--text-secondary); }
 .pin-banner .icon-btn { flex: none; color: var(--accent-cyan); }
 /* Лента начинается ниже плашки */
@@ -3092,7 +3097,7 @@ svg.flip path { stroke-width: 2.3; }
 /* Сообщения уходят под плашку, а не торчат над ней */
 .chat.with-pin .chat-scroll { -webkit-mask-image: linear-gradient(transparent 0, transparent 30px, #000 64px); mask-image: linear-gradient(transparent 0, transparent 30px, #000 64px); }
 .m-full .chat.with-pin .chat-scroll { -webkit-mask-image: linear-gradient(transparent 0, transparent 100px, #000 130px); mask-image: linear-gradient(transparent 0, transparent 100px, #000 130px); }
-.pb-count { flex: none; margin-right: -4px; min-width: 14px; text-align: right; font-size: 13px; font-weight: 600; color: var(--accent-cyan); font-variant-numeric: tabular-nums; }
+.pb-count { flex: none; margin-right: -4px; min-width: 14px; text-align: right; font-size: 13px; font-weight: 600; color: var(--accent-cyan-text); font-variant-numeric: tabular-nums; }
 .pin-banner:has(.pb-count) { padding-left: 10px; }
 /* Строка о закрепе — без отступов плашки даты (у даты свои, побольше) */
 .sys-row .date-pill.sys-note, [data-theme='light'] .sys-row .date-pill.sys-note { margin: 0; padding: 3px 10px; }
@@ -3654,8 +3659,8 @@ html.boot *:not(.backdrop *), html.boot *:not(.backdrop *)::before, html.boot *:
 .tile.speaking::after { display: none !important; }
 
 /* ===== Кнопки: сплошная фирменная синяя заливка вместо градиента, без голубого свечения =====
-   #1E6BFF держит контраст 4.5:1 с белым текстом в обеих темах. */
-:root { --btn-fill: #1e6bff; --btn-fill-hover: #3a7dff; }
+   #1A5FE8 держит ≥4.5:1 с белым текстом в обеих темах (у #1E6BFF было 4.56 — впритык). */
+:root { --btn-fill: #1a5fe8; --btn-fill-hover: #2b6af0; } /* белый текст: WCAG 5.5 / 4.75, APCA Lc 82 / 78 */
 .btn-primary, .mc-btn.primary, .send-btn, .auth-submit,
 [data-theme='light'] .btn-primary, [data-theme='light'] .mc-btn.primary {
   background: var(--btn-fill);
@@ -3710,9 +3715,9 @@ html.boot *:not(.backdrop *), html.boot *:not(.backdrop *)::before, html.boot *:
 [data-theme='light'][data-glass] .tile.novideo.speaking, [data-theme='light'][data-glass] .m-voice .tile.novideo.speaking {
   border-color: transparent !important;
   box-shadow:
-    inset 0 0 0 2px var(--speaking),
-    inset 0 0 18px 2px color-mix(in srgb, var(--speaking) 45%, transparent),
-    inset 0 0 40px 4px color-mix(in srgb, var(--speaking) 18%, transparent) !important;
+    inset 0 0 0 var(--speaking-ring, 2px) var(--speaking),
+    inset 0 0 18px 2px color-mix(in srgb, var(--speaking-glow, var(--speaking)) 45%, transparent),
+    inset 0 0 40px 4px color-mix(in srgb, var(--speaking-glow, var(--speaking)) 18%, transparent) !important;
 }
 
 /* ===== Шапка чата: включённая кнопка (например «Участники») — циановая подложка и иконка, как у выбранных пунктов ===== */
@@ -3755,7 +3760,7 @@ html.boot *:not(.backdrop *), html.boot *:not(.backdrop *)::before, html.boot *:
 /* ===== Свои сообщения: один градиент на всё окно чата, а не на каждый пузырь =====
    Градиент привязан к окну (background-attachment: fixed): каждый пузырь показывает свой кусок общего перехода —
    вверху фиолетовый, внизу (свежие сообщения) фирменный синий. Пузырь меняет цвет, когда ленту прокручивают. */
-:root { --mine-grad: linear-gradient(to bottom, #7a5cff 0%, #4f6dff 45%, #1e6bff 100%); }
+:root { --mine-grad: linear-gradient(to bottom, #6b4df2 0%, #4560ea 45%, #1a5fe8 100%); } /* белый ≥5.1:1 по всей высоте */
 :root .chat-scroll .msg.mine .bubble, [data-theme='light'] .chat-scroll .msg.mine .bubble,
 .msg.mine .bubble, [data-theme='light'] .msg.mine .bubble {
   background: var(--mine-grad) fixed padding-box, var(--bubble-edge-mine) border-box;
@@ -3887,7 +3892,7 @@ html[data-glass='off'] .m-under.dim:not(.tabbar) > :not(.m-servers-row), html[da
 .bubble .meta > b { color: color-mix(in srgb, var(--text-primary) 72%, transparent); }
 [data-theme='light'] .bubble .text { color: #0a1a2e; }
 [data-theme='light'] .msg.mine .bubble .text { color: #fff; }
-.msg.mine .bubble .meta > b { color: #ffffffc7; }
+.msg.mine .bubble .meta > b { color: #ffffffeb; }
 
 /* ===== Тёмная тема: кромка панелей — снова градиентная (ярко у левого верхнего угла, к низу и вправо гаснет),
    в обоих режимах. Блик — не полоса наискосок, а мягкое пятно света из того же угла, откуда идёт кромка. ===== */
@@ -4074,7 +4079,7 @@ html[data-vt] *, html[data-vt] *::before, html[data-vt] *::after { transition: n
 }
 .select-opt > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .select-opt:hover { background: color-mix(in srgb, var(--text-primary) 8%, transparent); }
-.select-opt.on { color: var(--accent-cyan); }
+.select-opt.on { color: var(--accent-cyan-text); }
 .select-opt svg { flex: none; }
 
 /* ===== Закреп: плашка сплошная во всех режимах (сквозь неё лента не видна) ===== */
@@ -4123,12 +4128,10 @@ html[data-theme='light'] .pin-banner, html[data-theme='light'][data-glass] .pin-
 :root:not([data-theme='light'])[data-glass] :is(.rail, .sidebar, .members, .main, .side-chat).glass::after,
 :root:not([data-theme='light'])[data-glass] .m-members-list::after { inset: 0; border-radius: inherit; }
 
-/* ===== Упоминания: @юзернейм циановый; упоминание тебя — с подложкой, а само сообщение подсвечено слева ===== */
-.mention { color: var(--accent-cyan); font-weight: 500; }
-.mention.me { background: color-mix(in srgb, var(--accent-cyan) 18%, transparent); border-radius: 6px; padding: 0 3px; }
+/* ===== Упоминания: @юзернейм циановый — одинаково для всех, включая упоминание тебя (без подложки и подсветки облачка) ===== */
+.mention { color: var(--accent-cyan-text); font-weight: 500; }
 .msg.mine .mention { color: #fff; text-decoration: underline; text-decoration-color: #ffffff80; text-underline-offset: 2px; }
-.msg.mention-me .bubble { box-shadow: inset 3px 0 0 var(--accent-cyan); }
-[data-theme='light'] .mention { color: #0091b3; }
+[data-theme='light'] .mention { color: var(--accent-cyan-text); }
 
 /* ===== Непрочитанное на канале: красный бейдж с числом справа ===== */
 .channel .ch-badge, .channel .ch-badges { margin-left: auto; flex: none; }
@@ -4198,8 +4201,7 @@ html[data-glass='on'] { --set-shade: color-mix(in srgb, #12263d 80%, transparent
 html[data-theme='light'][data-glass='on'] { --set-shade: color-mix(in srgb, #f4f8fc 80%, transparent); }
 
 /* ===== Упоминания — циановые везде, и в своих сообщениях тоже ===== */
-.msg.mine .mention, [data-theme='light'] .msg.mine .mention { color: var(--accent-cyan); text-decoration: none; font-weight: 600; }
-.msg.mine .mention.me { background: #00e5ff26; }
+.msg.mine .mention, [data-theme='light'] .msg.mine .mention { color: #e0fbff; text-decoration: none; font-weight: 600; }
 
 /* ===== Кольцо говорящего на аватарке в панели пользователя — по внутреннему краю (аватарка маленькая), статус поверх ===== */
 .user-panel > .avatar::before { inset: 0; border: 0; box-shadow: inset 0 0 0 2px var(--speaking), inset 0 0 0 3px #0a1a2e80; }
@@ -4207,12 +4209,6 @@ html[data-theme='light'][data-glass='on'] { --set-shade: color-mix(in srgb, #f4f
 /* ===== Экран входа: тор ярче (фон теперь общий на всё приложение, а не свой у входа) ===== */
 html:not([data-theme='light']) body:has(.signin) .backdrop .bd-ring:not(.m) { opacity: .55; }
 
-/* ===== Сообщение с упоминанием тебя: вместо полосы слева (ломалась на скруглении) — лёгкий циановый тон и тонкая кромка по всему контуру ===== */
-/* тон — слоем поверх заливки и у облачка, и у хвостика, чтобы хвостик был того же цвета */
-.msg.mention-me .bubble, [data-theme='light'] .msg.mention-me .bubble { box-shadow: inset 0 0 0 100vmax #00e5ff17; }
-.msg.mention-me .bubble::after, [data-theme='light'] .msg.mention-me .bubble::after {
-  background: linear-gradient(#00e5ff17, #00e5ff17), var(--tail-fill);
-}
 
 
 /* во время смены темы у тора не должно быть своего перехода прозрачности (правило с !important перебивало общий запрет) */
@@ -4310,13 +4306,6 @@ html.boot .unread-badge { animation: none; }
 .new-line::after { content: ''; flex: 1; height: 1px; background: var(--danger); opacity: .85; }
 .new-line > span { margin: 0 8px; }
 
-/* ===== Упоминание в своём сообщении — такое же, как в чужом: циановый текст на циановой подложке ===== */
-.msg.mine .mention, [data-theme='light'] .msg.mine .mention {
-  color: var(--accent-cyan); font-weight: 500; text-decoration: none;
-  background: color-mix(in srgb, var(--accent-cyan) 18%, transparent); border-radius: 6px; padding: 0 3px;
-}
-/* на синем градиенте светлая подложка сливалась — тёмная, как фон чужого облачка, с циановым тоном */
-.msg.mine .mention, [data-theme='light'] .msg.mine .mention { background: color-mix(in srgb, #04121f 45%, color-mix(in srgb, var(--accent-cyan) 14%, transparent)); }
 
 /* ===== Смена темы: внутри «разлива» фон сразу новый =====
    Переход и так делает сам разлив; если фон ещё и проявлялся, внутри круга новая тема лежала на полупроявленном
@@ -4339,10 +4328,13 @@ html.glass-anim .backdrop .bd-layer { transition: background-color .45s ease !im
 html.glass-anim .backdrop .bd-ring, html.glass-anim .backdrop .bd-ring.m { transition: opacity .45s ease !important; }
 html.glass-anim body { transition: background-color .45s ease !important; }
 
-/* ===== Упоминание в своём (синем) сообщении: светлый текст на циановой подложке — читается на градиенте ===== */
+/* ===== Упоминание в своём (синем) сообщении: без подложки, но с подчёркиванием.
+   Цветом его от белого текста не отделить (насыщенный циан на синем нечитаем), поэтому нужен не-цветовой признак (WCAG 1.4.1).
+   #e0fbff на градиенте: WCAG 4.7–5.1, APCA Lc 74–76. ===== */
 .msg.mine .mention, [data-theme='light'] .msg.mine .mention {
-  color: #e9fdff; font-weight: 600;
-  background: #00e5ff40; box-shadow: inset 0 0 0 1px #00e5ff59;
+  color: #e0fbff; font-weight: 600;
+  text-decoration: underline; text-decoration-color: #e0fbffa6; text-decoration-thickness: 1.5px; text-underline-offset: 3px;
+  background: none; box-shadow: none; padding: 0;
 }
 
 /* ===== «Живой фон» вкл/выкл — плавно: заливка перетекает вместе с гаснущим кольцом и свечениями ===== */
@@ -4397,3 +4389,82 @@ html[data-vt] .backdrop .bd-layer.one, html[data-vt] .backdrop .bd-layer.one > s
 .backdrop .bd-layer.one > svg { will-change: opacity; transform: translateZ(0); transition: opacity .6s cubic-bezier(.4, 0, .2, 1) !important; }
 .backdrop .bd-layer.one { transition: background-color .6s cubic-bezier(.4, 0, .2, 1) !important; }
 html[data-vt] .backdrop .bd-layer.one, html[data-vt] .backdrop .bd-layer.one > svg { transition: none !important; }
+
+/* ===== ПК: сообщения уходят под поле ввода и видны сквозь него =====
+   Раньше под полем лежало затемнение до 96% (.composer::before), а само поле в тёмной теме было плотным (78%),
+   поэтому прокрученные под него сообщения не было видно совсем. Теперь затемнения нет, поле — стекло с размытием. */
+:is(.main, .side-chat) > .chat > .composer::before { display: none !important; }
+:root:not([data-theme='light']) :is(.main, .side-chat) > .chat > .composer :is(.field, .round) {
+  background: linear-gradient(180deg, #ffffff12, #ffffff06), #0b1b3094 !important;
+  backdrop-filter: blur(16px) saturate(1.4) !important; -webkit-backdrop-filter: blur(16px) saturate(1.4) !important;
+}
+[data-theme='light'] :is(.main, .side-chat) > .chat > .composer :is(.field, .round) {
+  backdrop-filter: blur(16px) saturate(1.6) !important; -webkit-backdrop-filter: blur(16px) saturate(1.6) !important;
+}
+
+/* ===== Светлая тема: на выделенной строке серые метаданные берут цвет второстепенного текста
+   (muted на ink-a10 давал 3.7:1, secondary — 4.7:1) ===== */
+[data-theme='light'] :is(.channel, .dm-row, .member, .nav-item, .m-item, .select-opt).on,
+[data-theme='light'] .selected { --text-muted: var(--text-secondary); }
+
+/* ===== Рамка полей ввода различима (WCAG 1.4.11, ≥3:1 к фону панели) ===== */
+:root, [data-theme='dark'] { --border-input: #ffffff5c; }  /* 3.3:1 */
+[data-theme='light'] { --border-input: #040a1478; }       /* 3.3:1 */
+.input, .select select { border-color: var(--border-input); }
+
+/* ===== Говорящий в светлой теме: кольцо контрастное (#0098b8), а свечение — яркий циан.
+   Свечение из тёмного кольца на светлом фоне выходило серо-бирюзовым и «бледным»; неон читается только насыщенным цветом. ===== */
+[data-theme='light'] { --speaking-glow: #00c8e6; --speaking-ring: 2.5px; }
+
+/* поле ввода в фокусе (светлая): сплошная рамка 2px цвета кнопки «Отправить», без ореола.
+   Рисуется на самом поле: ::after в светлой теме без стекла скрыт. */
+[data-theme='light'] .composer .field:focus-within { box-shadow: inset 0 0 0 2px var(--btn-fill) !important; }
+[data-theme='light'] .composer .field:focus-within::after { box-shadow: none !important; }
+
+/* ===== Кольцо говорящего на маленьких аватарках (список голосового канала, панель пользователя) =====
+   Было: только линия 2px по краю фото — на фотографии и в светлой теме почти не видна.
+   Стало: ровная контрастная линия 2px + мягкий неоновый ореол снаружи. */
+:root, [data-theme='dark'] { --speaking-glow: #00e5ff; }
+[data-theme='light'] { --speaking-glow: #00c8e6; }
+.voice-user .avatar.speaking, [data-theme='light'] .voice-user .avatar.speaking,
+.user-panel > .avatar::before, [data-theme='light'] .user-panel > .avatar::before {
+  outline: none;
+  /* одна ровная линия без разделителя + мягкий ореол */
+  box-shadow:
+    inset 0 0 0 2px var(--speaking),
+    0 0 7px 1px color-mix(in srgb, var(--speaking-glow) 55%, transparent);
+}
+
+/* ===== Кромка облачков (тёмная тема) — как у карточки логотипа на экране входа:
+   1px градиент 160°: ярче сверху-слева → прозрачный к середине → слабее снизу-справа;
+   у карточки 55%/25%, на маленьких облачках это резко — здесь та же форма, но мягче. ===== */
+:root:not([data-theme='light']) {
+  --bubble-edge: linear-gradient(160deg, #ffffff38, #ffffff05 50%, #ffffff1a);
+  --bubble-edge-mine: linear-gradient(160deg, #ffffff4d, #ffffff0a 50%, #ffffff24);
+}
+/* светлая тема: та же форма кромки — свои облачка белой, чужие (белые) тёмной */
+html[data-theme='light'], html[data-theme='light'][data-glass] {
+  --bubble-edge-mine: linear-gradient(160deg, #ffffff4d, #ffffff0a 50%, #ffffff24);
+  --bubble-edge-l-grad: linear-gradient(160deg, #0a1a2e24, #0a1a2e08 50%, #0a1a2e17);
+}
+[data-theme='light'] .chat-scroll .msg:not(.mine) .bubble {
+  background: linear-gradient(#fff, #fff) padding-box, var(--bubble-edge-l-grad) border-box;
+  --tail-edge-bg: var(--bubble-edge-l-grad);
+}
+/* блик: светлая линия по верхнему краю и мягкий отсвет под ней (на белых облачках светлой темы он не нужен) */
+:root:not([data-theme='light']) .chat-scroll .msg:not(.mine) .bubble {
+  box-shadow: inset 0 1px 0 #ffffff14, inset 0 12px 16px -14px #ffffff1a;
+}
+.chat-scroll .msg.mine .bubble, [data-theme='light'] .chat-scroll .msg.mine .bubble {
+  box-shadow: inset 0 1px 0 #ffffff38, inset 0 14px 18px -14px #ffffff33;
+}
+
+/* ===== Светлая тема: обводки панелей как в тёмной — чёткая кромка 1px с градиентом (160°: ярче сверху-слева,
+   тоньше к середине, снова плотнее снизу-справа), а не размытое кольцо-тень. Тень под элементом остаётся. ===== */
+[data-theme='light'] :is(.user-panel, .voice-status, .rail-home:not(.on), .composer .field, .composer .round)::after {
+  display: block !important; background: linear-gradient(160deg, #0a1a2e3d 0%, #0a1a2e14 45%, #0a1a2e2b 100%) !important;
+}
+[data-theme='light'] :is(.user-panel, .voice-status, .rail-home:not(.on), .composer .round),
+[data-theme='light'] .composer .field:not(:focus-within) {
+  box-shadow: 0 1px 2px #1a335014, 0 4px 12px -6px #1a33502e !important;
+}
