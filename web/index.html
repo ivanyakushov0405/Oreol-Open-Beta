@@ -25,6 +25,7 @@
         d.theme = auth && (t === 'light' || t === 'dark') ? t : sys;
         d.glass = !auth || ls.getItem('oreol.glassUi') === '1' ? 'on' : 'off';
         d.backdrop = !auth || ls.getItem('oreol.liveBg') === '1' ? 'on' : 'off';
+        d.glows = auth && ls.getItem('oreol.liveBg') === '1' && ls.getItem('oreol.bgGlows') === '1' ? 'on' : 'off';
       } catch (e) {}
     </script>
   </head>

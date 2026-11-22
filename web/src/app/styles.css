@@ -2616,7 +2616,7 @@ input, textarea { font: inherit; color: inherit; }
 
 /* ===== Мобильные экраны: выезжают справа налево, по «Назад» уезжают обратно ===== */
 @keyframes m-slide-in { from { transform: translateX(100%); } to { transform: none; } }
-@keyframes m-slide-out { from { transform: none; } to { transform: translateX(100%); } }
+@keyframes m-slide-out { from { transform: translateX(var(--swipe-x, 0px)); } to { transform: translateX(100%); } }
 .m-slide { animation: m-slide-in .34s cubic-bezier(.2, .8, .2, 1); }
 .m-slide.out { animation: m-slide-out .22s cubic-bezier(.4, 0, .7, .2) forwards; pointer-events: none; }
 .m-full.m-slide, .m-settings.m-slide { box-shadow: -18px 0 40px -20px #0006; }
@@ -2721,7 +2721,7 @@ input, textarea { font: inherit; color: inherit; }
 .channel.mine svg, .channel.mine.live svg { color: var(--accent-cyan); }
 
 /* ===== Шапка: кнопки «вырастают из ничего» при входе из списка и «растворяются в ничто» при выходе ===== */
-@keyframes head-hold-still { from { transform: none; } to { transform: translateX(-100%); } }
+@keyframes head-hold-still { from { transform: translateX(calc(var(--swipe-x, 0px) * -1)); } to { transform: translateX(-100%); } }
 @keyframes head-pop-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 @keyframes head-pop-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(-4px); } }
 @keyframes head-fade-out { to { opacity: 0; } }
@@ -4745,9 +4745,11 @@ html[data-theme='light'] .settings > .settings-body .btn-secondary:hover:not(:di
 .tabbar[data-drag] .tab[data-peek] .tab-ico .ico-oreol { color: var(--accent-cyan); }
 
 /* ===== Отступы на сетке 4px (2px — только сдвиг строк внутри мелкого блока) ===== */
-.pb-body, .info, .msg-reply { gap: 2px; }
-.bubble .meta, .msg.mine .bubble .meta, .fwd-title, .msg-fwd, .msg-replies { gap: 4px; }
-.date-pill.sys-note { padding: 4px 12px; gap: 4px; }
+.pb-body, .info, .member .info, .msg-reply { gap: 2px; }
+.bubble .meta, .msg.mine .bubble .meta, .msg-fwd .fwd-title, .msg-fwd, .msg-replies { gap: 4px; }
+.date-pill.sys-note,
+.sys-row .date-pill.sys-note, .sys-row .date-pill.sys-note.sn-one,
+[data-theme="light"] .sys-row .date-pill.sys-note { padding: 4px 12px; gap: 4px; }
 .msg-reply { padding: 4px 12px; }
 
 /* ===== «Личные сообщения» в светлой теме — лёгкое стекло, как в тёмной: чуть светлее панели, без тени ===== */
@@ -4783,3 +4785,62 @@ html[data-theme][data-glass='on'] .member-card .mc-info {
   background: var(--g2-bg); border-color: transparent; box-shadow: inset 0 0 0 1px var(--g-edge);
 }
 html[data-theme][data-glass='on'] .member-card :is(.mc-avatar, .pm-avatar) { box-shadow: none; }
+
+/* ===== Свечения по краям фона — только при включённом подпункте «Свечения по краям» ===== */
+/* включение и выключение — плавно (прозрачность из атрибута эллипса тут заменяем своей) */
+.backdrop .bd-glow { transition: opacity .8s ease; }
+.backdrop .bd-glow.a { opacity: .35; }
+.backdrop .bd-glow.b { opacity: .3; }
+.backdrop .bd-glow.c { opacity: .16; }
+html:not([data-glows='on']) .backdrop .bd-glow { opacity: 0; }
+
+/* ===== Телефон: заголовок вкладки «Серверы» — как «Чаты» (текст на тех же 16px от края и сверху) ===== */
+.m-servers > .m-tab-title { margin: 2px 8px 0; font-size: 24px; flex: none; }
+
+/* ===== Телефон: свайпы. Горизонтальные жесты на сцене обрабатывает приложение, вертикальная прокрутка — браузер ===== */
+:where(.m-stage > :not(.tabbar)), :where(.m-stage > :not(.tabbar) *) { touch-action: pan-y pinch-zoom; }
+/* свайп назад: верхний экран идёт за пальцем, нижний проявляется */
+.m-stage[data-swipe='back'] > .m-slide[data-swiping] { animation: none; transition: none; }
+.m-stage[data-swipe='back'] > .m-slide[data-swiping] > .m-head, .m-stage[data-swipe='back'] > .m-slide[data-swiping] > .m-head > * { animation: none !important; }
+.m-stage:is([data-swipe='back'], [data-swipe='cancel']) .m-under.dim,
+.m-stage:is([data-swipe='back'], [data-swipe='cancel']) .m-under.dim:not(.tabbar) > :not(.m-servers-row),
+.m-stage:is([data-swipe='back'], [data-swipe='cancel']) .m-under.dim .m-servers-row > * {
+  opacity: var(--swipe-p, 0) !important; pointer-events: none;
+}
+.m-stage[data-swipe='back'] .m-under.dim, .m-stage[data-swipe='back'] .m-under.dim * { transition: none !important; }
+.m-stage[data-swipe='cancel'] .m-under.dim, .m-stage[data-swipe='cancel'] .m-under.dim * { transition: opacity .26s ease !important; }
+.m-stage:is([data-swipe='back'], [data-swipe='cancel']) > .m-settings:has(~ .m-settings.m-slide:not(.out)) > :not(.m-head) { opacity: var(--swipe-p, 0) !important; }
+/* смена вкладки (нажатием или свайпом): новая мягко проявляется из размытия, без полёта экранов */
+@keyframes m-tab-in { from { opacity: 0; filter: blur(10px); } to { opacity: 1; filter: blur(0); } }
+/* анимируем сами панели, а не экран целиком: filter/opacity на контейнере отрезают стеклу фон (backdrop-filter) */
+.m-stage[data-tab-in] > .m-under:not(.tabbar) > :not(.m-servers-row),
+.m-stage[data-tab-in] > .m-under:not(.tabbar) .m-servers-row > * { animation: m-tab-in .32s ease-out; }
+/* свайп по вкладкам: экран чуть гаснет — гасим панели, а не экран (иначе стекло теряет фон) */
+.m-stage > .m-under:not(.tabbar)[style*='--tab-fade'] > :not(.m-servers-row),
+.m-stage > .m-under:not(.tabbar)[style*='--tab-fade'] .m-servers-row > * { opacity: var(--tab-fade); }
+.m-stage[data-swipe='tab'] > .m-under:not(.tabbar) > :not(.m-servers-row),
+.m-stage[data-swipe='tab'] > .m-under:not(.tabbar) .m-servers-row > * { transition: none; }
+/* свайп мышью не выделяет текст */
+.m-stage[data-swipe], .m-stage[data-swipe] * { -webkit-user-select: none; user-select: none; }
+/* экраны, поверх которых открыли войс из виджета (чат, участники, настройки): видны, только пока войс уезжает или его тянут */
+.m-stage > .m-below { visibility: hidden; pointer-events: none; }
+.m-stage > .m-below, .m-stage > .m-below * { animation: none !important; }
+.m-stage:has(> .m-full-voice.out) > .m-below, .m-stage[data-swipe] > .m-below { visibility: visible; }
+.m-stage > .m-full-voice.m-over { z-index: 8; }
+
+/* ===== Телефон: «Серверы» — плотнее, панели ближе к краям и друг к другу ===== */
+.m-servers { padding: 4px 4px 0; gap: 4px; }
+.m-servers .m-servers-row { gap: 4px; }
+.m-servers > .m-tab-title { margin: 4px 12px 2px; }
+
+/* ===== Иконка «с телефона» у участника войса: ближе к аватару и к имени ===== */
+/* сдвигаем имя целиком, а не иконку: у имени overflow: hidden, вытащенная за край иконка обрезалась */
+.voice-user .dev-phone { margin-right: 2px; }
+.voice-user .name:has(> .dev-phone) { margin-left: -3px; }
+.m-servers .sidebar .voice-user .name:has(> .dev-phone) { margin-left: -6px; }
+.tile-label .dev-phone, .tile-pill .dev-phone, .m-voice .tile .dev-phone { margin-right: 3px; }
+
+/* свайп войса, открытого из виджета поверх других экранов: проявляется только то, что лежит прямо под ним, не вкладка */
+.m-stage:has(> .m-full-voice.m-over) .m-under.dim,
+.m-stage:has(> .m-full-voice.m-over) .m-under.dim:not(.tabbar) > :not(.m-servers-row),
+.m-stage:has(> .m-full-voice.m-over) .m-under.dim .m-servers-row > * { opacity: 0 !important; }

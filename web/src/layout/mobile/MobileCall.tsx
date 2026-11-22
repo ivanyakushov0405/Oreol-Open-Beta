@@ -14,7 +14,7 @@ export function MobileCall({
   min,
   onMin,
   onOpen,
-  onOpenChat,
+  onOpenHere,
   onMore,
   onMeasure,
   liveMic,
@@ -26,7 +26,8 @@ export function MobileCall({
   min: boolean;
   onMin: () => void;
   onOpen: () => void;
-  onOpenChat: () => void;
+  /** Нажатие на название: войс поверх текущего окна, «Назад» — обратно в это окно. */
+  onOpenHere: () => void;
   onMore: (btn: HTMLElement) => void;
   /** Высота виджета и смещение пальца — по ним сдвигаются шапки и содержимое экранов. */
   onMeasure: (h: number | null, drag: number | null) => void;
@@ -78,7 +79,7 @@ export function MobileCall({
             <span className={'m-call-signal ' + q} title={v.rtt != null ? `Пинг ${v.rtt} мс` : undefined}>
               <SignalIcon size={24} />
             </span>
-            <button className="m-call-text" onClick={onOpenChat} title="Открыть чат голосового канала" tabIndex={shut ? -1 : undefined}>
+            <button className="m-call-text" onClick={onOpenHere} title="Открыть голосовой канал" tabIndex={shut ? -1 : undefined}>
               <span className="t">
                 <b className={'st ' + q}>{connecting ? 'Подключение…' : QUALITY_TITLE[v.quality]}</b>
                 {!connecting && <span className={'ping ' + pingClass(v.rtt, v.quality)}>{v.rtt != null ? `${v.rtt} мс` : '… мс'}</span>}

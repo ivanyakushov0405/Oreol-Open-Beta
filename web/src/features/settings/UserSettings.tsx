@@ -180,6 +180,17 @@ export function UserSettingsBody({
               </div>
               <Toggle on={app.liveBg} onChange={app.setLiveBg} />
             </div>
+            <div className={'sub-settings' + (app.liveBg ? '' : ' off')}>
+              <div className="row-between">
+                <div>
+                  <h4>Свечения по краям</h4>
+                  <p className="hint" style={{ margin: 0 }}>
+                    Цветные пятна света в углах экрана
+                  </p>
+                </div>
+                <Toggle on={app.bgGlows} onChange={app.setBgGlows} disabled={!app.liveBg} />
+              </div>
+            </div>
           </div>
           <div className="card">
             <div className="row-between">

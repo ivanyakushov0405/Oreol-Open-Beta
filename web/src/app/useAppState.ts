@@ -43,6 +43,7 @@ const LS_GLASS_VOICE = 'oreol.glassVoice';
 const LS_GLASS_UI = 'oreol.glassUi';
 const LS_PATTERN = 'oreol.chatPattern';
 const LS_LIVE_BG = 'oreol.liveBg';
+const LS_GLOWS = 'oreol.bgGlows';
 const LS_SERVER = 'oreol.server';
 /** Статус раньше хранился локально — теперь он на сервере, старый ключ чистим. */
 const LS_STATUS = 'oreol.status';
@@ -128,6 +129,13 @@ export function useAppState(
     setLiveBgState(v);
     lsSet(LS_LIVE_BG, v ? '1' : '0');
   };
+  // Свечения по краям фона — подпункт живого фона, по умолчанию выключены
+  const [bgGlowsPref, setBgGlowsState] = useState(() => lsGet(LS_GLOWS) === '1');
+  const setBgGlows = (v: boolean) => {
+    setBgGlowsState(v);
+    lsSet(LS_GLOWS, v ? '1' : '0');
+  };
+  const bgGlows = liveBg && bgGlowsPref;
   const glassChat = glassUi && glassChatPref;
   const glassVoice = glassUi && glassVoicePref;
   useEffect(() => {
@@ -138,7 +146,8 @@ export function useAppState(
     d.glass = next;
     d.pattern = chatPattern ? 'on' : 'off';
     d.backdrop = liveBg ? 'on' : 'off';
-  }, [glassUi, chatPattern, liveBg]);
+    d.glows = bgGlows ? 'on' : 'off';
+  }, [glassUi, chatPattern, liveBg, bgGlows]);
   // Серверы — те, где пользователь участник (с бэкенда). Выбранный запоминаем локально.
   const serverById = useCallback((id: string | null | undefined) => servers.find((s) => s.id === id), [servers]);
   const [serverId, setServerIdState] = useState<ServerId>(() => (serverById(lsGet(LS_SERVER)) ?? servers[0]).id);
@@ -283,6 +292,8 @@ export function useAppState(
     setGlassUi,
     liveBg,
     setLiveBg,
+    bgGlows,
+    setBgGlows,
     glassChat,
     glassChatPref,
     setGlassChat,

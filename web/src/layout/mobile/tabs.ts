@@ -127,6 +127,22 @@ export function useJellyTabs(
     if (!st.current.raf) st.current.raf = requestAnimationFrame(tick);
   };
 
+  // Таб-панель пропадает, пока открыт экран поверх, и появляется заново после «Назад»:
+  // новый пузырь сразу ставим на текущую вкладку (иначе стоял на первой), обработчики вешаем на новую панель
+  const [navEl, setNavEl] = useState<HTMLElement | null>(null);
+  const lastGlider = useRef<HTMLElement | null>(null);
+  useLayoutEffect(() => {
+    if (nav.current !== navEl) setNavEl(nav.current);
+    const g = glider.current;
+    if (g === lastGlider.current) return;
+    lastGlider.current = g;
+    const s = st.current;
+    if (!g || !s.ready) return;
+    s.target = s.x = index * width();
+    s.v = 0;
+    paint();
+  });
+
   // вкладка сменилась (касанием, перетаскиванием или из кода) — пузырь едет к ней
   useLayoutEffect(() => {
     const s = st.current;
@@ -141,7 +157,7 @@ export function useJellyTabs(
   }, [index]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    const el = nav.current;
+    const el = navEl;
     if (!el) return;
     const s = st.current;
     const ro = new ResizeObserver(() => {
@@ -218,7 +234,7 @@ export function useJellyTabs(
       el.removeEventListener('pointercancel', up);
       el.removeEventListener('click', click, true);
     };
-  }, [index, count]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [index, count, navEl]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => () => cancelAnimationFrame(st.current.raf), []);
 }

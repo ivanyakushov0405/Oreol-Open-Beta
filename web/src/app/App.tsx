@@ -122,7 +122,8 @@ function AppScreens() {
     const v = lsGet(LS_THEME);
     return v === 'light' || v === 'dark' ? v : 'system';
   });
-  const theme: Theme = me && themePref !== 'system' ? themePref : sysTheme;
+  // пока проверяется сохранённая сессия — уже тема пользователя, иначе при перезагрузке мигала тема системы
+  const theme: Theme = (me || checking) && themePref !== 'system' ? themePref : sysTheme;
 
   useEffect(() => {
     const d = document.documentElement.dataset;
@@ -136,6 +137,7 @@ function AppScreens() {
     const d = document.documentElement.dataset;
     d.glass = 'on';
     d.backdrop = 'on';
+    d.glows = 'off';
   }, [me, checking]);
 
   const setTheme = useCallback((t: ThemePref) => {

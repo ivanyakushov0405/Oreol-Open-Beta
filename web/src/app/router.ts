@@ -59,6 +59,20 @@ function isUp(from: string, to: string) {
 
 /** Ждём popstate от собственного history.back() — пока он не пришёл, адрес не трогаем. */
 let backPending = false;
+/** Следующая смена адреса — возврат туда, откуда пришли (например, из войса, открытого поверх настроек или чата):
+ *  откатываем историю, а не добавляем запись. Иначе у новой записи «предыдущей» остаётся войс, и следующий
+ *  переход в войс принимался за «Назад» — закрывал экран под ним. */
+let returnNext = false;
+export function markReturn() {
+  returnNext = true;
+  forwardNext = false;
+}
+/** Следующая смена адреса — переход вперёд (открыли экран поверх), даже если адрес совпал с «предыдущим». */
+let forwardNext = false;
+export function markForward() {
+  forwardNext = true;
+  returnNext = false;
+}
 
 /**
  * Связывает адрес со состоянием экранов.
@@ -96,10 +110,13 @@ export function useUrlSync(path: string, apply: (path: string) => void, hold = f
   useEffect(() => {
     if (!ready.current || hold || backPending) return;
     const cur = location.pathname;
+    const ret = returnNext;
+    const fwd = forwardNext;
+    returnNext = forwardNext = false;
     if (cur === path) return;
     // Назад по истории — только когда экран закрывается («вверх») и предыдущая запись как раз туда;
     // переход вперёд к тому же адресу — новая запись, иначе «Назад» потом уводит мимо
-    if (history.state?.prev === path && isUp(cur, path)) {
+    if (!fwd && history.state?.prev === path && (ret || isUp(cur, path))) {
       backPending = true;
       history.back();
       return;
