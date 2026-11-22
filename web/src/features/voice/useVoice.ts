@@ -658,6 +658,10 @@ export type RosterEntry = { identity: string; isMuted: boolean; deafened?: boole
 const NO_ROSTER: RosterEntry[] = [];
 /** seed — кто был с нами в канале, пока мы были в голосе (без нас). Сразу после выхода список ещё не загружен —
  *  показываем их, а не пустоту: раньше плитки на миг пропадали и появлялись заново («рваная» анимация выхода). */
+/** Последний известный состав войса каждого сервера: при смене сервера участники видны сразу, а не после запроса.
+ *  Его же пополняет опрос меток над иконками серверов (useVoiceCounts). */
+const rosterCache = new Map<string, RosterEntry[]>();
+
 export function useVoiceRoster(enabled: boolean, server: string, seed?: RosterEntry[]) {
   const [list, setList] = useState<{ server: string; items: RosterEntry[] } | null>(null);
   const seedRef = useRef<{ server: string; items: RosterEntry[] }>({ server, items: NO_ROSTER });
@@ -674,6 +678,7 @@ export function useVoiceRoster(enabled: boolean, server: string, seed?: RosterEn
         const d = await r.json();
         // тот же состав — тот же массив: иначе раз в 1,5 с перерисовывалось всё приложение
         const next: RosterEntry[] = d.participants ?? [];
+        rosterCache.set(server, next);
         if (alive) setList((prev) => (prev && prev.server === server && JSON.stringify(prev.items) === JSON.stringify(next) ? prev : { server, items: next }));
       } catch {
         /* бэкенд недоступен */
@@ -702,7 +707,8 @@ export function useVoiceRoster(enabled: boolean, server: string, seed?: RosterEn
     };
   }, [enabled, server]);
   if (list && list.server === server) return list.items;
-  return enabled && seedRef.current.server === server ? seedRef.current.items : NO_ROSTER;
+  if (enabled && seedRef.current.server === server) return seedRef.current.items;
+  return (enabled && rosterCache.get(server)) || NO_ROSTER;
 }
 
 /** Сколько человек в голосовом канале каждого сервера — для меток над иконками серверов. */
@@ -717,7 +723,10 @@ export function useVoiceCounts(servers: string[]) {
           try {
             const r = await fetch(`/api/voice/participants?server=${encodeURIComponent(s)}`);
             const d = await r.json();
-            return [s, (d.participants ?? []).length] as const;
+            const list: RosterEntry[] = d.participants ?? [];
+            const old = rosterCache.get(s);
+            if (!old || JSON.stringify(old) !== JSON.stringify(list)) rosterCache.set(s, list);
+            return [s, list.length] as const;
           } catch {
             return [s, 0] as const;
           }

@@ -16,10 +16,10 @@ const START = 10;
 /** Что проявляется под верхним экраном при свайпе назад. Прозрачность ставим прямо этим элементам:
  *  CSS-переменная на сцене (как было) на каждом движении пальца заставляла Safari пересчитывать стили всего приложения. */
 const UNDER =
-  ':scope > .m-under.dim, :scope > .m-under.dim:not(.tabbar) > :not(.m-servers-row), :scope > .m-under.dim .m-servers-row > *, ' +
+  ':scope > .m-under.dim, :scope > .m-under.dim:not(.tabbar) > :not(.m-servers-row), :scope > .m-under.dim .m-servers-row > :not(.srv-stack), :scope > .m-under.dim .m-servers-row > .srv-stack > .sidebar, ' +
   ':scope > .m-settings:has(~ .m-settings.m-slide:not(.out)) > :not(.m-head)';
 /** Панели экрана вкладки, которые чуть гаснут при свайпе по вкладкам. */
-const PANELS = ':scope > :not(.m-servers-row), :scope > .m-servers-row > *';
+const PANELS = ':scope > :not(.m-servers-row), :scope > .m-servers-row > :not(.srv-stack), :scope > .m-servers-row > .srv-stack > .sidebar';
 const fade = (list: Iterable<HTMLElement>, v: number | null) => {
   for (const n of list) {
     if (v === null) n.style.removeProperty('opacity');
@@ -46,6 +46,24 @@ export function useStageSwipes(stage: RefObject<HTMLElement>, opts: Opts) {
     let s: S | null = null;
     let swallowClick = false;
 
+    /** Нижний экран, который подъезжает за пальцем, — только если под верхним экраном сразу экран вкладки.
+     *  Когда экраны открыты друг над другом (Настройки → Голос и звук), сдвигать вкладку под ними нельзя:
+     *  она просвечивала сквозь настройки съехавшей. */
+    const boxesUnder = () =>
+      el.querySelectorAll(':scope > .m-slide:not(.out)').length > 1 ? [] : [...el.querySelectorAll<HTMLElement>(UNDER_BOX)];
+    /** Снять всё, что жест держал руками (если он оборвался и ни отпускание, ни отмена так и не пришли). */
+    const resetAll = () => {
+      for (const n of el.querySelectorAll<HTMLElement>(':scope > .m-slide, :scope > .m-slide > .m-head, :scope > .m-under')) {
+        n.style.removeProperty('transform');
+        n.style.removeProperty('transition');
+        delete n.dataset.swiping;
+      }
+      fade(el.querySelectorAll<HTMLElement>(UNDER), null);
+      for (const u of el.querySelectorAll<HTMLElement>(UNDER)) u.style.removeProperty('transition');
+      for (const n of el.querySelectorAll<HTMLElement>(':scope > .m-under')) fade(n.querySelectorAll<HTMLElement>(PANELS), null);
+      delete el.dataset.swipe;
+      delete el.dataset.swiped;
+    };
     const topSlide = () => {
       // войс, открытый из виджета поверх других экранов, стоит в разметке раньше них, но он верхний
       const over = el.querySelector<HTMLElement>(':scope > .m-slide.m-over:not(.out)');
@@ -55,7 +73,18 @@ export function useStageSwipes(stage: RefObject<HTMLElement>, opts: Opts) {
     };
 
     const down = (e: PointerEvent) => {
-      if (e.button !== 0 || s) return;
+      if (e.button !== 0) return;
+      if (s) {
+        // прошлый жест так и не закончился (iOS иногда не присылает ни pointerup, ни pointercancel) —
+        // раньше из‑за этого свайпы переставали работать совсем, а экраны оставались сдвинутыми
+        if (s.id === e.pointerId) return;
+        const was = s;
+        s = null;
+        if (was.active) {
+          resetAll();
+          o.current.onPeek(false);
+        }
+      }
       const t = e.target as HTMLElement;
       if (t.closest(SKIP)) return;
       const slide = topSlide();
@@ -108,7 +137,7 @@ export function useStageSwipes(stage: RefObject<HTMLElement>, opts: Opts) {
         const p = Math.min(1, x / w);
         fade(el.querySelectorAll<HTMLElement>(UNDER), p);
         // нижний экран подъезжает вслед за пальцем (как в iOS), а не стоит сдвинутым
-        shift(el.querySelectorAll<HTMLElement>(UNDER_BOX), `translateX(${(-22 * (1 - p)).toFixed(2)}%)`);
+        shift(boxesUnder(), `translateX(${(-22 * (1 - p)).toFixed(2)}%)`);
       } else {
         // к краю (вкладки дальше нет) — тянется с сопротивлением
         // экран не «летает» — лишь чуть поддаётся пальцу и гаснет, к краю (вкладки дальше нет) ещё слабее
@@ -145,7 +174,7 @@ export function useStageSwipes(stage: RefObject<HTMLElement>, opts: Opts) {
           // Нижний экран уже почти проявлен: доводим его до конца плавно и без своей анимации «возврата» —
           // раньше прозрачность сбрасывалась, и всё под экраном мигало (сначала гасло, потом проявлялось заново)
           const under = [...el.querySelectorAll<HTMLElement>(UNDER)];
-          const boxes = [...el.querySelectorAll<HTMLElement>(UNDER_BOX)];
+          const boxes = boxesUnder();
           el.dataset.swiped = '';
           for (const u of under) u.style.setProperty('transition', 'opacity .22s ease', 'important');
           fade(under, 1);
@@ -172,7 +201,7 @@ export function useStageSwipes(stage: RefObject<HTMLElement>, opts: Opts) {
           swallow();
           el.dataset.swipe = 'cancel';
           const under = [...el.querySelectorAll<HTMLElement>(UNDER)];
-          const boxes = [...el.querySelectorAll<HTMLElement>(UNDER_BOX)];
+          const boxes = boxesUnder();
           fade(under, 0);
           shift(boxes, 'translateX(-22%)', 'transform .26s cubic-bezier(.2, .8, .2, 1)');
           window.setTimeout(() => {
@@ -220,6 +249,16 @@ export function useStageSwipes(stage: RefObject<HTMLElement>, opts: Opts) {
       const t = e.touches[0];
       t0 = e.touches.length === 1 && t ? { x: t.clientX, y: t.clientY } : null;
     };
+    // запасное завершение: палец отпущен, а pointerup/pointercancel не пришли — заканчиваем жест сами
+    const tend = (e: TouchEvent) => {
+      if (e.touches.length) return;
+      const cur = s;
+      if (!cur) return;
+      const ts = e.timeStamp;
+      window.setTimeout(() => {
+        if (s === cur) finish({ pointerId: cur.id, timeStamp: ts } as PointerEvent, e.type === 'touchcancel');
+      }, 50);
+    };
     const tmove = (e: TouchEvent) => {
       if (!s || !t0 || e.touches.length !== 1) return;
       if (s.active) return void (e.cancelable && e.preventDefault());
@@ -231,6 +270,8 @@ export function useStageSwipes(stage: RefObject<HTMLElement>, opts: Opts) {
     };
     el.addEventListener('touchstart', tstart, { passive: true });
     el.addEventListener('touchmove', tmove, { passive: false });
+    window.addEventListener('touchend', tend, { passive: true });
+    window.addEventListener('touchcancel', tend, { passive: true });
     el.addEventListener('pointerdown', down);
     el.addEventListener('pointermove', move, { passive: false });
     el.addEventListener('pointerup', up);
@@ -239,6 +280,8 @@ export function useStageSwipes(stage: RefObject<HTMLElement>, opts: Opts) {
     return () => {
       el.removeEventListener('touchstart', tstart);
       el.removeEventListener('touchmove', tmove);
+      window.removeEventListener('touchend', tend);
+      window.removeEventListener('touchcancel', tend);
       el.removeEventListener('pointerdown', down);
       el.removeEventListener('pointermove', move);
       el.removeEventListener('pointerup', up);

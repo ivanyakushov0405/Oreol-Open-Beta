@@ -3472,9 +3472,9 @@ html.boot *:not(.backdrop *), html.boot *:not(.backdrop *)::before, html.boot *:
 /* ===== Нижний экран гаснет/проявляется по самим панелям, а не контейнером целиком =====
    Прозрачность на контейнере отключала размытие у стекла внутри — тор на время проявления становился резким и ярким. */
 .m-under:not(.tabbar), .m-under.dim:not(.tabbar), .m-under.back:not(.tabbar) { opacity: 1; animation: none; transition: none; }
-.m-under:not(.tabbar) > :not(.m-servers-row), .m-under .m-servers-row > * { transition: opacity .2s ease; }
-.m-under.dim:not(.tabbar) > :not(.m-servers-row), .m-under.dim .m-servers-row > * { opacity: 0; transition-duration: .32s; }
-.m-under.back:not(.tabbar) > :not(.m-servers-row), .m-under.back .m-servers-row > * { animation: m-under-in .22s ease; }
+.m-under:not(.tabbar) > :not(.m-servers-row), .m-under .m-servers-row > :not(.srv-stack) , .m-under .m-servers-row > .srv-stack > .sidebar{ transition: opacity .2s ease; }
+.m-under.dim:not(.tabbar) > :not(.m-servers-row), .m-under.dim .m-servers-row > :not(.srv-stack) , .m-under.dim .m-servers-row > .srv-stack > .sidebar{ opacity: 0; transition-duration: .32s; }
+.m-under.back:not(.tabbar) > :not(.m-servers-row), .m-under.back .m-servers-row > :not(.srv-stack) , .m-under.back .m-servers-row > .srv-stack > .sidebar{ animation: m-under-in .22s ease; }
 /* стекло поля ввода включено поверх старого «backdrop-filter: none !important» */
 [data-theme='light'] .composer .field, [data-theme='light'] .composer .round {
   backdrop-filter: blur(16px) saturate(1.6) !important; -webkit-backdrop-filter: blur(16px) saturate(1.6) !important;
@@ -3813,7 +3813,7 @@ html.glass-anim :is(.rail, .sidebar, .members, .main, .side-chat, .settings-nav,
 .m-slide:not(.m-quiet) .chat > .composer > *, .m-slide.out .chat > .composer > * { animation: none !important; }
 /* Непрозрачный режим: нижний экран не гаснет, а только уезжает и чуть темнеет — сдвиг видно, как в iOS.
    В прозрачном он по-прежнему гаснет, иначе просвечивал бы сквозь стекло верхнего. */
-html[data-glass='off'] .m-under.dim:not(.tabbar) > :not(.m-servers-row), html[data-glass='off'] .m-under.dim .m-servers-row > * { opacity: .55; }
+html[data-glass='off'] .m-under.dim:not(.tabbar) > :not(.m-servers-row), html[data-glass='off'] .m-under.dim .m-servers-row > :not(.srv-stack) , html[data-glass='off'] .m-under.dim .m-servers-row > .srv-stack > .sidebar{ opacity: .55; }
 
 /* Запас сверху ленты (см. MessageList): не сжимается флексом; он же прижимает сообщения к низу (margin-top: auto),
    а отрицательный нижний отступ гасит лишний gap, пока запас нулевой */
@@ -3862,9 +3862,11 @@ html[data-theme][data-glass='on'] :is(.user-panel, .voice-status, .composer .fie
 /* ===== Верхний экран без своего фона (настройки, участники…): нижний гаснет быстро, а не медленно просвечивает сквозь него.
    Чат и войс непрозрачные — под ними нижний экран, как в iOS, только уходит влево и темнеет. ===== */
 .m-stage:has(.m-slide:not(.m-full-chat):not(.m-full-voice):not(.out)) .m-under.dim:not(.tabbar) > :not(.m-servers-row),
-.m-stage:has(.m-slide:not(.m-full-chat):not(.m-full-voice):not(.out)) .m-under.dim .m-servers-row > *,
+.m-stage:has(.m-slide:not(.m-full-chat):not(.m-full-voice):not(.out)) .m-under.dim .m-servers-row > :not(.srv-stack),
+.m-stage:has(.m-slide:not(.m-full-chat):not(.m-full-voice):not(.out)) .m-under.dim .m-servers-row > .srv-stack > .sidebar,
 html[data-glass='off'] .m-stage:has(.m-slide:not(.m-full-chat):not(.m-full-voice):not(.out)) .m-under.dim:not(.tabbar) > :not(.m-servers-row),
-html[data-glass='off'] .m-stage:has(.m-slide:not(.m-full-chat):not(.m-full-voice):not(.out)) .m-under.dim .m-servers-row > * { opacity: 0; transition-duration: .12s; }
+html[data-glass='off'] .m-stage:has(.m-slide:not(.m-full-chat):not(.m-full-voice):not(.out)) .m-under.dim .m-servers-row > :not(.srv-stack) ,
+html[data-glass='off'] .m-stage:has(.m-slide:not(.m-full-chat):not(.m-full-voice):not(.out)) .m-under.dim .m-servers-row > .srv-stack > .sidebar{ opacity: 0; transition-duration: .12s; }
 
 /* ===== Закреплённые: «К чату» по центру панели (было прижато к верху) ===== */
 .composer.pinned-bar > .btn-chip { align-self: center; }
@@ -4805,7 +4807,8 @@ html:not([data-glows='on']) .backdrop .bd-glow { opacity: 0; }
 .m-stage[data-swipe='back'] > .m-slide[data-swiping] > .m-head, .m-stage[data-swipe='back'] > .m-slide[data-swiping] > .m-head > * { animation: none !important; }
 .m-stage:is([data-swipe='back'], [data-swipe='cancel']) .m-under.dim,
 .m-stage:is([data-swipe='back'], [data-swipe='cancel']) .m-under.dim:not(.tabbar) > :not(.m-servers-row),
-.m-stage:is([data-swipe='back'], [data-swipe='cancel']) .m-under.dim .m-servers-row > * {
+.m-stage:is([data-swipe='back'], [data-swipe='cancel']) .m-under.dim .m-servers-row > :not(.srv-stack),
+.m-stage:is([data-swipe='back'], [data-swipe='cancel']) .m-under.dim .m-servers-row > .srv-stack > .sidebar {
   opacity: var(--swipe-p, 0) !important; pointer-events: none;
 }
 .m-stage[data-swipe='back'] .m-under.dim, .m-stage[data-swipe='back'] .m-under.dim * { transition: none !important; }
@@ -4816,10 +4819,12 @@ html:not([data-glows='on']) .backdrop .bd-glow { opacity: 0; }
 @keyframes m-tab-in { from { opacity: 0; transform: scale(.985); } to { opacity: 1; transform: none; } }
 /* анимируем сами панели, а не экран целиком: filter/opacity на контейнере отрезают стеклу фон (backdrop-filter) */
 .m-stage[data-tab-in] > .m-under:not(.tabbar) > :not(.m-servers-row),
-.m-stage[data-tab-in] > .m-under:not(.tabbar) .m-servers-row > * { animation: m-tab-in .32s ease-out; }
+.m-stage[data-tab-in] > .m-under:not(.tabbar) .m-servers-row > :not(.srv-stack) ,
+.m-stage[data-tab-in] > .m-under:not(.tabbar) .m-servers-row > .srv-stack > .sidebar{ animation: m-tab-in .32s ease-out; }
 /* свайп по вкладкам: экран чуть гаснет — гасим панели, а не экран (иначе стекло теряет фон) */
 .m-stage[data-swipe='tab'] > .m-under:not(.tabbar) > :not(.m-servers-row),
-.m-stage[data-swipe='tab'] > .m-under:not(.tabbar) .m-servers-row > * { transition: none; }
+.m-stage[data-swipe='tab'] > .m-under:not(.tabbar) .m-servers-row > :not(.srv-stack) ,
+.m-stage[data-swipe='tab'] > .m-under:not(.tabbar) .m-servers-row > .srv-stack > .sidebar{ transition: none; }
 /* свайп мышью не выделяет текст */
 .m-stage[data-swipe], .m-stage[data-swipe] * { -webkit-user-select: none; user-select: none; }
 /* экраны, поверх которых открыли войс из виджета (чат, участники, настройки): видны, только пока войс уезжает или его тянут */
@@ -4843,7 +4848,8 @@ html:not([data-glows='on']) .backdrop .bd-glow { opacity: 0; }
 /* свайп войса, открытого из виджета поверх других экранов: проявляется только то, что лежит прямо под ним, не вкладка */
 .m-stage:has(> .m-full-voice.m-over) .m-under.dim,
 .m-stage:has(> .m-full-voice.m-over) .m-under.dim:not(.tabbar) > :not(.m-servers-row),
-.m-stage:has(> .m-full-voice.m-over) .m-under.dim .m-servers-row > * { opacity: 0 !important; }
+.m-stage:has(> .m-full-voice.m-over) .m-under.dim .m-servers-row > :not(.srv-stack) ,
+.m-stage:has(> .m-full-voice.m-over) .m-under.dim .m-servers-row > .srv-stack > .sidebar{ opacity: 0 !important; }
 
 /* ---------- Фото в сообщениях ---------- */
 /* Облачко с фото: ширина задаётся по фото (style), на узком экране сжимается вместе с ними */
@@ -5269,3 +5275,52 @@ html[data-land] .m-full .msg { max-width: min(560px, 70%); }
   .brand-card svg:first-child { width: clamp(52px, 17vw, 68px); height: clamp(52px, 17vw, 68px); }
   .brand-card svg:last-child { height: clamp(26px, 10vw, 40px); min-width: 0; }
 }
+
+/* телефон: бейдж «в войсе» не выходит за край узкой колонки серверов (там прокрутка, и его обрезало) */
+.m-servers .rail .server-icon .voice-badge { right: -5px; top: -5px; }
+
+/* виджет звонка: пинг того же цвета, что и слово статуса («Подключено» и «87 мс» — один цвет) */
+.m-call-text .t :is(b.st, .ping).q-good { color: var(--status-online); }
+.m-call-text .t :is(b.st, .ping).q-medium { color: var(--status-idle); }
+.m-call-text .t :is(b.st, .ping).q-bad { color: var(--danger); }
+[data-theme='light'] .m-call-text .t :is(b.st, .ping).q-good { color: #12945c; }
+[data-theme='light'] .m-call-text .t :is(b.st, .ping).q-medium { color: #b7791f; }
+[data-theme='light'] .m-call-text .t :is(b.st, .ping).q-bad { color: #d43355; }
+
+/* палец: «наведение» залипает после касания/прокрутки — служебные строки (закрепы) не подсвечиваем */
+@media (hover: none) {
+  .sys-row:hover:not(:disabled) .sys-note { filter: none; }
+}
+
+/* плашка соединения (нет связи / переподключение) — внизу, там же, где тосты, а не сверху */
+.conn-banner { top: auto; bottom: calc(env(safe-area-inset-bottom, 0px) + 24px); }
+@media (max-width: 768px), (pointer: coarse) and (max-height: 520px) {
+  .conn-banner { top: auto; bottom: calc(env(safe-area-inset-bottom, 0px) + 92px); }
+}
+
+/* выделение: строка во всю ширину ленты (телефонное ограничение ширины сообщения перебивало max-width: none —
+   свои сообщения уезжали влево); своё облачко остаётся у правого края, как без выделения */
+.chat-scroll > .msg.selecting { max-width: none !important; align-self: stretch !important; }
+.chat-scroll > .msg.mine.selecting { padding-right: 0; }
+
+/* копия сообщения над размытием: без filter (drop-shadow) — Safari рисовал отфильтрованное облачко только в границах
+   начального кадра анимации, и низ сообщения обрезался; тень — обычной box-shadow */
+.msg-focus-host .bubble { filter: none !important; box-shadow: 0 8px 24px #00000040 !important; }
+
+/* ===== Затемнение под таб-панелью — только переходом прозрачности, без keyframes =====
+   Анимации появления/возврата перезапускались с нуля (смена класса, конец свайпа назад) — затемнение мигало
+   при выходе с экрана. Переход не перезапускается: просто доезжает до нужной прозрачности. */
+.m-stage:has(> .tabbar)::after, .m-stage:has(> .tabbar.m-under.back)::after, .m-stage:has(> .tabbar.m-under.dim)::after,
+.m-stage[data-swiped]:has(> .tabbar)::after { animation: none !important; transition: opacity .3s ease; opacity: 1; }
+.m-stage:has(> .tabbar.m-under.dim)::after { opacity: 0; }
+
+/* ===== Включение тора на телефоне без рывка =====
+   Полностью прозрачный слой Safari выгружает из памяти, и при включении размытие тора считалось заново (лаг первых кадров).
+   Почти нулевая прозрачность держит готовый слой; подложка под тором меняется тем же плавным переходом, а не скачком. */
+html[data-backdrop='off'] body:not(:has(.signin)) .backdrop .bd-layer.m > svg { opacity: .001 !important; }
+.backdrop .bd-layer { transition: background-color .45s ease; }
+
+/* обёртка панели каналов (для смены сервера) — не панель: прозрачность и анимации вкладки идут на саму панель.
+   Полупрозрачный или обрезающий родитель лишал стекло фона, и панель окрашивалась не сразу. Обрезаем только пока едет смена. */
+.m-servers-row > .srv-stack { overflow: visible; }
+.m-servers-row > .srv-stack:has(> .srv-out) { overflow: hidden; }

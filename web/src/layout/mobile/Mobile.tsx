@@ -270,8 +270,9 @@ export function Mobile({ app }: { app: AppState }) {
       setCallMenu(null);
     }
   }, [inCall]);
-  /** Открыт экран войса, в котором мы сейчас, — виджет уезжает вверх. */
-  const onOwnVoice = !!open && open.kind === 'voice' && app.inVoiceHere && leaving !== 'voice';
+  /** Открыт экран войса, в котором мы сейчас, — виджет уезжает вверх. Пока экран войса уезжает, виджет ещё спрятан:
+   *  сначала закрывается экран, потом отдельным плавным движением сверху выезжает виджет (вместе они «спорили» — ступеньки). */
+  const onOwnVoice = !!open && open.kind === 'voice' && app.inVoiceHere;
   const [callSize, setCallSize] = useState<{ h: number | null; drag: number | null }>({ h: null, drag: null });
   /** Сколько места сверху занимает виджет: развёрнутый — свою высоту, свёрнутый — полосу под пилюлей
    *  (во «Вы» пилюля лежит прямо на баннере), на экране своего войса — ничего. */

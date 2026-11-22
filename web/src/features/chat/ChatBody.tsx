@@ -95,7 +95,7 @@ function ReadsList({ reads }: { reads: NonNullable<Reads> }) {
             <span className="mm-read-name">
               <DisplayName name={r.user} />
             </span>
-            <span className="mm-read-at">{r.at ? readWhen(r.at) : 'время неизвестно'}</span>
+            <span className="mm-read-at">{r.at ? readWhen(r.at) : 'прочитано до записи времени'}</span>
           </span>
           <Icon name="check-double" size={18} className="mm-read-tick" />
         </div>
@@ -155,6 +155,8 @@ function MessageMenu({
         const clone = row.cloneNode(true) as HTMLElement;
         clone.removeAttribute('data-pressing');
         clone.style.cssText = '';
+        // строка — во всю ширину копии (служебная строка-кнопка иначе сжималась по содержимому и уезжала влево)
+        clone.style.width = '100%';
         // классы ленты оставляем (от них зависят цвета облачка), а её собственную раскладку снимаем
         const scroll = document.createElement('div');
         scroll.className = 'chat-scroll';
@@ -164,6 +166,8 @@ function MessageMenu({
         box.style.left = `${r.left}px`;
         box.style.width = `${r.width}px`;
         box.style.top = `${r.top}px`;
+        // оригинал под размытием прячем: копия — единственное сообщение на экране (раньше он просвечивал размытым краем)
+        row.style.visibility = 'hidden';
       }
       const mine = row.classList.contains('mine');
       // по горизонтали — у края облачка (своё — справа); мышью — ближе к курсору, но в пределах облачка
@@ -194,6 +198,7 @@ function MessageMenu({
     const top = Math.max(pad, up ? y - h : y);
     setPos({ left, top, origin: `${up ? 'bottom' : 'top'} ${left < x - w / 2 ? 'right' : 'left'}` });
   }, [x, y, row, focus]);
+  useEffect(() => (focus && row ? () => void row.style.removeProperty('visibility') : undefined), [row, focus]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     window.addEventListener('keydown', onKey);
@@ -569,11 +574,19 @@ export function ChatBody({ app, chat, channel, compact }: { app: AppState; chat:
   // Линия «Новое»: что было прочитано в момент открытия чата (фиксируем один раз, когда пришла история)
   // Считаем прямо при отрисовке (а не эффектом после неё): иначе лента сначала рисовалась без линии,
   // а через кадр линия вставлялась и всё под ней дёргалось вниз.
-  const [mark, setMark] = useState<{ room: string; id: number } | null>(null);
+  // line — была ли линия при открытии. Если всё было прочитано, а чат на экране, отметка идёт вслед за новыми сообщениями:
+  // пришедшее при открытом чате уже прочитано, линия «Новое» над ним не нужна (раньше она появлялась на каждом входящем)
+  const [mark, setMark] = useState<{ room: string; id: number; line: boolean } | null>(null);
   let newAfter = mark?.room === channel.room ? mark.id : 0;
   if (mark?.room !== channel.room && chat.room === channel.room) {
     newAfter = chat.myRead;
-    setMark({ room: channel.room, id: chat.myRead });
+    const line = chat.messages.some((m) => !m.sys && m.user !== me && Number(m.id) > chat.myRead);
+    setMark({ room: channel.room, id: chat.myRead, line });
+  } else if (mark && mark.room === channel.room && !mark.line && Number(lastId) > mark.id) {
+    if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+      newAfter = Number(lastId);
+      setMark({ ...mark, id: Number(lastId) });
+    } else setMark({ ...mark, line: true });
   }
 
   // Плашка закрепа под шапкой: последний закреп не ниже текущего места в ленте

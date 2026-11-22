@@ -32,9 +32,34 @@ const SOUNDS: Record<SoundName, Note[]> = {
 let ctx: AudioContext | null = null;
 let sink = '';
 
+/** iOS после сворачивания, звонка или блокировки переводит контекст в «suspended»/«interrupted», и включить его
+ *  обратно можно только внутри касания — поэтому будим его на каждом жесте и при возвращении на вкладку.
+ *  Закрытый (или так и не проснувшийся) контекст пересоздаём: раньше звуки пропадали до перезагрузки. */
+function wake(recreate = false) {
+  if (!ctx) return;
+  if (ctx.state === 'closed' || (recreate && ctx.state !== 'running')) {
+    void ctx.close().catch(() => undefined);
+    ctx = null;
+    sink = '';
+    return;
+  }
+  if (ctx.state !== 'running') void ctx.resume().catch(() => undefined);
+}
+if (typeof window !== 'undefined') {
+  let stuck = 0;
+  const onGesture = () => {
+    if (!ctx || ctx.state === 'running') return void (stuck = 0);
+    // два жеста подряд не помогли — контекст «завис», создаём новый (следующий звук его и откроет)
+    wake(++stuck > 2);
+  };
+  for (const ev of ['pointerdown', 'touchend', 'keydown']) window.addEventListener(ev, onGesture, { capture: true, passive: true });
+  document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && wake());
+  window.addEventListener('pageshow', () => wake());
+}
+
 function context() {
-  if (!ctx) ctx = new AudioContext();
-  if (ctx.state === 'suspended') void ctx.resume();
+  if (!ctx || ctx.state === 'closed') ctx = new AudioContext();
+  if (ctx.state !== 'running') void ctx.resume().catch(() => undefined);
   // Звуки идут в выбранное устройство вывода (где поддерживается)
   const want = getAudioPrefs().outputId;
   const c = ctx as AudioContext & { setSinkId?: (id: string) => Promise<void> };
