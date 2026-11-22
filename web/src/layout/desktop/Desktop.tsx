@@ -12,11 +12,12 @@ import { EDIT_PROFILE_EVENT, openProfile } from '../../features/profile/profile'
 import { ChannelList } from '../../features/servers/ChannelList';
 import { Rail } from '../../features/servers/Rail';
 import { ServerSettingsBody } from '../../features/settings/ServerSettings';
+import { pressIcon } from '../../features/settings/SettingsScreen';
 import { SettingsScreen } from '../../features/settings/SettingsScreen';
 import { UserSettingsBody } from '../../features/settings/UserSettings';
 import { isServerSection, isUserSection, SERVER_NAV, USER_NAV, userNavOf, userSectionTitle, type ServerSection, type UserSection } from '../../features/settings/nav';
 import { VoiceStage } from '../../features/voice/VoiceStage';
-import { useElapsed, VoiceStatus } from '../../features/voice/VoiceStatus';
+import { Elapsed, VoiceStatus } from '../../features/voice/VoiceStatus';
 import { Icon } from '../../shared/icons';
 import { handleOf, type Channel, type ServerId } from '../../shared/model';
 
@@ -60,7 +61,6 @@ export function Desktop({ app }: { app: AppState }) {
   const [card, setCard] = useState<{ name: string; x: number; y: number } | null>(null);
 
   /** Время в голосовом — хук стоит до любых return, иначе React падает при открытии настроек. */
-  const elapsed = useElapsed(app.inVoiceHere ? app.voice.startedAt : null);
   useEffect(() => {
     if (!overlay) return;
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && closeOverlay();
@@ -133,8 +133,17 @@ export function Desktop({ app }: { app: AppState }) {
         onClose={closeOverlay}
         closing={closing}
         footer={
-          <button className="nav-item danger" onClick={() => app.notify('Удаление сервера недоступно в демо')}>
-            <Icon name="trash" size={18} />
+          <button
+            className="nav-item danger"
+            data-ico="trash"
+            onClick={(e) => {
+              pressIcon(e.currentTarget);
+              app.notify('Удаление сервера недоступно в демо');
+            }}
+          >
+            <span className="si">
+              <Icon name="trash" size={18} />
+            </span>
             Удалить сервер
           </button>
         }
@@ -233,7 +242,8 @@ export function Desktop({ app }: { app: AppState }) {
                   app.inVoiceHere && app.voice.state === 'connected' ? (
                     <>
                       <i className={`live-dot q-${app.voice.quality}`} />
-                      {`Подключено · ${app.voice.peers.length} в канале${elapsed ? ` · ${elapsed}` : ''}`}
+                      {`Подключено · ${app.voice.peers.length} в канале`}
+                      <Elapsed from={app.inVoiceHere ? app.voice.startedAt : null} prefix=" · " />
                     </>
                   ) : app.inVoiceHere && app.voice.state === 'connecting' ? (
                     'Подключение…'

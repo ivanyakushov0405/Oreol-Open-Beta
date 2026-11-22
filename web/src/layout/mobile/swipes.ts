@@ -13,6 +13,19 @@ interface Opts {
 }
 
 const START = 10;
+/** Что проявляется под верхним экраном при свайпе назад. Прозрачность ставим прямо этим элементам:
+ *  CSS-переменная на сцене (как было) на каждом движении пальца заставляла Safari пересчитывать стили всего приложения. */
+const UNDER =
+  ':scope > .m-under.dim, :scope > .m-under.dim:not(.tabbar) > :not(.m-servers-row), :scope > .m-under.dim .m-servers-row > *, ' +
+  ':scope > .m-settings:has(~ .m-settings.m-slide:not(.out)) > :not(.m-head)';
+/** Панели экрана вкладки, которые чуть гаснут при свайпе по вкладкам. */
+const PANELS = ':scope > :not(.m-servers-row), :scope > .m-servers-row > *';
+const fade = (list: Iterable<HTMLElement>, v: number | null) => {
+  for (const n of list) {
+    if (v === null) n.style.removeProperty('opacity');
+    else n.style.setProperty('opacity', String(v), 'important');
+  }
+};
 const SKIP = 'input, textarea, select, [contenteditable], .tabbar, .m-call, .m-call-pill, .member-card, .popover-backdrop, .msg-menu, .m-menu, .dialog';
 
 export function useStageSwipes(stage: RefObject<HTMLElement>, opts: Opts) {
@@ -82,14 +95,14 @@ export function useStageSwipes(stage: RefObject<HTMLElement>, opts: Opts) {
         // шапка не едет с экраном — стоит на месте, как при обычном «Назад»
         const head = s.node.querySelector<HTMLElement>(':scope > .m-head');
         if (head) head.style.transform = `translateX(${-x}px)`;
-        el.style.setProperty('--swipe-p', String(Math.min(1, x / w)));
+        fade(el.querySelectorAll<HTMLElement>(UNDER), Math.min(1, x / w));
       } else {
         // к краю (вкладки дальше нет) — тянется с сопротивлением
         // экран не «летает» — лишь чуть поддаётся пальцу и гаснет, к краю (вкладки дальше нет) ещё слабее
         const k = o.current.canTab(x < 0 ? 1 : -1) ? 0.12 : 0.05;
         s.node.style.transform = `translateX(${x * k}px)`;
-        // гаснут сами панели (см. CSS --tab-fade): opacity на экране целиком отрезала бы стеклу фон
-        s.node.style.setProperty('--tab-fade', String(1 - Math.min(0.35, (Math.abs(x) / w) * 0.5)));
+        // гаснут сами панели: opacity на экране целиком отрезала бы стеклу фон
+        fade(s.node.querySelectorAll<HTMLElement>(PANELS), 1 - Math.min(0.35, (Math.abs(x) / w) * 0.5));
       }
       s.dx = x;
     };
@@ -118,10 +131,8 @@ export function useStageSwipes(stage: RefObject<HTMLElement>, opts: Opts) {
           if (head) head.style.transform = '';
           n.querySelector<HTMLButtonElement>(':scope > .m-head .pill-btn')?.click();
           swallow();
-          window.setTimeout(() => {
-            el.style.removeProperty('--swipe-p');
-            o.current.onPeek(false);
-          }, 400);
+          fade(el.querySelectorAll<HTMLElement>(UNDER), null);
+          window.setTimeout(() => o.current.onPeek(false), 400);
         } else {
           n.style.transition = 'transform .26s cubic-bezier(.2, .8, .2, 1)';
           n.style.transform = 'translateX(0)';
@@ -131,13 +142,14 @@ export function useStageSwipes(stage: RefObject<HTMLElement>, opts: Opts) {
           }
           swallow();
           el.dataset.swipe = 'cancel';
-          el.style.setProperty('--swipe-p', '0');
+          const under = [...el.querySelectorAll<HTMLElement>(UNDER)];
+          fade(under, 0);
           window.setTimeout(() => {
+            fade(under, null);
             n.style.transition = '';
             n.style.transform = '';
             if (head) head.style.transition = head.style.transform = '';
             delete el.dataset.swipe;
-            el.style.removeProperty('--swipe-p');
             o.current.onPeek(false);
           }, 260);
         }
@@ -150,12 +162,12 @@ export function useStageSwipes(stage: RefObject<HTMLElement>, opts: Opts) {
       if (go) {
         // новая вкладка сама проявляется из размытия (см. Mobile: pickTab)
         n.style.transition = n.style.transform = '';
-        n.style.removeProperty('--tab-fade');
+        fade(n.querySelectorAll<HTMLElement>(PANELS), null);
         o.current.onTab(dir);
       } else {
         n.style.transition = 'transform .26s cubic-bezier(.2, .8, .2, 1)';
         n.style.transform = '';
-        n.style.removeProperty('--tab-fade');
+        fade(n.querySelectorAll<HTMLElement>(PANELS), null);
         window.setTimeout(() => (n.style.transition = ''), 260);
       }
     };

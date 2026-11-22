@@ -1,5 +1,5 @@
 import { Fragment, useRef, type ReactNode } from 'react';
-import { Icon, type IconName } from '../../shared/icons';
+import { ChatsIcon, Icon, SlidersIcon, type IconName } from '../../shared/icons';
 
 export function pressIcon(el: HTMLElement) {
   el.removeAttribute('data-press');
@@ -67,7 +67,7 @@ export function SettingsScreen<T extends string>({
               }}
             >
               <span className="si">
-                <Icon name={n.icon} size={20} />
+                {n.icon === 'settings' ? <SlidersIcon size={20} /> : n.icon === 'chats' ? <ChatsIcon size={20} /> : <Icon name={n.icon} size={20} />}
                 {n.icon === 'mic' && <Icon name="mic" size={20} className="si-fill" />}
                 {n.icon === 'appearance' && <Icon name="appearance" size={20} className="si-paint" />}
               </span>

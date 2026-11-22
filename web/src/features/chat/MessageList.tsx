@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Icon } from '../../shared/icons';
 import { handleOf, type Attachment, type ChatMessage } from '../../shared/model';
@@ -46,7 +46,48 @@ export interface MessageActions {
   newAfter?: number;
 }
 
-export function MessageList({
+type ListProps = { messages: ChatMessage[]; me: string; empty: ReactNode } & MessageActions;
+
+/** Лента перерисовывается только когда меняется то, что в ней видно (сообщения, выделение, прочтения…).
+ *  Раньше любое обновление приложения — кто-то заговорил в войсе, печатает, сменился онлайн — заново строило
+ *  все сообщения с упоминаниями, фото и цитатами; на телефоне это и давало подвисания.
+ *  Обработчики (они новые на каждой отрисовке ChatBody) подменяем постоянными, которые зовут свежие. */
+export function MessageList(props: ListProps) {
+  const latest = useRef(props);
+  latest.current = props;
+  const stable = useMemo(
+    () => ({
+      onMenu: (m: ChatMessage, x: number, y: number) => latest.current.onMenu?.(m, x, y),
+      onToggle: (m: ChatMessage) => latest.current.onToggle?.(m),
+      onJump: (id: number | string) => latest.current.onJump?.(id),
+      onView: (id: number) => latest.current.onView?.(id),
+    }),
+    [],
+  );
+  return (
+    <MessageListView
+      {...props}
+      onMenu={props.onMenu && stable.onMenu}
+      onToggle={props.onToggle && stable.onToggle}
+      onJump={props.onJump && stable.onJump}
+      onView={props.onView && stable.onView}
+    />
+  );
+}
+
+const MessageListView = memo(MessageListImpl, (a, b) => {
+  for (const k of Object.keys({ ...a, ...b }) as (keyof ListProps)[]) {
+    // «пусто» — разметка, новая на каждой отрисовке; важна, только когда сообщений нет
+    if (k === 'empty') {
+      if (b.messages.length === 0) return false;
+      continue;
+    }
+    if (a[k] !== b[k]) return false;
+  }
+  return true;
+});
+
+function MessageListImpl({
   messages,
   me,
   empty,
@@ -59,7 +100,7 @@ export function MessageList({
   readUpTo = 0,
   newAfter = 0,
   onView,
-}: { messages: ChatMessage[]; me: string; empty: ReactNode } & MessageActions) {
+}: ListProps) {
   const ref = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   // «Запас» сверху ленты: в самом начале истории можно долистать дальше — первое сообщение
@@ -84,20 +125,28 @@ export function MessageList({
     });
   };
   /** Градиент своих облачков и их хвостиков — по положению в окне чата (сразу, до отрисовки кадра). */
-  const paintNow = () => {
-    {
-      const el = ref.current;
-      if (!el) return;
-      const top = el.getBoundingClientRect().top;
-      const h = el.clientHeight;
-      el.style.setProperty('--vh', h + 'px');
-      el.querySelectorAll<HTMLElement>('.msg.mine .bubble').forEach((b) => {
-        // у всех своих облачков, а не только у видимых: иначе у облачка без значений хвостик оставался пустым
-        const r = b.getBoundingClientRect();
-        b.style.setProperty('--by', String(Math.round(r.top - top)));
-        b.style.setProperty('--bh', String(Math.round(r.height)));
-      });
-    }
+  const paintNow = (all = false) => {
+    const el = ref.current;
+    if (!el) return;
+    // Сначала все замеры, потом все записи: чередование «замер → запись» на каждом облачке заставляло
+    // браузер пересчитывать раскладку столько раз, сколько своих сообщений, на каждом кадре прокрутки.
+    const box = el.getBoundingClientRect();
+    const h = el.clientHeight;
+    const bubbles = el.querySelectorAll<HTMLElement>('.msg.mine .bubble');
+    const rects = Array.from(bubbles, (b) => b.getBoundingClientRect());
+    if (el.style.getPropertyValue('--vh') !== h + 'px') el.style.setProperty('--vh', h + 'px');
+    const margin = h; // при прокрутке — только видимые и ближайшие; дальние получат значения, когда подъедут
+    bubbles.forEach((b, i) => {
+      const r = rects[i];
+      const y = Math.round(r.top - box.top);
+      // у всех облачков при первой раскладке: без значений хвостик оставался пустым
+      const has = b.style.getPropertyValue('--by') !== '';
+      if (!all && has && (r.bottom < box.top - margin || r.top > box.bottom + margin)) return;
+      const by = String(y);
+      const bh = String(Math.round(r.height));
+      if (b.style.getPropertyValue('--by') !== by) b.style.setProperty('--by', by);
+      if (b.style.getPropertyValue('--bh') !== bh) b.style.setProperty('--bh', bh);
+    });
   };
   useEffect(() => () => cancelAnimationFrame(gradRaf.current), []);
   const sizeHead = (el: HTMLElement) => {

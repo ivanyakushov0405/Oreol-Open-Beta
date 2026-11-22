@@ -147,3 +147,31 @@ export function Wordmark({ height = 36 }: { height?: number }) {
     </svg>
   );
 }
+
+/** «Ползунки» для анимации в меню настроек: линии целые, а прорезь под каждый кружок — маска, которая едет вместе с ним.
+ *  В обычной иконке линии разрезаны вокруг кружков, и при сдвиге кружка под ним оставались пустые места. */
+export function SlidersIcon({ size = 20 }: { size?: number }) {
+  const id = 'sl-cut-' + useId().replace(/:/g, '');
+  const html =
+    `<mask id="${id}" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff"/>` +
+    `<circle class="k1" cx="15" cy="7" r="2" fill="#000"/><circle class="k2" cx="9" cy="17" r="2" fill="#000"/></mask>` +
+    `<path d="M4 7H20M4 17H20" mask="url(#${id})" ${S}/>` +
+    `<circle class="k1" cx="15" cy="7" r="2" ${F} ${S}/><circle class="k2" cx="9" cy="17" r="2" ${F} ${S}/>`;
+  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true" dangerouslySetInnerHTML={{ __html: html }} />;
+}
+
+/** «Чаты» для анимации в меню настроек: правый пузырь целый, а вырез под левым — маска той же формы,
+ *  которая двигается вместе с левым пузырём. В обычной иконке угол правого пузыря просто не нарисован —
+ *  и когда левый подпрыгивал, на его месте открывалась пустота. */
+export function ChatsIcon({ size = 20 }: { size?: number }) {
+  const id = 'ch-cut-' + useId().replace(/:/g, '');
+  const left = ICONS.chats.match(/<path d="([^"]+)"/)![1];
+  const right = 'M12 8.5H20C21.1 8.5 22 9.4 22 10.5V15C22 16.1 21.1 17 20 17H19V19.5L16 17H12C10.9 17 10 16.1 10 15V10.5C10 9.4 10.9 8.5 12 8.5Z';
+  const html =
+    `<mask id="${id}" maskUnits="userSpaceOnUse" x="-4" y="-4" width="32" height="32"><rect x="-4" y="-4" width="32" height="32" fill="#fff"/>` +
+    `<path class="b1" d="${left}" fill="#000" stroke="#000" stroke-width="4.4" stroke-linejoin="round"/></mask>` +
+    `<path class="b1" d="${left}" ${S}/>` +
+    // вырез держит группа: путь внутри неё двигается сам по себе, а маска остаётся на месте левого пузыря
+    `<g mask="url(#${id})"><path class="b2" d="${right}" ${S}/></g>`;
+  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true" dangerouslySetInnerHTML={{ __html: html }} />;
+}

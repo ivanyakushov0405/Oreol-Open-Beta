@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 /** Фон приложения из макета: три размытых свечения и тор Ореола.
  *  Тор «живой», но переливается целиком: два градиента медленно вращаются навстречу друг другу,
  *  второй плавно проявляется и гаснет — цвет перетекает по всему кольцу сразу, без бегущих бликов. */
@@ -39,12 +40,30 @@ export function Backdrop({ torus = 0.35, mobile = false }: { torus?: number; mob
 }
 
 function Layer({ th, torus, mobile }: { th: string; torus: number; mobile: boolean }) {
+  // На телефоне внутри SVG ничего не анимируем: любой новый кадр внутри него заново считает размытие тора
+  // (feGaussianBlur на пол-экрана) — Safari грел телефон. «Живость» там даёт сдвиг всего слоя на GPU (styles.css).
+  const live = !mobile;
+  const svgRef = useRef<SVGSVGElement>(null);
+  // Фон выключен — SMIL-анимации на паузе, а не крутятся под нулевой прозрачностью
+  useEffect(() => {
+    const html = document.documentElement;
+    const sync = () => {
+      const svg = svgRef.current;
+      if (!svg) return;
+      if (html.dataset.backdrop === 'off') svg.pauseAnimations();
+      else svg.unpauseAnimations();
+    };
+    sync();
+    const mo = new MutationObserver(sync);
+    mo.observe(html, { attributes: true, attributeFilter: ['data-backdrop'] });
+    return () => mo.disconnect();
+  }, []);
   const L = LAYOUT[mobile ? 'mobile' : 'desktop'];
   const r = L.ring;
   const id = (n: string) => `bd-${th}-${n}`;
   return (
-    <div className={'bd-layer ' + th}>
-      <svg viewBox={L.box} preserveAspectRatio="xMidYMid slice">
+    <div className={'bd-layer ' + th + (mobile ? ' m' : '')}>
+      <svg ref={svgRef} viewBox={L.box} preserveAspectRatio="xMidYMid slice">
         <defs>
           {/* Свечения — радиальные градиенты, а не размытие фильтром: фильтр перерисовывался при каждой смене темы
               и перерисовке страницы, и пятна на миг появлялись резкими («мигали»). Градиент рисуется сразу мягким. */}
@@ -64,13 +83,13 @@ function Layer({ th, torus, mobile }: { th: string; torus: number; mobile: boole
             <stop stopColor="var(--glow-3)" />
             <stop offset="0.5" stopColor="var(--glow-1)" />
             <stop offset="1" stopColor="var(--glow-2)" />
-            <animateTransform attributeName="gradientTransform" type="rotate" from="0 0.5 0.5" to="360 0.5 0.5" dur="48s" repeatCount="indefinite" />
+            {live && <animateTransform attributeName="gradientTransform" type="rotate" from="0 0.5 0.5" to="360 0.5 0.5" dur="48s" repeatCount="indefinite" />}
           </linearGradient>
           <linearGradient id={id('torus-g2')} x1="0" y1="0" x2="1" y2="1">
             <stop stopColor="var(--glow-2)" />
             <stop offset="0.5" stopColor="var(--glow-3)" />
             <stop offset="1" stopColor="var(--glow-1)" />
-            <animateTransform attributeName="gradientTransform" type="rotate" from="360 0.5 0.5" to="0 0.5 0.5" dur="64s" repeatCount="indefinite" />
+            {live && <animateTransform attributeName="gradientTransform" type="rotate" from="360 0.5 0.5" to="0 0.5 0.5" dur="64s" repeatCount="indefinite" />}
           </linearGradient>
         </defs>
         <ellipse className="bd-glow a" cx={L.glows[0][0]} cy={L.glows[0][1]} rx={L.glows[0][2] + 2 * L.glowBlur} ry={L.glows[0][3] + 2 * L.glowBlur} fill={`url(#${id('glow-1')})`} opacity="0.35" />
@@ -84,11 +103,11 @@ function Layer({ th, torus, mobile }: { th: string; torus: number; mobile: boole
               <ellipse cx={r.cx} cy={r.cy} rx={r.rx} ry={r.ry} fill="none" stroke={`url(#${id('torus-g')})`} strokeWidth={r.w} />
               {/* Второй слой цвета: всё кольцо целиком плавно перетекает в другие оттенки */}
               <ellipse cx={r.cx} cy={r.cy} rx={r.rx} ry={r.ry} fill="none" stroke={`url(#${id('torus-g2')})`} strokeWidth={r.w} opacity="0">
-                <animate attributeName="opacity" values="0;0.75;0" dur="22s" calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1" repeatCount="indefinite" />
+                {live && <animate attributeName="opacity" values="0;0.75;0" dur="22s" calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1" repeatCount="indefinite" />}
               </ellipse>
               {/* Мягкое свечение всего кольца — дышит вместе с тором */}
               <ellipse cx={r.cx} cy={r.cy} rx={r.rx} ry={r.ry} fill="none" stroke="#ffffff" strokeWidth={r.hl} opacity="0.12">
-                <animate attributeName="opacity" values="0.06;0.22;0.06" dur="14s" calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1" repeatCount="indefinite" />
+                {live && <animate attributeName="opacity" values="0.06;0.22;0.06" dur="14s" calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1" repeatCount="indefinite" />}
               </ellipse>
             </g>
           </g>

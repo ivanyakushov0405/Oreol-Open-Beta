@@ -4484,14 +4484,10 @@ html[data-theme='light'], html[data-theme='light'][data-glass] {
 @keyframes si-tilt { 0%, 100% { transform: none; } 35% { transform: rotate(-10deg) scale(1.1); } 70% { transform: rotate(4deg); } }
 @keyframes si-drop { 0% { transform: translateY(-5px) rotate(-12deg); } 60% { transform: translateY(1px) rotate(3deg); } 100% { transform: none; } }
 @keyframes si-bob { 0%, 100% { transform: none; } 40% { transform: translateY(-3px); } 70% { transform: translateY(1px); } }
-.settings-nav .nav-item[data-ico='settings'][data-press] .si > svg { animation-name: si-spin; animation-duration: .7s; }
-.settings-nav .nav-item[data-ico='chats'][data-press] .si > svg { animation-name: si-tilt; }
-.settings-nav .nav-item[data-ico='pin'][data-press] .si > svg { animation-name: si-drop; }
 .settings-nav .nav-item[data-ico='users'][data-press] .si > svg { animation-name: si-bob; }
-.settings-nav .nav-item[data-ico='plus'][data-press] .si > svg { animation-name: si-turn; }
-.settings-nav .nav-item[data-ico='search'][data-press] .si > svg { animation-name: si-tilt; }
 @keyframes si-slide { 0%, 100% { transform: none; } 45% { transform: translateX(3px); } }
-.settings-nav .nav-item.danger:hover svg { animation: si-slide .45s cubic-bezier(.3, .7, .4, 1); }
+/* «Выйти» и прочие опасные пункты без своей анимации — лёгкий сдвиг при наведении; корзина анимируется по нажатию (ниже) */
+.settings-nav .nav-item.danger:not([data-ico='trash']):hover svg { animation: si-slide .45s cubic-bezier(.3, .7, .4, 1); }
 
 /* ===== Закрытие настроек: меню уезжает влево, панель опускается и тает; основной экран затем проявляется ===== */
 @keyframes set-nav-out { to { opacity: 0; transform: translateX(-18px); } }
@@ -4562,7 +4558,7 @@ html[data-theme='light'] .acc-list > * + * { border-top-color: #0a1a2e14; }
 .acc-actions-end .btn { display: inline-flex; align-items: center; gap: 8px; }
 
 /* ===== Просмотр ↔ редактирование: карточки проявляются из размытия, без сдвига ===== */
-@keyframes acc-blur-in { from { opacity: 0; filter: blur(10px); } to { opacity: 1; filter: blur(0); } }
+@keyframes acc-blur-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 .acc-list .v.muted { color: var(--text-muted); }
 .acc-list .v.bio { white-space: pre-wrap; overflow-wrap: anywhere; }
 /* подписи полей в редактировании — как в просмотре (overline), чтобы при переключении ничего не «прыгало» */
@@ -4712,7 +4708,7 @@ html[data-theme='light'] .settings > .settings-body .btn-secondary:hover:not(:di
 [data-theme='light'] .composer .field:focus-within::after { display: none !important; }
 
 /* ---------- Телефон: смена сервера во вкладке «Серверы» ---------- */
-@keyframes srv-name-in { from { opacity: 0; transform: translateY(10px); filter: blur(3px); } to { opacity: 1; transform: none; filter: none; } }
+@keyframes srv-name-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 @keyframes srv-users-hop {
   0% { transform: translateY(0) scale(1); }
   30% { transform: translateY(-6px) scale(1.08); }
@@ -4816,13 +4812,12 @@ html:not([data-glows='on']) .backdrop .bd-glow { opacity: 0; }
 .m-stage[data-swipe='cancel'] .m-under.dim, .m-stage[data-swipe='cancel'] .m-under.dim * { transition: opacity .26s ease !important; }
 .m-stage:is([data-swipe='back'], [data-swipe='cancel']) > .m-settings:has(~ .m-settings.m-slide:not(.out)) > :not(.m-head) { opacity: var(--swipe-p, 0) !important; }
 /* смена вкладки (нажатием или свайпом): новая мягко проявляется из размытия, без полёта экранов */
-@keyframes m-tab-in { from { opacity: 0; filter: blur(10px); } to { opacity: 1; filter: blur(0); } }
+/* без filter: blur — размытие целых панелей на каждом кадре Safari считает на процессоре (тормозило и грело телефон) */
+@keyframes m-tab-in { from { opacity: 0; transform: scale(.985); } to { opacity: 1; transform: none; } }
 /* анимируем сами панели, а не экран целиком: filter/opacity на контейнере отрезают стеклу фон (backdrop-filter) */
 .m-stage[data-tab-in] > .m-under:not(.tabbar) > :not(.m-servers-row),
 .m-stage[data-tab-in] > .m-under:not(.tabbar) .m-servers-row > * { animation: m-tab-in .32s ease-out; }
 /* свайп по вкладкам: экран чуть гаснет — гасим панели, а не экран (иначе стекло теряет фон) */
-.m-stage > .m-under:not(.tabbar)[style*='--tab-fade'] > :not(.m-servers-row),
-.m-stage > .m-under:not(.tabbar)[style*='--tab-fade'] .m-servers-row > * { opacity: var(--tab-fade); }
 .m-stage[data-swipe='tab'] > .m-under:not(.tabbar) > :not(.m-servers-row),
 .m-stage[data-swipe='tab'] > .m-under:not(.tabbar) .m-servers-row > * { transition: none; }
 /* свайп мышью не выделяет текст */
@@ -4954,3 +4949,103 @@ html:not([data-glass='on']) .pm-avatar .avatar > .status-dot {
 .msg-reply .rq-body { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; min-width: 0; flex: 1 1 0; }
 .composer-bar .rq-thumb { width: 34px; height: 34px; margin-right: -2px; }
 .pin-banner .pb-thumb { width: 34px; height: 34px; cursor: pointer; }
+
+/* ===== Производительность фона (Safari на телефоне грелся) =====
+   Любая анимация внутри SVG заставляет заново считать размытие тора на каждом кадре.
+   Телефон: внутри SVG всё неподвижно, «живость» — сдвиг всего слоя целиком (композитинг на GPU, без перерисовки).
+   Выключенный фон и свечения — анимации на паузе, а SVG после затухания не рисуется вовсе. */
+.backdrop .bd-layer.m .bd-torus, .backdrop .bd-layer.m .bd-glow { animation: none !important; }
+html:not([data-backdrop='off']) .backdrop .bd-layer.m > svg { animation: bd-sway 26s ease-in-out infinite; will-change: transform; }
+@keyframes bd-sway { 0%, 100% { transform: scale(1.03) translate(0, 0); } 50% { transform: scale(1.07) translate(-6px, -10px); } }
+.backdrop .bd-layer.one > svg { transition: opacity .45s ease, visibility 0s !important; }
+html[data-backdrop='off'] body:not(:has(.signin)) .backdrop .bd-layer.one > svg { visibility: hidden; transition: opacity .45s ease, visibility 0s .45s !important; }
+html[data-backdrop='off'] .backdrop *, html:not([data-glows='on']) .backdrop .bd-glow { animation-play-state: paused !important; }
+
+/* ===== Телефон: прокрутка без перерисовки всей ленты =====
+   Маска на прокручиваемой ленте (затухание под закрепом) лишала Safari быстрой прокрутки на GPU:
+   каждый кадр лента перерисовывалась целиком. Затухание даёт затемнение под шапкой — оно просто ниже, когда есть закреп. */
+.m-stage .chat.with-pin .chat-scroll, .m-stage .m-full-chat .chat.with-pin .chat-scroll { -webkit-mask-image: none; mask-image: none; }
+.m-full:has(.chat.with-pin) > .m-head::before { height: calc(var(--sat) + 150px); }
+/* шапки и таб-панель без режима стекла: размытие под ними мягче — его радиус почти напрямую стоит кадров */
+html[data-glass='off'] .m-app { --g3-blur: blur(14px) saturate(160%); }
+
+/* ===== Телефон: камера — на всю плитку (раньше была кружком размером с аватар) ===== */
+.m-voice .tile:not(.wide):not(.novideo) { display: grid; }
+.m-voice .tile:not(.wide) video { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 0; }
+.m-voice .tile:not(.wide):not(.novideo) .shade { display: block; }
+.m-voice .tile:not(.wide):not(.novideo) .tile-pill {
+  position: absolute; left: 10px; bottom: 10px; margin: 0; padding: 5px 10px; max-width: calc(100% - 20px);
+  background: var(--pill-bg, #040a14b3); color: var(--pill-text, #eaf6ff); border-radius: 10px;
+}
+
+/* ===== Перечёркивание иконок (микрофон, наушники): без «точки» в углу =====
+   Safari рисует круглый конец линии даже у штриха нулевой длины — от спрятанного перечёркивания оставалась точка.
+   Спрятанную линию (и её вырез в маске) гасим прозрачностью — уже после того, как штрих убежал. */
+.strike-ico .strike, .pb-unpin .strike { transition: stroke-dashoffset .28s cubic-bezier(.4, 0, .2, 1), opacity 0s linear .28s; opacity: 0; }
+.strike-ico.is-off .strike,
+.pb-unpin:is(:hover, :focus-visible, :active) .strike { opacity: 1; transition: stroke-dashoffset .28s cubic-bezier(.4, 0, .2, 1), opacity 0s; }
+
+/* уровень микрофона приходит 20 раз в секунду шагами по 5% — сглаживаем; в тишине не меняется и кадров не занимает */
+.mic-lvl .mic-fill { transition: clip-path .05s linear; }
+
+/* ===== Настройки сервера: иконки оживают по нажатию (меню на ПК и список на телефоне) ===== */
+.m-item .si { display: inline-flex; flex: none; }
+:is(.settings-nav .nav-item, .m-item) .si svg { overflow: visible; }
+:is(.settings-nav .nav-item, .m-item) .si svg * { transform-box: fill-box; transform-origin: center; }
+/* Все — как лупа: только сдвиги и повороты, плавно (ease-in-out). Без растяжений: неравномерный масштаб
+   искажал иконку вместе с толщиной линий, а увеличенные пузыри налезали друг на друга. */
+/* Обзор: кружочки едут по линиям (прорезь под ними — маска, едет вместе с ними, см. SlidersIcon) */
+@keyframes si-knob-a { 0%, 100% { transform: none; } 25% { transform: translateX(-4px); } 55% { transform: translateX(3px); } 80% { transform: translateX(-1px); } }
+@keyframes si-knob-b { 0%, 100% { transform: none; } 25% { transform: translateX(4px); } 55% { transform: translateX(-3px); } 80% { transform: translateX(1px); } }
+:is(.settings-nav .nav-item, .m-item)[data-ico='settings'][data-press] .si svg .k1 { animation: si-knob-a .8s ease-in-out; }
+:is(.settings-nav .nav-item, .m-item)[data-ico='settings'][data-press] .si svg .k2 { animation: si-knob-b .8s ease-in-out; }
+/* Каналы: живой диалог — левый пузырь подскакивает вверх-влево, правый бодро отвечает вбок, и левый ещё раз.
+   Правый ходит только вправо: вверх он налез бы на левый (они почти касаются). */
+@keyframes si-say-a {
+  0%, 100% { transform: none; }
+  14% { transform: translate(-1px, -3px); animation-timing-function: cubic-bezier(.5, 0, .7, .4); }
+  28% { transform: none; animation-timing-function: cubic-bezier(.2, .6, .4, 1); }
+  66% { transform: none; animation-timing-function: cubic-bezier(.2, .6, .4, 1); }
+  76% { transform: translate(-.5px, -1.8px); animation-timing-function: cubic-bezier(.5, 0, .7, .4); }
+  88% { transform: none; }
+}
+@keyframes si-say-b {
+  0%, 30%, 100% { transform: none; animation-timing-function: cubic-bezier(.2, .6, .4, 1); }
+  42% { transform: translateX(2.5px); animation-timing-function: cubic-bezier(.5, 0, .7, .4); }
+  54% { transform: none; animation-timing-function: cubic-bezier(.2, .6, .4, 1); }
+  62% { transform: translateX(-.6px); }
+  70% { transform: none; }
+}
+:is(.settings-nav .nav-item, .m-item)[data-ico='chats'][data-press] .si svg .b1 { animation: si-say-a .8s linear; }
+:is(.settings-nav .nav-item, .m-item)[data-ico='chats'][data-press] .si svg .b2 { animation: si-say-b .8s linear; }
+/* Роли: булавка поднимается и вклинивается вниз, с небольшим отскоком */
+@keyframes si-jab { 0%, 100% { transform: none; } 30% { transform: translateY(-3px); } 55% { transform: translateY(2px); } 78% { transform: translateY(-.5px); } }
+:is(.settings-nav .nav-item, .m-item)[data-ico='pin'][data-press] .si > svg { animation: si-jab .7s ease-in-out; }
+/* Приглашения: штамп — крупный и прозрачный плюс с разгоном шлёпается (сжимается от удара), коротко отдаёт и встаёт.
+   Масштаб только равномерный, поворот небольшой — без искажения линий. */
+@keyframes si-stamp {
+  0% { transform: scale(1.7) rotate(-12deg); opacity: 0; animation-timing-function: cubic-bezier(.55, 0, 1, .45); }
+  38% { transform: scale(.82) rotate(0); opacity: 1; animation-timing-function: cubic-bezier(.2, .7, .4, 1); }
+  60% { transform: scale(1.07); animation-timing-function: ease-in-out; }
+  80% { transform: scale(.97); animation-timing-function: ease-in-out; }
+  100% { transform: none; opacity: 1; }
+}
+:is(.settings-nav .nav-item, .m-item)[data-ico='plus'][data-press] .si > svg { animation: si-stamp .5s linear; }
+/* Журнал аудита: лупа обводит строчки — небольшая петля, как при поиске */
+@keyframes si-scan {
+  0%, 100% { transform: none; } 20% { transform: translate(-3px, -2px) rotate(-6deg); } 40% { transform: translate(3px, -2px) rotate(4deg); }
+  60% { transform: translate(-2px, 2px) rotate(-4deg); } 80% { transform: translate(2px, 1px) rotate(3deg); }
+}
+:is(.settings-nav .nav-item, .m-item)[data-ico='search'][data-press] .si > svg { animation: si-scan .75s ease-in-out; }
+
+/* Удалить сервер: при наведении у корзины откидывается крышка — петля слева, крышка с ручкой поднимается, держится и закрывается */
+@keyframes si-lid {
+  0%, 100% { transform: none; }
+  28% { transform: translateY(-1px) rotate(-30deg); }
+  40% { transform: translateY(-1px) rotate(-24deg); }
+  62% { transform: translateY(-1px) rotate(-28deg); }
+  84% { transform: rotate(3deg); }
+}
+.settings-nav .nav-item[data-ico='trash'] .si svg > path:nth-of-type(-n + 2) { transform-box: view-box; transform-origin: 4px 7px; }
+/* при наведении (на ПК) и при нажатии */
+.settings-nav .nav-item[data-ico='trash']:is(:hover, :focus-visible, [data-press]) .si svg > path:nth-of-type(-n + 2) { animation: si-lid .9s ease-in-out; }

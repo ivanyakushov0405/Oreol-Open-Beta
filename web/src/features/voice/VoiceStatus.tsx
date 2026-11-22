@@ -35,6 +35,13 @@ export function useElapsed(from: number | null) {
   return s >= 3600 ? `${Math.floor(s / 3600)}:${mm}:${ss}` : `${mm}:${ss}`;
 }
 
+/** Таймер звонка своим компонентом: тикает раз в секунду только он сам.
+ *  Раньше useElapsed стоял в корне Mobile/Desktop — и весь интерфейс перерисовывался каждую секунду звонка. */
+export function Elapsed({ from, prefix = '' }: { from: number | null; prefix?: string }) {
+  const t = useElapsed(from);
+  return t ? <>{prefix + t}</> : null;
+}
+
 /** Индикатор связи из макета: точка и три дуги. */
 export function SignalIcon({ size = 22 }: { size?: number }) {
   return (

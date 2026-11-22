@@ -13,6 +13,9 @@ export interface VoicePeer {
   micMuted: boolean;
   camera?: Track;
   screen?: Track;
+  /** Камера / демонстрация включены, но самого видео у нас нет (список из бэкенда, пока мы не в канале) — только для иконок. */
+  camOn?: boolean;
+  screenOn?: boolean;
   /** Слышит ли участник других (для себя — состояние «Звук»; для других неизвестно). */
   deafened: boolean;
   /** Зашёл с телефона/планшета — определяется по устройству, а не по ширине окна. */
@@ -46,6 +49,19 @@ function readDeafened(p: Participant) {
   } catch {
     return false;
   }
+}
+
+function samePeers(a: VoicePeer[], b: VoicePeer[]) {
+  return (
+    a.length === b.length &&
+    a.every((p, i) => {
+      const q = b[i];
+      return (
+        p.identity === q.identity && p.isLocal === q.isLocal && p.speaking === q.speaking && p.micMuted === q.micMuted &&
+        p.camera === q.camera && p.screen === q.screen && p.deafened === q.deafened && p.mobile === q.mobile
+      );
+    })
+  );
 }
 
 function snapshot(room: Room, localDeafened: boolean): VoicePeer[] {
@@ -160,7 +176,11 @@ export function useVoice(user: string) {
 
   const refresh = useCallback(() => {
     const room = roomRef.current;
-    if (room) setPeers(snapshot(room, deafRef.current));
+    if (!room) return;
+    const next = snapshot(room, deafRef.current);
+    // События LiveKit сыплются пачками (подписка на трек, метаданные, говорящие…), а снимок часто тот же —
+    // новый массив перерисовывал всё приложение впустую
+    setPeers((prev) => (samePeers(prev, next) ? prev : next));
   }, []);
 
   /** Звук собеседников идёт через WebAudio (webAudioMix): так громкость можно поднять выше 100%.
@@ -444,17 +464,34 @@ export function useVoice(user: string) {
         if (!t || ms != null) continue;
         try {
           const report = await t.getStats();
-          report?.forEach((r) => {
-            const pair = r as RTCIceCandidatePairStats & { selected?: boolean };
-            if (r.type === 'candidate-pair' && (pair.nominated || pair.selected) && pair.state === 'succeeded' && pair.currentRoundTripTime != null) {
-              ms = Math.round(pair.currentRoundTripTime * 1000);
-            }
+          if (!report) continue;
+          // Пара, через которую реально идёт трафик, — из статистики транспорта; иначе любая выбранная/номинированная.
+          // currentRoundTripTime у Chrome бывает 0 (ещё не было проверок связи или пара старая) — тогда берём
+          // среднее totalRoundTripTime / responsesReceived, а нули не показываем вовсе («0 мс» на десктопе).
+          let selectedId: string | undefined;
+          report.forEach((r) => {
+            if (r.type === 'transport' && (r as RTCTransportStats).selectedCandidatePairId) selectedId = (r as RTCTransportStats).selectedCandidatePairId;
           });
+          const pairRtt = (pair: RTCIceCandidatePairStats) => {
+            if (pair.currentRoundTripTime && pair.currentRoundTripTime > 0) return pair.currentRoundTripTime * 1000;
+            if (pair.totalRoundTripTime && pair.responsesReceived) return (pair.totalRoundTripTime / pair.responsesReceived) * 1000;
+            return null;
+          };
+          let best: number | null = null;
+          report.forEach((r) => {
+            if (r.type !== 'candidate-pair') return;
+            const pair = r as RTCIceCandidatePairStats & { selected?: boolean };
+            const chosen = selectedId ? r.id === selectedId : (pair.nominated || pair.selected) && pair.state === 'succeeded';
+            if (!chosen) return;
+            const v = pairRtt(pair);
+            if (v != null && v > 0) best = v;
+          });
+          if (best != null) ms = Math.max(1, Math.round(best));
         } catch {
           /* транспорт ещё не готов */
         }
       }
-      if (ms == null && engine?.client?.rtt) ms = Math.round(engine.client.rtt);
+      if (ms == null && engine?.client?.rtt && engine.client.rtt > 0) ms = Math.max(1, Math.round(engine.client.rtt));
       if (alive) setRtt(ms);
     };
     void read();
@@ -538,7 +575,7 @@ export type VoiceApi = ReturnType<typeof useVoice>;
 
 /** Кто сейчас в голосовом (для сайдбара, пока сами не подключились). */
 export function useVoiceRoster(enabled: boolean, server: string) {
-  const [list, setList] = useState<{ identity: string; isMuted: boolean; mobile?: boolean }[]>([]);
+  const [list, setList] = useState<{ identity: string; isMuted: boolean; deafened?: boolean; camera?: boolean; screen?: boolean; mobile?: boolean }[]>([]);
   useEffect(() => {
     if (!enabled) return;
     let alive = true;
@@ -546,7 +583,9 @@ export function useVoiceRoster(enabled: boolean, server: string) {
       try {
         const r = await fetch(`/api/voice/participants?server=${encodeURIComponent(server)}`);
         const d = await r.json();
-        if (alive) setList(d.participants ?? []);
+        // тот же состав — тот же массив: иначе раз в 1,5 с перерисовывалось всё приложение
+        const next = d.participants ?? [];
+        if (alive) setList((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
       } catch {
         /* бэкенд недоступен */
       }
@@ -585,7 +624,8 @@ export function useVoiceCounts(servers: string[]) {
           }
         }),
       );
-      if (alive) setCounts(Object.fromEntries(entries));
+      const next = Object.fromEntries(entries);
+      if (alive) setCounts((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
     };
     void load();
     const id = window.setInterval(() => document.visibilityState === 'visible' && load(), 3000);

@@ -270,7 +270,7 @@ export function useAppState(
     voiceSource === 'live'
       ? voice.peers
       : [
-          ...roster.map((r) => ({ identity: r.identity, isLocal: r.identity === name, speaking: false, micMuted: r.isMuted, deafened: false, mobile: Boolean(r.mobile) })),
+          ...roster.map((r) => ({ identity: r.identity, isLocal: r.identity === name, speaking: false, micMuted: r.isMuted, deafened: Boolean(r.deafened), camOn: Boolean(r.camera), screenOn: Boolean(r.screen), mobile: Boolean(r.mobile) })),
           // пока переподключаемся (например, после перезагрузки) — себя в канале показываем сразу
           ...(inVoiceHere && voice.state === 'connecting' && !roster.some((r) => r.identity === name)
             ? [{ identity: name, isLocal: true, speaking: false, micMuted: false, deafened: false, mobile: IS_MOBILE_DEVICE }]

@@ -12,8 +12,8 @@ import type { VoicePeer } from './useVoice';
 export function PeerFlags({ p, order }: { p: VoicePeer; order: 'tile' | 'row' }) {
   const media = (
     <>
-      {p.camera && <Icon name="video" size={16} />}
-      {order === 'row' && p.screen && <Icon name="screen-share" size={16} />}
+      {(p.camera || p.camOn) && <Icon name="video" size={16} />}
+      {order === 'row' && (p.screen || p.screenOn) && <Icon name="screen-share" size={16} />}
     </>
   );
   const audio = (
@@ -29,7 +29,7 @@ export function PeerFlags({ p, order }: { p: VoicePeer; order: 'tile' | 'row' })
       <>
         {p.micMuted && <Icon name="mic-off" size={16} className="off" />}
         {p.deafened && <Icon name="headphones-off" size={16} className="off" />}
-        {p.camera && <Icon name="video" size={16} />}
+        {(p.camera || p.camOn) && <Icon name="video" size={16} />}
       </>
     );
   }

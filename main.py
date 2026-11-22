@@ -38,22 +38,34 @@ DB_NAME = os.getenv("DB_NAME", "chat.db")
 VOICE_ROOM_NAME = os.getenv("VOICE_ROOM_NAME", "Voice-Lounge")
 
 
-def is_audio_track(track) -> bool:
-    track_type = getattr(track, "type", "")
-    track_type_name = getattr(track_type, "name", "")
-    track_source = str(getattr(track, "source", "")).lower()
-    return (
-        "audio" in str(track_type).lower()
-        or "audio" in str(track_type_name).lower()
-        or "microphone" in track_source
-    )
+def track_source(track) -> int:
+    """Источник трека LiveKit (protobuf-перечисление — число): 1 камера, 2 микрофон, 3 экран."""
+    try:
+        return int(getattr(track, "source", 0) or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def live_tracks(participant, source: int) -> list:
+    return [t for t in getattr(participant, "tracks", []) if track_source(t) == source]
 
 
 def is_participant_muted(participant) -> bool:
-    audio_tracks = [track for track in getattr(participant, "tracks", []) if is_audio_track(track)]
-    if not audio_tracks:
+    # Как в приложении: нет трека микрофона или он заглушён — микрофон выключен.
+    # Раньше тип трека сравнивали со строкой «audio», а LiveKit отдаёт числа — выключенный микрофон не находился никогда.
+    mics = live_tracks(participant, 2)
+    return not mics or all(getattr(t, "muted", False) for t in mics)
+
+
+def has_live_track(participant, source: int) -> bool:
+    return any(not getattr(t, "muted", False) for t in live_tracks(participant, source))
+
+
+def is_participant_deafened(participant) -> bool:
+    try:
+        return bool(json.loads(participant.metadata or "{}").get("deafened"))
+    except (ValueError, AttributeError):
         return False
-    return all(getattr(track, "muted", False) for track in audio_tracks)
 
 
 # --- БАЗА ДАННЫХ (SQLite) ---
@@ -158,6 +170,9 @@ async def get_room_participants(room_name: str):
                 "identity": p.identity,
                 "name": p.name or p.identity,
                 "isMuted": is_participant_muted(p),
+                "deafened": is_participant_deafened(p),
+                "camera": has_live_track(p, 1),
+                "screen": has_live_track(p, 3),
                 # с какого устройства зашёл (атрибут из токена) — для иконки телефона у ника
                 "mobile": p.attributes.get("device") == "mobile",
             }

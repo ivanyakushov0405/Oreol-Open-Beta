@@ -13,11 +13,12 @@ import { EDIT_PROFILE_EVENT, openProfile, ProfileDetails, setProfileOpener } fro
 import { ChannelList } from '../../features/servers/ChannelList';
 import { Rail } from '../../features/servers/Rail';
 import { ServerSettingsBody } from '../../features/settings/ServerSettings';
+import { pressIcon } from '../../features/settings/SettingsScreen';
 import { UserSettingsBody } from '../../features/settings/UserSettings';
 import { isServerSection, isUserSection, SERVER_NAV, USER_NAV, userSectionTitle, type ServerSection, type UserSection } from '../../features/settings/nav';
 import { VoiceStage } from '../../features/voice/VoiceStage';
-import { useElapsed } from '../../features/voice/VoiceStatus';
-import { Icon, type IconName } from '../../shared/icons';
+import { Elapsed } from '../../features/voice/VoiceStatus';
+import { ChatsIcon, Icon, SlidersIcon, type IconName } from '../../shared/icons';
 import { handleOf, type Channel, type ServerId } from '../../shared/model';
 import { Avatar, Banner, BannerTop } from '../../shared/ui/Avatar';
 import { MobileCall, MobileCallPill, PILL_SPACE } from './MobileCall';
@@ -132,7 +133,6 @@ export function Mobile({ app }: { app: AppState }) {
     };
   }, []);
   const online = app.membersOnline;
-  const elapsed = useElapsed(app.voice.startedAt);
   /** Какой экран сейчас уезжает вправо (по «Назад»). */
   const [leaving, setLeaving] = useState<string | null>(null);
   const leaveTimer = useRef<number | undefined>(undefined);
@@ -636,11 +636,12 @@ export function Mobile({ app }: { app: AppState }) {
               app.inVoiceHere && app.voice.state === 'connected' ? (
                 <>
                   {/* Точка — тот же статус связи, что и значок Wi‑Fi в панели «Подключено» */}
-                  {/* Пинг — сразу после «Подключено», обычным текстом */}
+                  {/* Узкий экран: «Подключено» уже сказано точкой — когда пинг известен, слово не пишем, иначе хвост строки
+                      (таймер) обрезался шапкой */}
                   <i className={`live-dot q-${app.voice.quality}`} />
-                  Подключено
-                  {app.voice.rtt != null && ` · ${app.voice.rtt} мс`}
-                  {` · ${app.voice.peers.length} в канале · ${elapsed}`}
+                  {app.voice.rtt != null ? `${app.voice.rtt} мс` : 'Подключено'}
+                  {` · ${app.voice.peers.length} в канале`}
+                  <Elapsed from={app.voice.startedAt} prefix=" · " />
                 </>
               ) : app.inVoiceHere && app.voice.state === 'connecting' ? (
                 <>
@@ -779,8 +780,16 @@ export function Mobile({ app }: { app: AppState }) {
           <div className="m-settings-home">
             <div className="m-list glass">
               {SERVER_NAV.filter((n) => !n.group && n.id !== 'moderation').map((n) => (
-                <button key={n.id} className="m-item" onClick={() => setServerSection(n.id)}>
-                  <Icon name={n.icon} />
+                <button
+                  key={n.id}
+                  className="m-item"
+                  data-ico={n.icon}
+                  onClick={(e) => {
+                    pressIcon(e.currentTarget);
+                    setServerSection(n.id);
+                  }}
+                >
+                  <span className="si">{n.icon === 'settings' ? <SlidersIcon /> : n.icon === 'chats' ? <ChatsIcon /> : <Icon name={n.icon} />}</span>
                   <span className="grow">{n.label}</span>
                   <Icon name="chevron-right" size={18} />
                 </button>
@@ -789,8 +798,16 @@ export function Mobile({ app }: { app: AppState }) {
             <div className="overline m-group-title">Модерация</div>
             <div className="m-list glass">
               {SERVER_NAV.filter((n) => n.group || n.id === 'moderation').map((n) => (
-                <button key={n.id} className="m-item" onClick={() => setServerSection(n.id)}>
-                  <Icon name={n.icon} />
+                <button
+                  key={n.id}
+                  className="m-item"
+                  data-ico={n.icon}
+                  onClick={(e) => {
+                    pressIcon(e.currentTarget);
+                    setServerSection(n.id);
+                  }}
+                >
+                  <span className="si">{n.icon === 'settings' ? <SlidersIcon /> : n.icon === 'chats' ? <ChatsIcon /> : <Icon name={n.icon} />}</span>
                   <span className="grow">{n.label}</span>
                   <Icon name="chevron-right" size={18} />
                 </button>
