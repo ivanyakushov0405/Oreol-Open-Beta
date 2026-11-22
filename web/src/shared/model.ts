@@ -25,6 +25,8 @@ export type ServerId = Server['id'];
 
 export interface ChatMessage {
   id: string | number;
+  /** Сообщение удалили — оно ещё на экране, пока проигрывается анимация ухода (только на клиенте). */
+  leaving?: boolean;
   user: string;
   content: string;
   ts: string | null;
@@ -32,13 +34,35 @@ export interface ChatMessage {
   edited?: string | null;
   pinned?: boolean;
   /** Ответ на сообщение: короткая копия оригинала (или пометка, что его удалили). */
-  reply?: { id: number | string; user?: string; content?: string; deleted?: boolean } | null;
+  /** photo — первое фото оригинала, миниатюра в цитате. */
+  reply?: { id: number | string; user?: string; content?: string; photo?: string | null; deleted?: boolean } | null;
   /** Пересланное: автор оригинала и когда он его написал. */
   fwd?: { user: string; ts: string | null } | null;
   /** Служебная строка ленты: 'pin' — user закрепил сообщение reply.id. */
   sys?: string | null;
   /** Сколько раз на сообщение ответили. */
   replies?: number;
+  /** Фото в сообщении (размеры — для раскладки коллажа до загрузки картинки). */
+  attachments?: Attachment[];
+}
+
+export interface Attachment {
+  id: number;
+  url: string;
+  w: number;
+  h: number;
+}
+
+/** Ограничения фото — те же, что проверяет сервер. */
+export const MAX_PHOTOS = 10;
+export const MAX_PHOTO_MB = 10;
+export const PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+
+/** Короткий текст сообщения для цитат, закрепов и уведомлений: у сообщения из одних фото — «Фото». */
+export function previewText(m: Pick<ChatMessage, 'content' | 'attachments'>) {
+  if (m.content) return m.content;
+  const n = m.attachments?.length ?? 0;
+  return n === 1 ? 'Фото' : n ? `Фото · ${n}` : '';
 }
 
 /** Имя при входе: латиница, цифры, пробел, точка, дефис, подчёркивание; 2–32 символа. */

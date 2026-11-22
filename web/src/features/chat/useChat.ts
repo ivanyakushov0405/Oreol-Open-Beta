@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getToken, putUser, type PublicUser } from '../../shared/api';
-import type { ChatMessage, Status } from '../../shared/model';
+import { previewText, type ChatMessage, type Status } from '../../shared/model';
 
 type ServerEvent =
   | { type: 'history'; messages: ChatMessage[]; pinned?: ChatMessage[]; reads?: Record<string, number> }
@@ -16,6 +16,9 @@ type ServerEvent =
 const TYPING_TTL = 3500;
 
 /** Реальный чат комнаты: история из SQLite, новые сообщения, «печатает», статусы подключённых. */
+/** Длительность анимации удаления сообщения (как у @keyframes msg-out). */
+const MSG_OUT_MS = 450;
+
 export function useChat(room: string | null, user: string) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   /** Все закреплённые в комнате (не только из загруженной истории). */
@@ -89,7 +92,7 @@ export function useChat(room: string | null, user: string) {
           // правка/закреп: само сообщение и короткие копии в ответах на него
           const patch = (list: ChatMessage[]) =>
             list.map((x) =>
-              x.id === m.id ? m : x.reply && x.reply.id === m.id ? { ...x, reply: { id: m.id, user: m.user, content: m.content.slice(0, 200) } } : x,
+              x.id === m.id ? m : x.reply && x.reply.id === m.id ? { ...x, reply: { id: m.id, user: m.user, content: previewText(m).slice(0, 200), photo: m.attachments?.[0]?.url ?? null } } : x,
             );
           setMessages(patch);
           setPinned((p) => {
@@ -109,8 +112,10 @@ export function useChat(room: string | null, user: string) {
               .filter((x) => !gone.has(String(x.id)))
               .map((x) => (x.reply && gone.has(String(x.reply.id)) ? { ...x, reply: { id: x.reply.id, deleted: true } } : x));
           };
-          setMessages(drop);
+          // сначала сообщение уходит с анимацией (см. .msg-out), потом исчезает из ленты
+          setMessages((list) => list.map((x) => (gone.has(String(x.id)) ? { ...x, leaving: true } : x)));
           setPinned(drop);
+          window.setTimeout(() => setMessages(drop), MSG_OUT_MS);
         } else if (ev.type === 'forwarded') {
           onForwarded.current?.(ev.to, ev.count);
         } else if (ev.type === 'message') {
@@ -170,10 +175,10 @@ export function useChat(room: string | null, user: string) {
   }, []);
 
   const send = useCallback(
-    (content: string, replyTo?: number | string | null) => {
+    (content: string, replyTo?: number | string | null, attachments: number[] = []) => {
       const text = content.trim();
-      if (!text) return false;
-      return raw({ type: 'message', content: text, reply_to: replyTo ?? null });
+      if (!text && !attachments.length) return false;
+      return raw({ type: 'message', content: text, reply_to: replyTo ?? null, attachments });
     },
     [raw],
   );

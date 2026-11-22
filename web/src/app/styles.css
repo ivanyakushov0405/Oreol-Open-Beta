@@ -4682,7 +4682,7 @@ html[data-theme='light'] .account-head .acc-head-list { border-top-color: #0a1a2
 
 /* Язычок шторки виден на любом фоне: светлый с тенью */
 .sheet-grab { background: #fff; box-shadow: 0 0 0 1px #0a1a2e1f, 0 1px 3px #0a1a2e40; }
-[data-theme='light'] .sheet-grab { background: #0a1a2e47; box-shadow: 0 0 0 1px #ffffff99; }
+[data-theme='light'] .sheet-grab { background: #0a1a2e47; box-shadow: none; }
 .member-card.sheet .mc-full { align-self: stretch; width: 100%; }
 .member-card.sheet .mc-full .pm-actions { width: 100%; }
 
@@ -4785,6 +4785,11 @@ html[data-theme][data-glass='on'] .member-card .mc-info {
   background: var(--g2-bg); border-color: transparent; box-shadow: inset 0 0 0 1px var(--g-edge);
 }
 html[data-theme][data-glass='on'] .member-card :is(.mc-avatar, .pm-avatar) { box-shadow: none; }
+/* Карточка в стекле полупрозрачная: кольцо цвета карточки (--bg-elevated) вокруг аватара становилось видимой
+   белой (в светлой теме) обводкой, которую точка статуса «надкусывала». В стекле кольца нет — только
+   обычная тонкая кромка аватара, а точка с обводкой, как в списке участников. */
+html[data-theme][data-glass='on'] .member-card :is(.mc-avatar, .pm-avatar) .avatar { box-shadow: inset 0 0 0 1px var(--border-strong), inset 0 0 8px #040a1459; }
+html[data-theme='light'][data-glass='on'] .member-card :is(.mc-avatar, .pm-avatar) .status-dot { border-color: #fff; }
 
 /* ===== Свечения по краям фона — только при включённом подпункте «Свечения по краям» ===== */
 /* включение и выключение — плавно (прозрачность из атрибута эллипса тут заменяем своей) */
@@ -4844,3 +4849,108 @@ html:not([data-glows='on']) .backdrop .bd-glow { opacity: 0; }
 .m-stage:has(> .m-full-voice.m-over) .m-under.dim,
 .m-stage:has(> .m-full-voice.m-over) .m-under.dim:not(.tabbar) > :not(.m-servers-row),
 .m-stage:has(> .m-full-voice.m-over) .m-under.dim .m-servers-row > * { opacity: 0 !important; }
+
+/* ---------- Фото в сообщениях ---------- */
+/* Облачко с фото: ширина задаётся по фото (style), на узком экране сжимается вместе с ними */
+.bubble.has-photos { padding: 4px; gap: 4px; min-width: 0; flex-shrink: 1; max-width: 100%; }
+.bubble.has-photos > .meta, .bubble.has-photos > .text, .bubble.has-photos > .msg-fwd, .bubble.has-photos > .msg-reply { margin-left: 8px; margin-right: 8px; }
+.bubble.has-photos > .meta { margin-top: 4px; }
+.bubble.has-photos > .text { margin-bottom: 4px; }
+.bubble.has-photos > .msg-fwd { margin-bottom: 0; }
+.photos { width: 100%; display: flex; flex-direction: column; gap: 2px; border-radius: 14px; overflow: hidden; }
+.ph-row { display: flex; gap: 2px; }
+.ph-tile {
+  flex: 1 1 0; min-width: 0; display: block; padding: 0; border: 0; overflow: hidden; cursor: zoom-in;
+  background: var(--fill-soft);
+}
+.photos.one .ph-tile { flex: none; width: 100%; }
+.ph-tile img { width: 100%; height: 100%; display: block; object-fit: cover; transition: filter .15s ease; -webkit-user-drag: none; user-select: none; }
+.ph-tile:hover img { filter: brightness(1.06); }
+.ph-tile:focus-visible { outline: 2px solid var(--border-focus); outline-offset: -2px; }
+.msg.selecting .ph-tile { cursor: default; }
+
+/* Фото в поле ввода, пока не отправлены */
+.composer-photos {
+  flex: 0 0 100%; min-width: 0; display: flex; gap: 8px; overflow-x: auto; padding: 2px 0 8px; margin: 0 -2px 4px -6px; padding-left: 6px;
+  border-bottom: 1px solid var(--border-subtle); scrollbar-width: thin; animation: cb-in .18s cubic-bezier(.2, .8, .2, 1);
+}
+.cp-item { position: relative; flex: none; width: 64px; height: 64px; border-radius: 12px; overflow: hidden; background: var(--fill-soft); }
+.cp-item img { width: 100%; height: 100%; object-fit: cover; display: block; transition: opacity .2s ease; }
+.cp-item.loading img { opacity: .45; }
+.cp-spin {
+  position: absolute; left: 50%; top: 50%; width: 22px; height: 22px; margin: -11px 0 0 -11px; border-radius: 50%;
+  border: 2px solid #ffffff59; border-top-color: #fff; animation: cp-spin .8s linear infinite;
+}
+@keyframes cp-spin { to { transform: rotate(360deg); } }
+.cp-remove {
+  position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; border-radius: 50%; border: 0; padding: 0;
+  display: grid; place-items: center; background: #000000a6; color: #fff; cursor: pointer;
+}
+.cp-remove:hover { background: #000000d9; }
+.composer .round:disabled { opacity: .55; cursor: default; }
+
+/* Просмотр фото на весь экран: лента из трёх слотов едет за пальцем */
+.ph-viewer {
+  position: fixed; inset: 0; z-index: 300; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none;
+  animation: chat-fade-in .16s ease;
+}
+.ph-viewer::before {
+  content: ''; position: absolute; inset: 0; background: #000000e6;
+  opacity: var(--phv-dim, 1); transition: opacity var(--phv-dim-ms, 0s) ease;
+}
+.phv-track { position: absolute; inset: 56px 0 24px; will-change: transform; }
+.phv-slide { position: absolute; top: 0; width: 100%; height: 100%; display: grid; place-items: center; padding: 0 16px; box-sizing: border-box; }
+.phv-img {
+  max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 6px; box-shadow: 0 12px 48px #00000080;
+  -webkit-user-drag: none;
+}
+.phv-top { position: absolute; top: 0; left: 0; right: 0; z-index: 1; display: flex; align-items: center; gap: 4px; padding: 8px 12px; color: #fff; }
+.phv-top .icon-btn { color: #fff; }
+.phv-count { flex: 1; font-size: 14px; opacity: .85; padding-left: 4px; }
+.phv-nav {
+  position: absolute; z-index: 1; top: 50%; width: 48px; height: 48px; margin-top: -24px; border-radius: 50%; border: 0;
+  display: grid; place-items: center; background: #ffffff1f; color: #fff; cursor: pointer;
+}
+.phv-nav:hover { background: #ffffff38; }
+.phv-nav.prev { left: 16px; }
+.phv-nav.next { right: 16px; }
+@media (max-width: 600px), (pointer: coarse) { .phv-nav { display: none; } }
+
+/* ===== Аватар с кольцом (профиль участника, окно профиля, «Вы» на телефоне): обводка точки статуса —
+   той же ширины и того же цвета, что и кольцо, и кольцо обтекает точку. Раньше обводка была тоньше кольца
+   (2px против 4–5px), и кольцо выглядело перерезанным точкой. ===== */
+html:not([data-glass='on']) .pm-avatar .avatar > .status-dot {
+  width: 36px !important; height: 36px !important; right: -5px !important; bottom: -5px !important;
+  border-width: 5px !important; border-color: var(--bg-elevated) !important;
+}
+.m-you > .avatar > .status-dot {
+  width: 34px !important; height: 34px !important; right: -4px !important; bottom: -4px !important;
+  border-width: 4px !important; border-color: var(--bg-base) !important;
+}
+
+/* ===== Удаление сообщения: уезжает к своему краю и гаснет, затем лента схлопывается (вместе с зазором до соседнего).
+   Без prefers-reduced-motion: остальные анимации приложения его не учитывают, и с выключенными в системе эффектами
+   удаление было мгновенным, хотя всё остальное анимировалось ===== */
+@keyframes msg-out {
+  0% { opacity: 1; transform: none; max-height: var(--h, 400px); }
+  55% { opacity: 0; transform: translateX(var(--out-x, -40px)) scale(.92); max-height: var(--h, 400px); margin-bottom: 0; }
+  100% { opacity: 0; transform: translateX(var(--out-x, -40px)) scale(.92); max-height: 0; margin-bottom: calc(-1 * var(--msg-gap, 10px)); }
+}
+/* flex-shrink: 0 — лента это flex-колонка с прокруткой; с overflow: hidden минимальная высота сообщения обнуляется,
+   и flex мгновенно сжимал его до 0 — анимации не было видно */
+.msg.msg-out, .sys-row.msg-out { animation: msg-out .45s cubic-bezier(.4, 0, .2, 1) forwards; overflow: hidden; flex-shrink: 0; pointer-events: none; }
+.msg.mine.msg-out { transform-origin: right center; --out-x: 40px; }
+.msg:not(.mine).msg-out { transform-origin: left center; }
+.sys-row.msg-out { --out-x: 0px; }
+.chat.is-selecting .msg-out { --msg-gap: 4px; }
+
+/* ===== Ответ на удалённое сообщение: в своём (цветном) облачке серый текст не читался ===== */
+.msg-reply.gone .rt { font-style: italic; }
+.msg.mine .msg-reply.gone, [data-theme='light'] .msg.mine .msg-reply.gone { color: #ffffffbf; border-left-color: #ffffff80; }
+
+/* Миниатюра первого фото: в цитате ответа, в плашке «Ответ …» над полем и в плашке закрепа */
+.rq-thumb { flex: none; width: 36px; height: 36px; border-radius: 6px; object-fit: cover; display: block; background: var(--fill-soft); -webkit-user-drag: none; user-select: none; }
+.msg-reply.has-thumb { flex-direction: row; align-items: center; gap: 8px; padding-left: 6px; }
+.msg-reply .rq-body { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; min-width: 0; flex: 1 1 0; }
+.composer-bar .rq-thumb { width: 34px; height: 34px; margin-right: -2px; }
+.pin-banner .pb-thumb { width: 34px; height: 34px; cursor: pointer; }

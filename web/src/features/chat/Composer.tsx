@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { api, ApiError } from '../../shared/api';
 import { Icon } from '../../shared/icons';
-import { handleOf } from '../../shared/model';
+import { handleOf, MAX_PHOTO_MB, MAX_PHOTOS, PHOTO_TYPES, type Attachment } from '../../shared/model';
 import { MENTION_EVENT } from './mentions';
 
 export function Composer({
@@ -12,9 +13,16 @@ export function Composer({
   seed,
   onCancel,
   onDraft,
+  allowPhotos = true,
+  onError,
 }: {
   placeholder: string;
-  onSend: (text: string) => boolean;
+  /** photos — id уже загруженных фото (по порядку выбора). */
+  onSend: (text: string, photos: number[]) => boolean;
+  /** Можно ли прикрепить фото (при правке сообщения — нельзя). */
+  allowPhotos?: boolean;
+  /** Ошибка загрузки фото — показать пользователю. */
+  onError?: (text: string) => void;
   onTyping?: () => void;
   disabled?: boolean;
   /** Плашка над полем: «Ответ …» / «Редактирование». */
@@ -28,6 +36,72 @@ export function Composer({
 }) {
   const [text, setText] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  /** Выбранные фото: загружаются сразу после выбора, в сообщение уходят их id. */
+  const [photos, setPhotos] = useState<Pending[]>([]);
+  const photosRef = useRef(photos);
+  photosRef.current = photos;
+  // Закрыли чат — превью освобождаем, а неотправленные загрузки убираем с сервера
+  useEffect(
+    () => () => {
+      photosRef.current.forEach((p) => {
+        URL.revokeObjectURL(p.preview);
+        if (p.att) void api(`/api/attachments/${p.att.id}`, { method: 'DELETE' }).catch(() => undefined);
+      });
+    },
+    [],
+  );
+  const addFiles = (files: File[]) => {
+    if (!allowPhotos || !files.length) return;
+    const room = MAX_PHOTOS - photosRef.current.length;
+    const fresh: Pending[] = [];
+    for (const file of files) {
+      if (!PHOTO_TYPES.includes(file.type)) {
+        onError?.(`«${file.name}»: можно прикрепить только фото — JPG, PNG, WEBP или GIF`);
+        continue;
+      }
+      if (file.size > MAX_PHOTO_MB * 1024 * 1024) {
+        onError?.(`«${file.name}» больше ${MAX_PHOTO_MB} МБ`);
+        continue;
+      }
+      if (fresh.length >= room) {
+        onError?.(`В одном сообщении — не больше ${MAX_PHOTOS} фото`);
+        break;
+      }
+      fresh.push({ key: `${Date.now()}-${Math.random()}`, preview: URL.createObjectURL(file) });
+      const key = fresh[fresh.length - 1].key;
+      api<Attachment>('/api/attachments', { body: file }).then(
+        (att) => {
+          // фото успели убрать из поля, пока оно загружалось — удаляем и с сервера
+          if (!photosRef.current.some((p) => p.key === key)) {
+            void api(`/api/attachments/${att.id}`, { method: 'DELETE' }).catch(() => undefined);
+            return;
+          }
+          setPhotos((list) => list.map((p) => (p.key === key ? { ...p, att } : p)));
+        },
+        (e: unknown) => {
+          onError?.(e instanceof ApiError ? e.message : 'Не удалось загрузить фото');
+          setPhotos((list) => {
+            const gone = list.find((p) => p.key === key);
+            if (gone) URL.revokeObjectURL(gone.preview);
+            return list.filter((p) => p.key !== key);
+          });
+        },
+      );
+    }
+    if (fresh.length) setPhotos((list) => [...list, ...fresh]);
+    inputRef.current?.focus();
+  };
+  const removePhoto = (key: string) => {
+    const p = photosRef.current.find((x) => x.key === key);
+    if (!p) return;
+    URL.revokeObjectURL(p.preview);
+    if (p.att) void api(`/api/attachments/${p.att.id}`, { method: 'DELETE' }).catch(() => undefined);
+    setPhotos((list) => list.filter((x) => x.key !== key));
+  };
+  const shownPhotos = allowPhotos ? photos : [];
+  const uploading = shownPhotos.some((p) => !p.att);
+  const canSend = !uploading && (!!text.trim() || shownPhotos.length > 0);
   useEffect(() => {
     onDraft?.(text);
   }, [text]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -42,7 +116,14 @@ export function Composer({
     }
   }, [seed?.key]); // eslint-disable-line react-hooks/exhaustive-deps
   const submit = () => {
-    if (onSend(text)) setText('');
+    if (!canSend) return;
+    const ids = shownPhotos.map((p) => p.att!.id);
+    if (!onSend(text, ids)) return;
+    setText('');
+    if (ids.length) {
+      shownPhotos.forEach((p) => URL.revokeObjectURL(p.preview));
+      setPhotos([]);
+    }
   };
   // «Упомянуть» из меню пользователя — вставляем его @юзернейм в конец текста
   useEffect(() => {
@@ -82,11 +163,41 @@ export function Composer({
         submit();
       }}
     >
-      <button type="button" className="round" title="Вложения — скоро будут" disabled>
+      <button
+        type="button"
+        className="round"
+        title={allowPhotos ? 'Прикрепить фото' : 'Фото нельзя добавить при правке'}
+        disabled={disabled || !allowPhotos || photos.length >= MAX_PHOTOS}
+        onClick={() => fileRef.current?.click()}
+      >
         <Icon name="attach" />
       </button>
-      <div className={'field' + (bar ? ' has-bar' : '')}>
+      <input
+        ref={fileRef}
+        type="file"
+        accept={PHOTO_TYPES.join(',')}
+        multiple
+        hidden
+        onChange={(e) => {
+          addFiles(Array.from(e.target.files ?? []));
+          e.target.value = '';
+        }}
+      />
+      <div className={'field' + (bar || shownPhotos.length ? ' has-bar' : '')}>
         {bar}
+        {shownPhotos.length > 0 && (
+          <div className="composer-photos">
+            {shownPhotos.map((p) => (
+              <div className={'cp-item' + (p.att ? '' : ' loading')} key={p.key}>
+                <img src={p.preview} alt="" />
+                {!p.att && <span className="cp-spin" aria-label="Загружается" />}
+                <button type="button" className="cp-remove" title="Убрать фото" onClick={() => removePhoto(p.key)}>
+                  <Icon name="close" size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
         <input
           ref={inputRef}
           value={text}
@@ -97,7 +208,15 @@ export function Composer({
               setText('');
             }
           }}
-          placeholder={placeholder}
+          onPaste={(e) => {
+            // вставка картинки из буфера (скриншот) — прикрепляем как фото
+            const files = Array.from(e.clipboardData.files).filter((f) => f.type.startsWith('image/'));
+            if (files.length && allowPhotos) {
+              e.preventDefault();
+              addFiles(files);
+            }
+          }}
+          placeholder={shownPhotos.length ? 'Подпись' : placeholder}
           disabled={disabled}
           maxLength={2000}
           onChange={(e) => {
@@ -108,10 +227,24 @@ export function Composer({
         <button type="button" className="icon-btn" title="Эмодзи" onClick={() => setText((t) => t + '🙂')}>
           <Icon name="smile" />
         </button>
-        <button type="submit" className={"send-btn" + (text.trim() ? " show" : "")} title="Отправить" disabled={disabled || !text.trim()} tabIndex={text.trim() ? 0 : -1}>
+        <button
+          type="submit"
+          className={'send-btn' + (text.trim() || shownPhotos.length ? ' show' : '')}
+          title={uploading ? 'Фото ещё загружаются' : 'Отправить'}
+          disabled={disabled || !canSend}
+          tabIndex={canSend ? 0 : -1}
+        >
           <Icon name="send" size={18} />
         </button>
       </div>
     </form>
   );
+}
+
+interface Pending {
+  key: string;
+  /** Локальное превью (object URL), пока фото не загружено и после. */
+  preview: string;
+  /** Загруженное фото; пока его нет — идёт загрузка. */
+  att?: Attachment;
 }

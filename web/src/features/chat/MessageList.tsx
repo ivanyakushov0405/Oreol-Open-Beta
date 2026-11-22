@@ -1,12 +1,13 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Icon } from '../../shared/icons';
-import { handleOf, type ChatMessage } from '../../shared/model';
+import { handleOf, type Attachment, type ChatMessage } from '../../shared/model';
 import { Avatar } from '../../shared/ui/Avatar';
 import { Nick } from '../members/Nick';
 import { userMenuProps } from '../members/userMenu';
 import { openProfile } from '../profile/profile';
 import { LONG_PRESS_MS, mentionsMe, withMentions } from './mentions';
+import { PhotoGrid, PhotoViewer, photosWidth } from './Photos';
 
 const timeFmt = new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit' });
 const dayFmt = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long' });
@@ -111,6 +112,8 @@ export function MessageList({
     if (!stick.current) el.scrollTop += h - cur;
   };
   const press = useRef<{ t: number; x: number; y: number } | null>(null);
+  /** Открытое на весь экран фото. */
+  const [viewer, setViewer] = useState<{ photos: Attachment[]; i: number } | null>(null);
   // Кнопка «вниз»: появляется, когда ушли от низа ленты; на ней — сколько новых сообщений пришло, пока смотрели выше
   const [away, setAway] = useState(false);
   const [unread, setUnread] = useState(0);
@@ -172,6 +175,8 @@ export function MessageList({
 
   useLayoutEffect(() => {
     const el = ref.current;
+    // удалённое сообщение схлопывается от своей настоящей высоты (см. @keyframes msg-out)
+    el?.querySelectorAll<HTMLElement>('.msg-out:not([style*="--h"])').forEach((n) => n.style.setProperty('--h', `${n.offsetHeight}px`));
     // новые чужие сообщения, пришедшие, пока лента прокручена вверх, — в счётчик на кнопке «вниз»
     const last = messages.length ? Number(messages[messages.length - 1].id) || 0 : 0;
     if (!stick.current && lastSeen.current && last > lastSeen.current) {
@@ -231,6 +236,9 @@ export function MessageList({
   };
 
   const myTag = handleOf(me);
+  // Первое фото сообщений ленты — миниатюра в цитате, если сервер не прислал её сам (старые ответы)
+  const firstPhoto = new Map<string, string>();
+  messages.forEach((x) => x.attachments?.[0] && firstPhoto.set(String(x.id), x.attachments[0].url));
   const items: ReactNode[] = [];
   let lastDay = '';
   let newPlaced = false;
@@ -283,6 +291,7 @@ export function MessageList({
       );
     }
     const reply = m.reply;
+    const replyPhoto = reply && !reply.deleted ? reply.photo || firstPhoto.get(String(reply.id)) : undefined;
     // Служебная строка «X закрепил(а) / открепил(а) …» — в стиле плашки даты, клик ведёт к сообщению.
     // Как и обычное сообщение: меню по ПКМ/долгому нажатию, выделение, удаление
     if (m.sys === 'pin' || m.sys === 'unpin') {
@@ -292,7 +301,7 @@ export function MessageList({
         // Одна плашка по центру ленты: ник, действие и текст закреплённого сообщения
         <button
           type="button"
-          className={'sys-row' + (gone ? ' gone' : '') + (selecting ? ' selecting' : '') + (sel ? ' selected' : '')}
+          className={'sys-row' + (gone ? ' gone' : '') + (m.leaving ? ' msg-out' : '') + (selecting ? ' selecting' : '') + (sel ? ' selected' : '')}
           key={m.id}
           data-mid={m.id}
           aria-disabled={(!selecting && gone) || undefined}
@@ -327,7 +336,7 @@ export function MessageList({
     ) : null;
     items.push(
       <div
-        className={'msg' + (mine ? ' mine' : '') + (selecting ? ' selecting' : '') + (isSel ? ' selected' : '') + (!mine && mentionsMe(m.content, myTag) ? ' mention-me' : '')}
+        className={'msg' + (m.leaving ? ' msg-out' : '') + (mine ? ' mine' : '') + (selecting ? ' selecting' : '') + (isSel ? ' selected' : '') + (!mine && mentionsMe(m.content, myTag) ? ' mention-me' : '')}
         key={m.id}
         data-mid={m.id}
         data-pin={m.pinned ? '' : undefined}
@@ -342,7 +351,11 @@ export function MessageList({
             <Avatar name={m.user} size={34} />
           </span>
         )}
-        <div className="bubble">
+        <div
+          className={'bubble' + (m.attachments?.length ? ' has-photos' : '')}
+          // облачко с фото — по ширине фото (+ отступ 4px и рамка 1px с каждой стороны)
+          style={m.attachments?.length ? { width: photosWidth(m.attachments) + 10 } : undefined}
+        >
           {/* Шапка: имя · пин · время · ответы; у своих — наоборот, без имени и с галочками в конце */}
           <div className="meta">
             {!mine && (
@@ -380,7 +393,7 @@ export function MessageList({
           {reply && (
             <button
               type="button"
-              className={'msg-reply' + (reply.deleted ? ' gone' : '')}
+              className={'msg-reply' + (reply.deleted ? ' gone' : '') + (replyPhoto ? ' has-thumb' : '')}
               onClick={(e) => {
                 e.stopPropagation();
                 if (!selecting && !reply.deleted) onJump?.(reply.id);
@@ -388,6 +401,14 @@ export function MessageList({
             >
               {reply.deleted ? (
                 <span className="rt">Сообщение удалено</span>
+              ) : replyPhoto ? (
+                <>
+                  <img className="rq-thumb" src={replyPhoto} alt="" loading="lazy" draggable={false} />
+                  <span className="rq-body">
+                    <Nick name={reply.user ?? ''} />
+                    <span className="rt">{reply.content}</span>
+                  </span>
+                </>
               ) : (
                 <>
                   <Nick name={reply.user ?? ''} />
@@ -396,7 +417,10 @@ export function MessageList({
               )}
             </button>
           )}
-          <div className="text">{withMentions(m.content, myTag)}</div>
+          {!!m.attachments?.length && (
+            <PhotoGrid photos={m.attachments} onOpen={selecting ? undefined : (i) => setViewer({ photos: m.attachments!, i })} />
+          )}
+          {!!m.content && <div className="text">{withMentions(m.content, myTag)}</div>}
         </div>
       </div>,
     );
@@ -419,6 +443,7 @@ export function MessageList({
     >
       <div className="chat-head-room" ref={head} aria-hidden />
       {messages.length ? items : <div className="empty-state">{empty}</div>}
+      {viewer && <PhotoViewer photos={viewer.photos} start={viewer.i} onClose={() => setViewer(null)} />}
       {dock &&
         createPortal(
           <button

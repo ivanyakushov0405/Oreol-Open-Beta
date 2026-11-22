@@ -296,7 +296,270 @@ def init_chat_features():
 
 init_chat_features()
 
+
+# =====================================================================
+# Вложения: пока только фото. Файлы лежат в S3 (Timeweb Cloud), бэкенд отдаёт их
+# по /api/media/<key> — бакет может оставаться приватным. Фото загружается заранее
+# (POST /api/attachments), а сообщение потом ссылается на id загруженных фото.
+# =====================================================================
+import io
+import threading
+import uuid
+from datetime import datetime, timezone
+
+import boto3
+from botocore.config import Config as BotoConfig
+from botocore.exceptions import BotoCoreError, ClientError
+from fastapi.responses import Response, StreamingResponse
+from PIL import Image, UnidentifiedImageError
+
+S3_ENDPOINT = os.getenv("S3_ENDPOINT", "https://s3.twcstorage.ru")
+S3_BUCKET = os.getenv("S3_BUCKET", "3e88f5e3-35cc-4a02-9d3c-95cfbb3707c0")
+S3_REGION = os.getenv("S3_REGION", "ru-1")
+S3_ACCESS_KEY = os.getenv("S3_ACCESS_KEY")
+S3_SECRET_KEY = os.getenv("S3_SECRET_KEY")
+
+MAX_PHOTO_BYTES = 10 * 1024 * 1024  # 10 МБ на одно фото
+MAX_PHOTO_SIDE = 10_000  # по любой стороне, px
+MAX_PHOTO_PIXELS = 40_000_000  # ~40 Мп — защита от «бомб» распаковки
+MIN_PHOTO_SIDE = 1
+MAX_PHOTOS = 10  # фото в одном сообщении
+STALE_UPLOAD_HOURS = 24  # загружено, но так и не отправлено — удаляем
+Image.MAX_IMAGE_PIXELS = MAX_PHOTO_PIXELS
+# Что Pillow нашёл внутри файла → (MIME, расширение). Заголовку Content-Type не доверяем.
+PHOTO_FORMATS = {"JPEG": ("image/jpeg", "jpg"), "PNG": ("image/png", "png"), "WEBP": ("image/webp", "webp"), "GIF": ("image/gif", "gif")}
+MEDIA_KEY_RE = re.compile(r"^photos/\d{4}/\d{2}/[0-9a-f]{32}\.(?:jpg|png|webp|gif)$")
+
+_s3_client = None
+
+
+def s3():
+    global _s3_client
+    if _s3_client is None:
+        _s3_client = boto3.client(
+            "s3",
+            endpoint_url=S3_ENDPOINT,
+            region_name=S3_REGION,
+            aws_access_key_id=S3_ACCESS_KEY,
+            aws_secret_access_key=S3_SECRET_KEY,
+            config=BotoConfig(signature_version="s3v4", s3={"addressing_style": "path"}, retries={"max_attempts": 3}),
+        )
+    return _s3_client
+
+
+def init_attachments_db():
+    conn = sqlite3.connect(DB_NAME)
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS attachments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            message_id INTEGER,
+            user_id INTEGER NOT NULL,
+            key TEXT NOT NULL,
+            mime TEXT NOT NULL,
+            width INTEGER NOT NULL,
+            height INTEGER NOT NULL,
+            size INTEGER NOT NULL,
+            position INTEGER NOT NULL DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS attachments_message ON attachments(message_id);
+        CREATE INDEX IF NOT EXISTS attachments_key ON attachments(key);
+        """
+    )
+    conn.commit()
+    conn.close()
+
+
+init_attachments_db()
+
+
+def media_url(key: str) -> str:
+    return f"/api/media/{key}"
+
+
+def attachments_of(conn, message_id: int) -> list[dict]:
+    rows = conn.execute(
+        "SELECT id, key, width, height FROM attachments WHERE message_id = ? ORDER BY position, id", (message_id,)
+    ).fetchall()
+    return [{"id": a["id"], "url": media_url(a["key"]), "w": a["width"], "h": a["height"]} for a in rows]
+
+
+def purge_s3_keys(keys) -> None:
+    """Удаляет объекты из бакета в фоне — ответ пользователю не ждёт сети."""
+    keys = [k for k in set(keys) if k]
+    if not keys or not S3_ACCESS_KEY:
+        return
+
+    def run():
+        try:
+            for i in range(0, len(keys), 1000):
+                s3().delete_objects(
+                    Bucket=S3_BUCKET, Delete={"Objects": [{"Key": k} for k in keys[i : i + 1000]], "Quiet": True}
+                )
+        except (BotoCoreError, ClientError) as e:
+            print(f"s3 delete: {e}")
+
+    threading.Thread(target=run, daemon=True).start()
+
+
+def drop_attachments(conn, where: str, args: tuple) -> list[str]:
+    """Удаляет строки вложений по условию и возвращает ключи, на которые больше никто не ссылается
+    (пересланное сообщение использует тот же файл, что и оригинал). Коммит — на вызывающем."""
+    keys = [r[0] for r in conn.execute(f"SELECT DISTINCT key FROM attachments WHERE {where}", args).fetchall()]
+    conn.execute(f"DELETE FROM attachments WHERE {where}", args)
+    if not keys:
+        return []
+    marks = ",".join("?" * len(keys))
+    still = {r[0] for r in conn.execute(f"SELECT DISTINCT key FROM attachments WHERE key IN ({marks})", keys).fetchall()}
+    return [k for k in keys if k not in still]
+
+
+def photo_info(body: bytes):
+    """(MIME, расширение, ширина, высота) или текст ошибки. Размеры — как фото покажет браузер (с учётом EXIF-поворота)."""
+    try:
+        with Image.open(io.BytesIO(body)) as img:
+            fmt = PHOTO_FORMATS.get(img.format or "")
+            if not fmt:
+                return "Поддерживаются JPG, PNG, WEBP и GIF"
+            w, h = img.size
+            try:
+                if img.getexif().get(0x0112) in (5, 6, 7, 8):  # повёрнуто на 90° — стороны меняются местами
+                    w, h = h, w
+            except Exception:
+                pass
+    except Image.DecompressionBombError:
+        return f"Слишком большое разрешение — максимум {MAX_PHOTO_PIXELS // 1_000_000} Мп"
+    except (UnidentifiedImageError, OSError, ValueError):
+        return "Файл не похож на изображение"
+    if min(w, h) < MIN_PHOTO_SIDE:
+        return "Пустое изображение"
+    if max(w, h) > MAX_PHOTO_SIDE or w * h > MAX_PHOTO_PIXELS:
+        return f"Слишком большое разрешение — до {MAX_PHOTO_SIDE} px по стороне и {MAX_PHOTO_PIXELS // 1_000_000} Мп"
+    return (*fmt, w, h)
+
+
+def purge_stale_uploads():
+    """Фото, загруженные, но так и не отправленные за сутки."""
+    conn = sqlite3.connect(DB_NAME)
+    keys = drop_attachments(
+        conn, "message_id IS NULL AND created_at < datetime('now', ?)", (f"-{STALE_UPLOAD_HOURS} hours",)
+    )
+    conn.commit()
+    conn.close()
+    purge_s3_keys(keys)
+
+
+@app.post("/api/attachments")
+async def attachment_upload(request: Request):
+    """Тело запроса — само фото. Ответ: {id, url, w, h}; id потом передаётся в сообщении."""
+    row = current_user(request)
+    if not row:
+        return unauthorized()
+    if not S3_ACCESS_KEY or not S3_SECRET_KEY:
+        return JSONResponse({"error": "Хранилище файлов не настроено на сервере"}, status_code=503)
+    too_big = JSONResponse({"error": f"Фото больше {MAX_PHOTO_BYTES // (1024 * 1024)} МБ"}, status_code=413)
+    try:
+        if int(request.headers.get("content-length") or 0) > MAX_PHOTO_BYTES:
+            return too_big
+    except ValueError:
+        pass
+    body = bytearray()
+    async for chunk in request.stream():
+        body += chunk
+        if len(body) > MAX_PHOTO_BYTES:
+            return too_big
+    if not body:
+        return JSONResponse({"error": "Пустой файл"}, status_code=400)
+    body = bytes(body)
+    info = await asyncio.to_thread(photo_info, body)
+    if isinstance(info, str):
+        return JSONResponse({"error": info}, status_code=415)
+    mime, ext, w, h = info
+    now = datetime.now(timezone.utc)
+    key = f"photos/{now:%Y}/{now:%m}/{uuid.uuid4().hex}.{ext}"
+    try:
+        await asyncio.to_thread(
+            s3().put_object,
+            Bucket=S3_BUCKET,
+            Key=key,
+            Body=body,
+            ContentType=mime,
+            CacheControl="public, max-age=31536000, immutable",
+        )
+    except (BotoCoreError, ClientError) as e:
+        print(f"s3 upload: {e}")
+        return JSONResponse({"error": "Не удалось сохранить фото, попробуйте ещё раз"}, status_code=502)
+    conn = db()
+    cur = conn.execute(
+        "INSERT INTO attachments (user_id, key, mime, width, height, size) VALUES (?, ?, ?, ?, ?, ?)",
+        (row["id"], key, mime, w, h, len(body)),
+    )
+    conn.commit()
+    conn.close()
+    asyncio.create_task(asyncio.to_thread(purge_stale_uploads))
+    return {"id": cur.lastrowid, "url": media_url(key), "w": w, "h": h}
+
+
+@app.delete("/api/attachments/{att_id}")
+async def attachment_cancel(att_id: int, request: Request):
+    """Убрали фото из поля ввода до отправки."""
+    row = current_user(request)
+    if not row:
+        return unauthorized()
+    conn = db()
+    keys = drop_attachments(conn, "id = ? AND user_id = ? AND message_id IS NULL", (att_id, row["id"]))
+    conn.commit()
+    conn.close()
+    purge_s3_keys(keys)
+    return {"ok": True}
+
+
+@app.get("/api/media/{key:path}")
+async def media(key: str):
+    # Отдаём только то, что записано в базе: по этому адресу нельзя прочитать произвольный объект бакета
+    if not MEDIA_KEY_RE.match(key):
+        return JSONResponse({"error": "not found"}, status_code=404)
+    conn = db()
+    att = conn.execute("SELECT mime FROM attachments WHERE key = ? LIMIT 1", (key,)).fetchone()
+    conn.close()
+    if not att or not S3_ACCESS_KEY:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    try:
+        obj = await asyncio.to_thread(s3().get_object, Bucket=S3_BUCKET, Key=key)
+    except ClientError as e:
+        code = e.response.get("Error", {}).get("Code", "")
+        if code in ("NoSuchKey", "404"):
+            return JSONResponse({"error": "not found"}, status_code=404)
+        print(f"s3 get: {e}")
+        return Response(status_code=502)
+    except BotoCoreError as e:
+        print(f"s3 get: {e}")
+        return Response(status_code=502)
+    headers = {"Cache-Control": "public, max-age=31536000, immutable"}
+    if obj.get("ContentLength") is not None:
+        headers["Content-Length"] = str(obj["ContentLength"])
+    # Тело читается кусками в пуле потоков — большие фото не держим в памяти целиком
+    return StreamingResponse(obj["Body"].iter_chunks(64 * 1024), media_type=att["mime"], headers=headers)
+
+
 MSG_COLS = "id, room, username, content, timestamp, reply_to, edited_at, pinned, fwd_user, fwd_ts, sys"
+
+
+def reply_text(conn, q) -> str:
+    """Короткий текст для цитаты/закрепа: сам текст, а у сообщения из одних фото — «Фото»."""
+    if q["content"]:
+        return q["content"][:200]
+    n = conn.execute("SELECT COUNT(*) FROM attachments WHERE message_id = ?", (q["id"],)).fetchone()[0]
+    return "Фото" if n == 1 else f"Фото · {n}" if n else ""
+
+
+def first_photo(conn, message_id: int) -> str | None:
+    """Адрес первого фото сообщения — миниатюра в цитате ответа."""
+    a = conn.execute(
+        "SELECT key FROM attachments WHERE message_id = ? ORDER BY position, id LIMIT 1", (message_id,)
+    ).fetchone()
+    return media_url(a[0]) if a else None
 
 
 def msg_json(conn, r) -> dict:
@@ -304,7 +567,7 @@ def msg_json(conn, r) -> dict:
     if r["reply_to"]:
         q = conn.execute("SELECT id, username, content FROM messages WHERE id = ?", (r["reply_to"],)).fetchone()
         reply = (
-            {"id": q["id"], "user": q["username"], "content": q["content"][:200]}
+            {"id": q["id"], "user": q["username"], "content": reply_text(conn, q), "photo": first_photo(conn, q["id"])}
             if q
             else {"id": r["reply_to"], "deleted": True}
         )
@@ -318,6 +581,7 @@ def msg_json(conn, r) -> dict:
         "reply": reply,
         "fwd": {"user": r["fwd_user"], "ts": to_iso(r["fwd_ts"])} if r["fwd_user"] else None,
         "sys": r["sys"],
+        "attachments": attachments_of(conn, r["id"]),
         # Сколько раз на сообщение ответили
         "replies": conn.execute(
             "SELECT COUNT(*) FROM messages WHERE reply_to = ? AND sys IS NULL", (r["id"],)
@@ -375,16 +639,54 @@ def save_system_message(room: str, user: str, kind: str, ref_id: int):
     return out
 
 
-def save_message_v2(room: str, user: str, content: str, reply_to=None, fwd_user=None, fwd_ts=None):
+def save_message_v2(
+    room: str,
+    user: str,
+    content: str,
+    reply_to=None,
+    fwd_user=None,
+    fwd_ts=None,
+    owner_id: int | None = None,
+    attachment_ids: list[int] | None = None,
+    copy_attachments_from: int | None = None,
+):
+    """attachment_ids — свои загруженные, ещё не отправленные фото (owner_id — кто загрузил);
+    copy_attachments_from — при пересылке берём фото исходного сообщения (тот же файл в бакете).
+    Пустое сообщение без фото не сохраняется — возвращается None."""
     conn = chat_conn()
     if reply_to is not None:
         ok = conn.execute("SELECT 1 FROM messages WHERE id = ? AND room = ? AND sys IS NULL", (reply_to, room)).fetchone()
         if not ok:
             reply_to = None
+    ids: list[int] = []
+    if attachment_ids and owner_id is not None:
+        wanted = list(dict.fromkeys(attachment_ids))[:MAX_PHOTOS]
+        marks = ",".join("?" * len(wanted))
+        free = {
+            r[0]
+            for r in conn.execute(
+                f"SELECT id FROM attachments WHERE id IN ({marks}) AND user_id = ? AND message_id IS NULL", (*wanted, owner_id)
+            ).fetchall()
+        }
+        ids = [i for i in wanted if i in free]  # порядок — как выбрал пользователь
+    copy_from = copy_attachments_from is not None and conn.execute(
+        "SELECT 1 FROM attachments WHERE message_id = ?", (copy_attachments_from,)
+    ).fetchone()
+    if not content and not ids and not copy_from:
+        conn.close()
+        return None
     cur = conn.execute(
         "INSERT INTO messages (room, username, content, reply_to, fwd_user, fwd_ts) VALUES (?, ?, ?, ?, ?, ?)",
         (room, user, content, reply_to, fwd_user, fwd_ts),
     )
+    for pos, att in enumerate(ids):
+        conn.execute("UPDATE attachments SET message_id = ?, position = ? WHERE id = ?", (cur.lastrowid, pos, att))
+    if copy_from:
+        conn.execute(
+            "INSERT INTO attachments (message_id, user_id, key, mime, width, height, size, position) "
+            "SELECT ?, user_id, key, mime, width, height, size, position FROM attachments WHERE message_id = ?",
+            (cur.lastrowid, copy_attachments_from),
+        )
     conn.commit()
     r = conn.execute(f"SELECT {MSG_COLS} FROM messages WHERE id = ?", (cur.lastrowid,)).fetchone()
     out = msg_json(conn, r)
@@ -941,6 +1243,12 @@ async def account_delete(request: Request):
     conn = db()
     conn.execute("DELETE FROM sessions WHERE user_id = ?", (row["id"],))
     conn.execute("DELETE FROM server_members WHERE user_id = ?", (row["id"],))
+    # Фото из его сообщений и неотправленные загрузки
+    orphans = drop_attachments(
+        conn,
+        "message_id IN (SELECT id FROM messages WHERE username = ?) OR (message_id IS NULL AND user_id = ?)",
+        (row["username"], row["id"]),
+    )
     conn.execute("DELETE FROM messages WHERE username = ?", (row["username"],))
     conn.execute("DELETE FROM chat_reads WHERE user_id = ?", (row["id"],))
     conn.execute("DELETE FROM message_hidden WHERE user_id = ?", (row["id"],))
@@ -949,6 +1257,7 @@ async def account_delete(request: Request):
     conn.close()
     remove_upload("avatars", row["avatar"])
     remove_upload("banners", row["banner"])
+    purge_s3_keys(orphans)
     await hub.broadcast_presence()
     return {"ok": True}
 
@@ -1145,9 +1454,13 @@ async def api_ws(websocket: WebSocket, room: str):
             if kind == "message":
                 content = str(data.get("content", "")).strip()[:MAX_MESSAGE_LEN]
                 reply_to = as_ids(data.get("reply_to"))[:1] if data.get("reply_to") is not None else []
-                if content:
-                    msg = save_message_v2(room, user, content, reply_to[0] if reply_to else None)
-                    await hub.send(room, {"type": "message", "message": msg})
+                photos = as_ids(data.get("attachments") or [])[:MAX_PHOTOS]
+                if content or photos:
+                    msg = save_message_v2(
+                        room, user, content, reply_to[0] if reply_to else None, owner_id=uid, attachment_ids=photos
+                    )
+                    if msg:
+                        await hub.send(room, {"type": "message", "message": msg})
             elif kind == "edit":
                 # Изменить можно только своё сообщение
                 content = str(data.get("content", "")).strip()[:MAX_MESSAGE_LEN]
@@ -1188,7 +1501,9 @@ async def api_ws(websocket: WebSocket, room: str):
                         m2 = ",".join("?" * len(mine))
                         conn.execute(f"DELETE FROM messages WHERE id IN ({m2})", mine)
                         conn.execute(f"DELETE FROM message_hidden WHERE message_id IN ({m2})", mine)
+                        orphans = drop_attachments(conn, f"message_id IN ({m2})", tuple(mine))
                         conn.commit()
+                        purge_s3_keys(orphans)
                         await hub.send(room, {"type": "deleted", "ids": mine})
                 else:
                     own = [r["id"] for r in rows]
@@ -1217,9 +1532,16 @@ async def api_ws(websocket: WebSocket, room: str):
                     conn.close()
                     for r in rows:
                         msg = save_message_v2(
-                            target, user, r["content"], None, r["fwd_user"] or r["username"], r["fwd_ts"] or r["timestamp"]
+                            target,
+                            user,
+                            r["content"],
+                            None,
+                            r["fwd_user"] or r["username"],
+                            r["fwd_ts"] or r["timestamp"],
+                            copy_attachments_from=r["id"],
                         )
-                        await hub.send(target, {"type": "message", "message": msg})
+                        if msg:
+                            await hub.send(target, {"type": "message", "message": msg})
                     await websocket.send_json({"type": "forwarded", "to": target, "count": len(rows)})
             elif kind == "read":
                 ids = as_ids(data.get("id"))

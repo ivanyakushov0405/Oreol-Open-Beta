@@ -1,8 +1,9 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { paths } from '../../app/router';
 import type { AppState } from '../../app/useAppState';
 import { Icon, type IconName } from '../../shared/icons';
-import type { Channel, ChatMessage } from '../../shared/model';
+import { previewText, type Channel, type ChatMessage } from '../../shared/model';
 import { DisplayName } from '../members/Nick';
 import { useOpenChat } from '../notifications/notifications';
 import { Composer } from './Composer';
@@ -227,7 +228,7 @@ export function ChatBody({ app, chat, channel, compact }: { app: AppState; chat:
     const items: MenuItem[] = [{ icon: 'reply', label: 'Ответить', run: () => startReply(m) }];
     if (mine) items.push({ icon: 'pencil', label: 'Изменить', run: () => startEdit(m) });
     items.push(
-      { icon: 'copy', label: 'Копировать текст', run: () => copy(m.content) },
+      ...(m.content ? [{ icon: 'copy' as IconName, label: 'Копировать текст', run: () => copy(m.content) }] : []),
       { icon: m.pinned ? 'pin-off' : 'pin', label: m.pinned ? 'Открепить' : 'Закрепить', run: () => chat.pin(m.id, !m.pinned) },
       { icon: 'reply', label: 'Переслать', flip: true, run: () => setFwd([m.id]) },
       { icon: 'check', label: 'Выделить', run: () => setSelected(new Set([String(m.id)])) },
@@ -249,14 +250,24 @@ export function ChatBody({ app, chat, channel, compact }: { app: AppState; chat:
     s.channels.map((c) => ({
       room: c.room,
       server: s,
+      channel: c,
       label: c.kind === 'voice' ? `Чат «${c.name}»` : `#${c.name}`,
       icon: (c.kind === 'voice' ? 'voice' : 'chats') as IconName,
     })),
   );
-  const doForward = (room: string, label: string) => {
+  const doForward = (t: (typeof targets)[number]) => {
     if (!fwd) return;
     const ids = [...fwd].sort((a, b) => Number(a) - Number(b));
-    chat.forward(ids, room, (_to, count) => app.notify(count ? `Переслано: ${msgs(count)} → ${label}` : 'Не удалось переслать', count ? 'success' : 'error'));
+    const label = `${t.server.name} · ${t.label}`;
+    chat.forward(ids, t.room, (_to, count) => {
+      app.notify(count ? `Переслано: ${msgs(count)} → ${label}` : 'Не удалось переслать', count ? 'success' : 'error');
+      // переслали в другой чат — переходим туда (через адрес: его разбирают и десктоп, и телефон)
+      if (!count || t.room === channel.room) return;
+      const to = paths.channel(t.server.id, t.channel.id, t.channel.kind === 'voice');
+      if (location.pathname === to) return;
+      history.pushState({ prev: location.pathname }, '', to);
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    });
     setFwd(null);
     setSelected(null);
   };
@@ -265,9 +276,10 @@ export function ChatBody({ app, chat, channel, compact }: { app: AppState; chat:
   const bar = replyTarget ? (
     <div className="composer-bar">
       <Icon name={editing ? 'pencil' : 'reply'} size={18} />
+      {replyTarget.attachments?.[0] && <img className="rq-thumb" src={replyTarget.attachments[0].url} alt="" draggable={false} />}
       <button type="button" className="cb-text" onClick={() => jump(replyTarget.id)}>
         <b>{editing ? 'Редактирование' : <>Ответ <DisplayName name={replyTarget.user} /></>}</b>
-        <span>{replyTarget.content}</span>
+        <span>{previewText(replyTarget)}</span>
       </button>
       <button type="button" className="icon-btn" title="Отменить" onClick={cancelBar}>
         <Icon name="close" size={18} />
@@ -353,11 +365,14 @@ export function ChatBody({ app, chat, channel, compact }: { app: AppState; chat:
           ))}
         </span>
       ) : null}
+      {shownPin.attachments?.[0] && (
+        <img className="rq-thumb pb-thumb" src={shownPin.attachments[0].url} alt="" draggable={false} onClick={openPin} />
+      )}
       <button type="button" className="pb-body" onClick={openPin} title="Перейти к сообщению">
         <b>Закреплённое сообщение</b>
         <span>
           {shownPin.fwd ? <>Переслано от <DisplayName name={shownPin.fwd.user} />: </> : null}
-          {shownPin.content}
+          {previewText(shownPin)}
         </span>
       </button>
       <button type="button" className="icon-btn pb-unpin" title="Открепить" aria-label="Открепить сообщение" onClick={() => chat.pin(shownPin.id, false)}>
@@ -403,7 +418,7 @@ export function ChatBody({ app, chat, channel, compact }: { app: AppState; chat:
           </button>
           <span className="sb-count">{selected.size ? `Выбрано: ${selected.size}` : 'Выберите сообщения'}</span>
           <button className="sb-act" disabled={!selected.size} title="Копировать" onClick={() => {
-            copy(selList.map((m) => (selList.length > 1 ? `${m.user}: ${m.content}` : m.content)).join('\n'));
+            copy(selList.map((m) => (selList.length > 1 ? `${m.user}: ${previewText(m)}` : previewText(m))).join('\n'));
             setSelected(null);
           }}>
             <Icon name="copy" />
@@ -430,7 +445,9 @@ export function ChatBody({ app, chat, channel, compact }: { app: AppState; chat:
           seed={seed}
           onCancel={replyTarget ? cancelBar : undefined}
           onDraft={(t) => (draft.current = t)}
-          onSend={(text) => {
+          allowPhotos={!editing}
+          onError={(t) => app.notify(t, 'error')}
+          onSend={(text, photos) => {
             if (editing) {
               const t = text.trim();
               if (!t) return false;
@@ -440,7 +457,7 @@ export function ChatBody({ app, chat, channel, compact }: { app: AppState; chat:
               if (stash.current) window.setTimeout(() => seedText(stash.current), 0);
               return true;
             }
-            const ok = chat.send(text, reply?.id ?? null);
+            const ok = chat.send(text, reply?.id ?? null, photos);
             if (ok) setReply(null);
             return ok;
           }}
@@ -478,7 +495,7 @@ export function ChatBody({ app, chat, channel, compact }: { app: AppState; chat:
         <Modal title={`Переслать ${msgs(fwd.length)}`} onClose={() => setFwd(null)}>
           <div className="fwd-list">
             {targets.map((t) => (
-              <button key={t.room} className="fwd-item" onClick={() => doForward(t.room, `${t.server.name} · ${t.label}`)}>
+              <button key={t.room} className="fwd-item" onClick={() => doForward(t)}>
                 <span className="fwd-srv" style={{ background: t.server.gradient }}>
                   {t.server.short}
                 </span>
