@@ -161,6 +161,13 @@ function MessageMenu({
         const scroll = document.createElement('div');
         scroll.className = 'chat-scroll';
         scroll.style.cssText = 'all: unset; display: block';
+        // градиент своих сообщений считается по высоте ленты (--vh/--by/--bh): без них в копии закрашивалась
+        // только верхняя полоска облачка
+        const cs = getComputedStyle(row.querySelector('.bubble') ?? row);
+        for (const v of ['--vh', '--by', '--bh']) {
+          const val = cs.getPropertyValue(v);
+          if (val) scroll.style.setProperty(v, val);
+        }
         scroll.appendChild(clone);
         box.appendChild(scroll);
         box.style.left = `${r.left}px`;

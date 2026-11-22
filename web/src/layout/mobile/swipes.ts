@@ -46,6 +46,15 @@ export function useStageSwipes(stage: RefObject<HTMLElement>, opts: Opts) {
     let s: S | null = null;
     let swallowClick = false;
 
+    /** Что проявляется под уезжающим экраном. Экраны друг над другом (Настройки → Заблокированные): только предыдущий
+     *  экран — вкладку под ними не показываем (она просвечивала сквозь стекло настроек сдвинутой «кашей»). */
+    const underEls = (): HTMLElement[] => {
+      // верхний — не обязательно последний в разметке (войс поверх экранов стоит раньше них), поэтому берём «все, кроме верхнего»
+      const top = topSlide();
+      const rest = [...el.querySelectorAll<HTMLElement>(':scope > .m-slide:not(.out)')].filter((n) => n !== top);
+      if (rest.length) return [...rest[rest.length - 1].querySelectorAll<HTMLElement>(':scope > :not(.m-head)')];
+      return [...el.querySelectorAll<HTMLElement>(UNDER)];
+    };
     /** Нижний экран, который подъезжает за пальцем, — только если под верхним экраном сразу экран вкладки.
      *  Когда экраны открыты друг над другом (Настройки → Голос и звук), сдвигать вкладку под ними нельзя:
      *  она просвечивала сквозь настройки съехавшей. */
@@ -135,7 +144,7 @@ export function useStageSwipes(stage: RefObject<HTMLElement>, opts: Opts) {
         const head = s.node.querySelector<HTMLElement>(':scope > .m-head');
         if (head) head.style.transform = `translateX(${-x}px)`;
         const p = Math.min(1, x / w);
-        fade(el.querySelectorAll<HTMLElement>(UNDER), p);
+        fade(underEls(), p);
         // нижний экран подъезжает вслед за пальцем (как в iOS), а не стоит сдвинутым
         shift(boxesUnder(), `translateX(${(-22 * (1 - p)).toFixed(2)}%)`);
       } else {
@@ -173,7 +182,7 @@ export function useStageSwipes(stage: RefObject<HTMLElement>, opts: Opts) {
           if (head) head.style.transform = '';
           // Нижний экран уже почти проявлен: доводим его до конца плавно и без своей анимации «возврата» —
           // раньше прозрачность сбрасывалась, и всё под экраном мигало (сначала гасло, потом проявлялось заново)
-          const under = [...el.querySelectorAll<HTMLElement>(UNDER)];
+          const under = underEls();
           const boxes = boxesUnder();
           el.dataset.swiped = '';
           for (const u of under) u.style.setProperty('transition', 'opacity .22s ease', 'important');
@@ -200,7 +209,7 @@ export function useStageSwipes(stage: RefObject<HTMLElement>, opts: Opts) {
           }
           swallow();
           el.dataset.swipe = 'cancel';
-          const under = [...el.querySelectorAll<HTMLElement>(UNDER)];
+          const under = underEls();
           const boxes = boxesUnder();
           fade(under, 0);
           shift(boxes, 'translateX(-22%)', 'transform .26s cubic-bezier(.2, .8, .2, 1)');

@@ -5070,7 +5070,7 @@ html, body { touch-action: pan-x pan-y; -webkit-text-size-adjust: 100%; text-siz
    --call-h плавно меняется и наследуется вниз: на каждом кадре пересчитывались стили всех элементов —
    выход из лобби (виджет уходит) лагал. Внутри лент и списков эти переменные не нужны: обрываем наследование,
    и пересчёт останавливается на их корне. */
-.m-stage :is(.chat-scroll > *, .m-settings-home, .tiles, .sidebar, .rail, .settings-body) { --call-h: 0px; --sat: 0px; }
+.m-stage :is(.chat-scroll > *, .m-settings-home > *, .tiles, .sidebar, .rail, .settings-body > *) { --call-h: 0px; --sat: 0px; }
 
 /* ===== Телефон: зажатие — это меню, а не выделение текста =====
    Выделение было выключено только на облачке: зажатие рядом (лента, дата, служебная строка) запускало системное
@@ -5324,3 +5324,23 @@ html[data-backdrop='off'] body:not(:has(.signin)) .backdrop .bd-layer.m > svg { 
    Полупрозрачный или обрезающий родитель лишал стекло фона, и панель окрашивалась не сразу. Обрезаем только пока едет смена. */
 .m-servers-row > .srv-stack { overflow: visible; }
 .m-servers-row > .srv-stack:has(> .srv-out) { overflow: hidden; }
+
+/* ===== Телефон грелся: фон не двигается =====
+   Покачивание тора (bd-sway) шло всё время, и каждое стекло над ним (шапки, таб-панель, виджет звонка, панели)
+   на каждом кадре заново считало размытие того, что под ним. Неподвижный фон размывается один раз. */
+.backdrop .bd-layer.m > svg { animation: none !important; }
+/* подложка под тором плавно меняется только при включении; при выключении — сразу (вместе с гаснущим тором не спорит) */
+html[data-backdrop='off'] .backdrop .bd-layer { transition: none; }
+
+/* ===== Ползунки на телефоне: Safari ставит центр кружка прямо на край дорожки — у края кружок обрезался.
+   Дорожка чуть уже поля (отступы по бокам), кружок целиком помещается внутри. */
+@media (hover: none) and (pointer: coarse) {
+  .range { padding: 0 12px; box-sizing: border-box; }
+}
+
+/* ===== Экран под экраном (Настройки под «Заблокированными») после затухания не рисуется вовсе =====
+   Прозрачный (opacity: 0) он оставался в отрисовке: Safari держал под него слои, а стекло внутри считалось.
+   visibility: hidden — не рисуется и не держит слоёв; во время свайпа назад и когда верхний уезжает — снова виден. */
+.m-stage:not([data-swipe]):not([data-swiped]) > .m-settings:has(~ .m-settings.m-slide:not(.out)) > :not(.m-head) {
+  visibility: hidden; transition: opacity .2s ease, visibility 0s linear .2s;
+}

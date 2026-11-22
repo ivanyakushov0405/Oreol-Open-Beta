@@ -497,7 +497,7 @@ export function Mobile({ app }: { app: AppState }) {
 
   return (
     <div
-      className={'m-app' + (app.glassChat ? ' glass-chat' : '') + (app.glassVoice ? ' glass-voice' : '') + (pillOver ? ' pill-over' : '') + (callSize.drag != null ? ' call-drag' : callAnim || lastAnimKey.current !== animKey ? ' call-anim' : '')}
+      className={'m-app' + (app.glassChat ? ' glass-chat' : '') + (app.glassVoice ? ' glass-voice' : '') + (pillOver ? ' pill-over' : '') + (callSize.drag != null ? ' call-drag' : (callAnim || lastAnimKey.current !== animKey) && !onOwnVoice ? ' call-anim' : '')}
       style={{ '--call-h': `${callSpace}px` } as React.CSSProperties}
     >
       {/* Виджет звонка — над всеми вкладками и экранами (как плашка идущего звонка на телефоне) */}
