@@ -4,7 +4,10 @@ import { Icon, StrikeIcon } from '../../shared/icons';
 import { Avatar } from '../../shared/ui/Avatar';
 import { DisplayName } from '../members/Nick';
 import { userMenuProps } from '../members/userMenu';
+import { openProfile } from '../profile/profile';
 import { VideoView } from './VideoView';
+import { requestFlip, useFacing } from './camFacing';
+import { IS_MOBILE_DEVICE } from './useVoice';
 import { animClass, usePeerAnim, type Anim } from './peerAnim';
 import type { VoicePeer } from './useVoice';
 
@@ -41,9 +44,24 @@ export function PeerFlags({ p, order }: { p: VoicePeer; order: 'tile' | 'row' })
   );
 }
 
-function Tile({ p, kind, wide, avatar = 80, anim }: { p: VoicePeer; kind: 'cam' | 'screen'; wide?: boolean; avatar?: number; anim?: Anim }) {
+/** Демонстрация на весь экран: стандартный fullscreen, а на iPhone (где его у обычных элементов нет) — видеоплеер системы. */
+function openFullscreen(tile: HTMLElement) {
+  const video = tile.querySelector('video') as (HTMLVideoElement & { webkitEnterFullscreen?: () => void }) | null;
+  if (!video) return;
+  if (tile.requestFullscreen && document.fullscreenEnabled) {
+    if (document.fullscreenElement) void document.exitFullscreen();
+    else void tile.requestFullscreen().catch(() => video.webkitEnterFullscreen?.());
+    return;
+  }
+  video.webkitEnterFullscreen?.();
+}
+
+function Tile({ p, kind, wide, span, avatar = 80, anim }: { p: VoicePeer; kind: 'cam' | 'screen'; wide?: boolean; span?: boolean; avatar?: number; anim?: Anim }) {
   const track = kind === 'screen' ? p.screen : p.camera;
   const hasFlags = kind === 'screen' || p.micMuted || p.deafened || Boolean(p.camera);
+  const facing = useFacing();
+  // своя камера на телефоне: кнопка «фронтальная ⇄ основная»
+  const canFlip = IS_MOBILE_DEVICE && p.isLocal && kind === 'cam' && Boolean(track);
   const label = (
     <>
       <span className="nick">
@@ -56,13 +74,28 @@ function Tile({ p, kind, wide, avatar = 80, anim }: { p: VoicePeer; kind: 'cam' 
   );
   return (
     <div
-      className={'tile' + (p.speaking && kind === 'cam' ? ' speaking' : '') + (track ? '' : ' novideo') + (wide ? ' wide' : '') + animClass(anim)}
+      className={'tile' + (p.speaking && kind === 'cam' ? ' speaking' : '') + (track ? '' : ' novideo') + (wide ? ' wide' : '') + (span ? ' span' : '') + animClass(anim)}
       {...userMenuProps(p.identity)}
+      // демонстрация — на весь экран, остальные плитки — профиль участника
+      onClick={(e) => (kind === 'screen' && track ? openFullscreen(e.currentTarget) : openProfile(p.identity))}
     >
       {track ? (
         <>
-          <VideoView track={track} mirror={p.isLocal && kind === 'cam'} contain={kind === 'screen'} />
+          <VideoView track={track} mirror={p.isLocal && kind === 'cam' && facing === 'user'} contain={kind === 'screen'} />
           <div className="shade" />
+          {canFlip && (
+            <button
+              type="button"
+              className="tile-flip"
+              title="Сменить камеру"
+              onClick={(e) => {
+                e.stopPropagation();
+                requestFlip();
+              }}
+            >
+              <Icon name="camera-flip" size={22} />
+            </button>
+          )}
           <span className="tile-pill">{label}</span>
         </>
       ) : (
@@ -232,15 +265,19 @@ export function VoiceStage({ app, mobile }: { app: AppState; mobile?: boolean })
     );
   }
   const avatar = size ? Math.round(Math.min(160, Math.max(56, size.w * 0.38))) : 80;
-  const tiles: ReactNode[] = [
-    ...peerTiles.map((t) => <Tile key={t.key} p={t.item} anim={t.anim} kind="cam" avatar={mobile ? 80 : avatar} />),
-    ...screenTiles.map((t) => <Tile key={t.key + ':screen'} p={t.item} anim={t.anim} kind="screen" wide={mobile} />),
-  ];
+  // Телефон: сетка строится по числу людей, демонстрации — отдельными широкими строками сверху.
+  // При нечётном числе людей (3, 5) на всю ширину встаёт первый человек — не остаётся пустой половины рядом с последним.
+  const people = peerTiles.length;
+  const personTiles = peerTiles.map((t, i) => (
+    <Tile key={t.key} p={t.item} anim={t.anim} kind="cam" avatar={mobile ? 80 : avatar} span={mobile && i === 0 && (people === 3 || people === 5)} />
+  ));
+  const shares = screenTiles.map((t) => <Tile key={t.key + ':screen'} p={t.item} anim={t.anim} kind="screen" wide={mobile} />);
+  const tiles: ReactNode[] = mobile ? [...shares, ...personTiles] : [...personTiles, ...shares];
   return (
     <>
       <div
         className="tiles"
-        data-n={mobile ? Math.min(count, 7) : undefined}
+        data-n={mobile ? Math.min(Math.max(1, people), 7) : undefined}
         ref={ref}
         style={size ? ({ '--tile-w': `${size.w}px`, '--tile-h': `${size.h}px`, '--tile-s': Math.min(1.7, Math.max(0.85, size.w / 210)).toFixed(3) } as CSSProperties) : undefined}
       >

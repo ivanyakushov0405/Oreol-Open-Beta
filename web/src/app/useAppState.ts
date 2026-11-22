@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useChat } from '../features/chat/useChat';
-import { IS_MOBILE_DEVICE, savedVoice, useVoice, useVoiceRoster, type VoicePeer } from '../features/voice/useVoice';
+import { IS_MOBILE_DEVICE, savedVoice, useVoice, useVoiceRoster, type RosterEntry, type VoicePeer } from '../features/voice/useVoice';
 import { api, putUser, refreshUsers, type Me, type Member } from '../shared/api';
 import type { Server, ServerId, Status } from '../shared/model';
 import { useToast, type ToastKind } from '../shared/ui/Toast';
@@ -201,7 +201,19 @@ export function useAppState(
   const membersReady = memberCache.current.has(serverId);
   /** Мы в голосе именно этого сервера. */
   const inVoiceHere = voice.state !== 'idle' && voice.server === serverId;
-  const roster = useVoiceRoster(!(inVoiceHere && voice.state === 'connected'), serverId);
+  const liveHere = inVoiceHere && voice.state === 'connected';
+  // Только что вышли из голоса этого сервера: сервер ещё секунду считает нас в канале — себя в списке не показываем,
+  // иначе своя плитка появлялась снова и тут же уезжала
+  const wasLive = useRef(false);
+  const hideSelfUntil = useRef(0);
+  if (wasLive.current && !liveHere && voice.state === 'idle') hideSelfUntil.current = Date.now() + 5000;
+  if (voice.state === 'connecting') hideSelfUntil.current = 0;
+  wasLive.current = liveHere;
+  const seed: RosterEntry[] | undefined = liveHere
+    ? voice.peers.filter((p) => !p.isLocal).map((p) => ({ identity: p.identity, isMuted: p.micMuted, deafened: p.deafened, camera: Boolean(p.camera), screen: Boolean(p.screen), mobile: p.mobile }))
+    : undefined;
+  const rosterAll = useVoiceRoster(!liveHere, serverId, seed);
+  const roster = hideSelfUntil.current > Date.now() ? rosterAll.filter((r) => r.identity !== name) : rosterAll;
   /** Зайти в голос текущего сервера (если уже в голосе другого — перейти). */
   const joinVoice = () => {
     if (!inVoiceHere) void voice.join(serverId);

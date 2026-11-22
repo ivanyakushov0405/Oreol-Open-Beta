@@ -1851,7 +1851,7 @@ input, textarea { font: inherit; color: inherit; }
 .m-voice .tiles[data-n] .tile { width: auto; height: auto; min-height: 0; aspect-ratio: auto; }
 .m-voice .tiles[data-n='1'], .m-voice .tiles[data-n='2'] { grid-template-columns: minmax(0, 1fr); }
 .m-voice .tiles[data-n='1'] .tile, .m-voice .tiles[data-n='2'] .tile { max-height: 100%; }
-.m-voice .tiles[data-n='3'] > .tile:first-child, .m-voice .tiles[data-n='5'] > .tile:first-child { grid-column: 1 / -1; }
+.m-voice .tiles[data-n='3'] > .tile:first-child:not(.wide), .m-voice .tiles[data-n='5'] > .tile:first-child:not(.wide), .m-voice .tiles[data-n] > .tile.span { grid-column: 1 / -1; }
 .m-voice .tiles[data-n='7'] { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-auto-rows: auto; }
 .m-voice .tiles[data-n='7'] .tile { aspect-ratio: 111 / 150; }
 .m-voice .tiles[data-n] .tile.wide { grid-column: 1 / -1; aspect-ratio: auto; }
@@ -5065,3 +5065,24 @@ html, body { touch-action: pan-x pan-y; -webkit-text-size-adjust: 100%; text-siz
    выход из лобби (виджет уходит) лагал. Внутри лент и списков эти переменные не нужны: обрываем наследование,
    и пересчёт останавливается на их корне. */
 .m-stage :is(.chat-scroll > *, .m-settings-home, .tiles, .sidebar, .rail, .settings-body) { --call-h: 0px; --sat: 0px; }
+
+/* ===== Телефон: зажатие — это меню, а не выделение текста =====
+   Выделение было выключено только на облачке: зажатие рядом (лента, дата, служебная строка) запускало системное
+   выделение, и iOS выделял всё подряд, сбивая наше меню по долгому нажатию. Текст копируется пунктом «Копировать текст». */
+@media (hover: none) {
+  .m-app, .m-app * { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  .m-app :is(input, textarea, [contenteditable='true'], [contenteditable='true'] *) { -webkit-user-select: text; user-select: text; }
+}
+
+/* плитки участников и строки войса — нажимаются (профиль; демонстрация — на весь экран) */
+.tile, .voice-user { cursor: pointer; }
+.tile:fullscreen { border-radius: 0; border: 0; background: #000; }
+.tile:fullscreen video { object-fit: contain; }
+.select-menu { overscroll-behavior: contain; touch-action: pan-y; -webkit-overflow-scrolling: touch; }
+/* Кнопка смены камеры на своей плитке (телефон) */
+.tile-flip {
+  position: absolute; top: 10px; right: 10px; z-index: 3; width: 40px; height: 40px; border-radius: 50%;
+  display: grid; place-items: center; border: 0; color: #fff; cursor: pointer;
+  background: #0000004d; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+}
+.tile-flip:active { transform: scale(.92); }

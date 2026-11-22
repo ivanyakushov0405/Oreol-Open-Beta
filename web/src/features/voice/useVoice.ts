@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { VideoPresets, ConnectionQuality, DisconnectReason, Participant, RemoteTrack, Room, RoomEvent, Track, type LocalAudioTrack, type LocalTrackPublication, type RemoteAudioTrack, type RemoteTrackPublication } from 'livekit-client';
+import { VideoPresets, ConnectionQuality, DisconnectReason, Participant, RemoteTrack, Room, RoomEvent, Track, type LocalAudioTrack, type LocalTrackPublication, type LocalVideoTrack, type RemoteAudioTrack, type RemoteTrackPublication } from 'livekit-client';
 import { getToken } from '../../shared/api';
 import { getAudioPrefs, subscribeAudioPrefs } from '../../shared/audio/audioPrefs';
 import { playSound } from '../../shared/audio/sounds';
 import { createMicProcessor } from './micProcessor';
 import { getPeerVolume, subscribePeerVolume } from './peerVolume';
 import { VOICE_CHANGED, VOICE_LOCAL } from '../chat/useChat';
+import { FLIP_EVENT, getFacing, setFacing } from './camFacing';
 
 export interface VoicePeer {
   identity: string;
@@ -357,6 +358,11 @@ export function useVoice(user: string) {
         window.addEventListener('pointerdown', unlock, { once: true });
         window.addEventListener('keydown', unlock, { once: true });
       }
+      // пока подключались, из канала уже вышли
+      if (roomRef.current !== room) {
+        void room.disconnect();
+        return;
+      }
       const started = resumeFrom ?? Date.now();
       setState('connected');
       setStartedAt(started);
@@ -364,6 +370,8 @@ export function useVoice(user: string) {
       if (resumeFrom == null) playSound('join');
       refresh();
     } catch (e) {
+      // вышли сами, пока подключались — это не ошибка
+      if (serverRef.current !== serverId) return;
       roomRef.current?.disconnect();
       roomRef.current = null;
       serverRef.current = null;
@@ -382,8 +390,27 @@ export function useVoice(user: string) {
       setServer(null);
       serverRef.current = null;
     }
-    if (roomRef.current) playSound('leave');
-    roomRef.current?.disconnect();
+    const room = roomRef.current;
+    if (!room) return;
+    // Звук выхода — сразу, а само отключение — когда он отзвучит: на iPhone остановка микрофона
+    // переключает аудио телефона, и звук посреди этого рвался. Интерфейс при этом выходит сразу.
+    const connected = room.state === 'connected';
+    if (connected) playSound('leave');
+    roomRef.current = null;
+    serverRef.current = null;
+    setServer(null);
+    setState('idle');
+    setReconnecting(false);
+    setPeers([]);
+    setStartedAt(null);
+    // ещё подключаемся — прерываем сразу
+    if (!connected) return void room.disconnect();
+    // собеседников больше не слышно и нас — тоже, хотя подключение ещё живо до конца звука
+    audioTracks.current.forEach((_who, t) => t.setVolume(0));
+    room.localParticipant.getTrackPublication(Track.Source.Microphone)?.mute().catch(() => undefined);
+    window.setTimeout(() => {
+      void room.disconnect().finally(() => window.dispatchEvent(new Event(VOICE_LOCAL)));
+    }, 650);
   }, []);
 
   // Микрофон и звук независимы: переключение одного не трогает другое.
@@ -441,11 +468,41 @@ export function useVoice(user: string) {
     if (!room) return;
     try {
       const id = getAudioPrefs().videoId;
-      await room.localParticipant.setCameraEnabled(!room.localParticipant.isCameraEnabled, { resolution: VideoPresets.h720.resolution, ...(id ? { deviceId: id } : {}) });
+      const turnOn = !room.localParticipant.isCameraEnabled;
+      // на телефоне без выбранного в настройках устройства — та камера, что была в прошлый раз (фронтальная по умолчанию)
+      if (turnOn && !id && IS_MOBILE_DEVICE) {
+        await room.localParticipant.setCameraEnabled(true, { resolution: VideoPresets.h720.resolution, facingMode: getFacing() });
+      } else {
+        if (turnOn) setFacing('user');
+        await room.localParticipant.setCameraEnabled(turnOn, { resolution: VideoPresets.h720.resolution, ...(id ? { deviceId: id } : {}) });
+      }
     } catch {
       setError('Нет доступа к камере');
     }
     refresh();
+  }, [refresh]);
+
+  // Фронтальная ⇄ основная камера телефона: перезапускаем ту же дорожку с другой камерой —
+  // собеседники видят смену без выключения видео
+  useEffect(() => {
+    let busy = false;
+    const onFlip = async () => {
+      const track = roomRef.current?.localParticipant.getTrackPublication(Track.Source.Camera)?.track as LocalVideoTrack | undefined;
+      if (!track || busy) return;
+      busy = true;
+      const next = getFacing() === 'user' ? 'environment' : 'user';
+      try {
+        await track.restartTrack({ facingMode: next, resolution: VideoPresets.h720.resolution });
+        setFacing(next);
+      } catch {
+        setError('Не удалось переключить камеру');
+      } finally {
+        busy = false;
+        refresh();
+      }
+    };
+    window.addEventListener(FLIP_EVENT, onFlip);
+    return () => window.removeEventListener(FLIP_EVENT, onFlip);
   }, [refresh]);
 
   const toggleScreen = useCallback(async () => {
@@ -597,23 +654,31 @@ export function useVoice(user: string) {
 export type VoiceApi = ReturnType<typeof useVoice>;
 
 /** Кто сейчас в голосовом (для сайдбара, пока сами не подключились). */
-export function useVoiceRoster(enabled: boolean, server: string) {
-  const [list, setList] = useState<{ identity: string; isMuted: boolean; deafened?: boolean; camera?: boolean; screen?: boolean; mobile?: boolean }[]>([]);
+export type RosterEntry = { identity: string; isMuted: boolean; deafened?: boolean; camera?: boolean; screen?: boolean; mobile?: boolean };
+const NO_ROSTER: RosterEntry[] = [];
+/** seed — кто был с нами в канале, пока мы были в голосе (без нас). Сразу после выхода список ещё не загружен —
+ *  показываем их, а не пустоту: раньше плитки на миг пропадали и появлялись заново («рваная» анимация выхода). */
+export function useVoiceRoster(enabled: boolean, server: string, seed?: RosterEntry[]) {
+  const [list, setList] = useState<{ server: string; items: RosterEntry[] } | null>(null);
+  const seedRef = useRef<{ server: string; items: RosterEntry[] }>({ server, items: NO_ROSTER });
+  if (!enabled && seed) seedRef.current = { server, items: seed };
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled) {
+      setList(null);
+      return;
+    }
     let alive = true;
     const load = async () => {
       try {
         const r = await fetch(`/api/voice/participants?server=${encodeURIComponent(server)}`);
         const d = await r.json();
         // тот же состав — тот же массив: иначе раз в 1,5 с перерисовывалось всё приложение
-        const next = d.participants ?? [];
-        if (alive) setList((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
+        const next: RosterEntry[] = d.participants ?? [];
+        if (alive) setList((prev) => (prev && prev.server === server && JSON.stringify(prev.items) === JSON.stringify(next) ? prev : { server, items: next }));
       } catch {
         /* бэкенд недоступен */
       }
     };
-    setList([]);
     load();
     // чужой вход/выход — перечитываем сразу и ещё раз чуть позже (LiveKit убирает вышедшего не мгновенно)
     let again = 0;
@@ -636,7 +701,8 @@ export function useVoiceRoster(enabled: boolean, server: string) {
       document.removeEventListener('visibilitychange', onVis);
     };
   }, [enabled, server]);
-  return list;
+  if (list && list.server === server) return list.items;
+  return enabled && seedRef.current.server === server ? seedRef.current.items : NO_ROSTER;
 }
 
 /** Сколько человек в голосовом канале каждого сервера — для меток над иконками серверов. */

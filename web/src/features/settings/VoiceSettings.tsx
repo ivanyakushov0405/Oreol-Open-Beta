@@ -41,6 +41,7 @@ function DeviceSelect({
   const opts = [{ id: '', label: 'По умолчанию (системное)' }, ...list.map((d, i) => ({ id: d.deviceId, label: d.label || `${word} ${i + 1}` }))];
   const cur = opts.find((o) => o.id === value) ?? opts[0];
   const btn = useRef<HTMLButtonElement>(null);
+  const tap = useRef<{ x: number; y: number; moved: boolean } | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; w: number; up: boolean } | null>(null);
   const open = () => {
     const r = btn.current?.getBoundingClientRect();
@@ -52,6 +53,11 @@ function DeviceSelect({
   useEffect(() => {
     if (!menu) return;
     const close = () => setMenu(null);
+    // прокрутка самого списка его не закрывает — только прокрутка страницы под ним
+    const onScroll = (e: Event) => {
+      if (e.target instanceof Element && e.target.closest('.select-menu')) return;
+      close();
+    };
     // Escape закрывает только список, а не весь экран настроек (ловим раньше общего обработчика)
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
@@ -60,11 +66,11 @@ function DeviceSelect({
     };
     window.addEventListener('resize', close);
     window.addEventListener('keydown', onKey, true);
-    document.addEventListener('scroll', close, true);
+    document.addEventListener('scroll', onScroll, true);
     return () => {
       window.removeEventListener('resize', close);
       window.removeEventListener('keydown', onKey, true);
-      document.removeEventListener('scroll', close, true);
+      document.removeEventListener('scroll', onScroll, true);
     };
   }, [menu]);
   return (
@@ -89,6 +95,13 @@ function DeviceSelect({
               className={'select-menu' + (menu.up ? ' up' : '')}
               role="listbox"
               style={{ left: menu.x, top: menu.y, width: menu.w }}
+              // палец, который листал список, а не нажимал, ничего не выбирает
+              onPointerDown={(e) => (tap.current = { x: e.clientX, y: e.clientY, moved: false })}
+              onPointerMove={(e) => {
+                const t = tap.current;
+                if (t && Math.hypot(e.clientX - t.x, e.clientY - t.y) > 8) t.moved = true;
+              }}
+              onScroll={() => tap.current && (tap.current.moved = true)}
             >
               {opts.map((o) => (
                 <button
@@ -98,6 +111,7 @@ function DeviceSelect({
                   aria-selected={o.id === cur.id}
                   className={'select-opt' + (o.id === cur.id ? ' on' : '')}
                   onClick={() => {
+                    if (tap.current?.moved) return;
                     onChange(o.id);
                     setMenu(null);
                   }}
