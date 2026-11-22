@@ -1,6 +1,0 @@
-livekit-api
-fastapi
-uvicorn
-websockets
-python-multipart
-pydantic
