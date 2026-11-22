@@ -17,6 +17,16 @@ document.addEventListener(
   { capture: true, passive: true },
 );
 
+// Safari на iPhone не слушает user-scalable=no — щипок для масштаба запрещаем его собственными событиями жестов.
+// Страница стоит «крепко»: не приближается, не плавает и не мешает свайпам.
+for (const type of ['gesturestart', 'gesturechange', 'gestureend']) {
+  document.addEventListener(type, (e) => e.preventDefault(), { passive: false });
+}
+
+// Приложение с главного экрана — только вертикально (в обычной вкладке браузер блокировать поворот не даёт;
+// там при повороте остаётся мобильная версия, см. useIsMobile)
+(screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> } | undefined)?.lock?.('portrait').catch(() => undefined);
+
 // Пока интерфейс поднимается, анимации выключены (класс снимает Shell после первой отрисовки)
 document.documentElement.classList.add('boot');
 

@@ -65,7 +65,8 @@ export function lsSet(key: string, value: string | null) {
 }
 
 export function useIsMobile() {
-  const q = '(max-width: 768px)';
+  // Телефон, повёрнутый горизонтально, — тоже мобильная версия (по ширине он уже «компьютер», но высоты мало и экран сенсорный)
+  const q = '(max-width: 768px), (pointer: coarse) and (max-height: 520px)';
   const [m, setM] = useState(() => window.matchMedia(q).matches);
   useEffect(() => {
     const mq = window.matchMedia(q);

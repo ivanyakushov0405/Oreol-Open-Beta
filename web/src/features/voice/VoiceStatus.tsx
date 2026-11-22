@@ -9,14 +9,12 @@ const QUALITY = {
   bad: { title: 'Плохое соединение', icon: 'wifi' },
 } as const;
 
-/** Пинг выше этого — показываем его рядом со статусом, даже если LiveKit считает связь хорошей. */
+/** Пинг выше этого — показываем его рядом со статусом. */
 export const HIGH_PING = 200;
 
-/** Цвет пинга: зелёный, жёлтый (≥ 120 мс) или красный (≥ HIGH_PING). */
-export function pingClass(rtt: number | null, quality: 'good' | 'medium' | 'bad') {
-  if (quality === 'bad' || (rtt != null && rtt >= HIGH_PING)) return 'q-bad';
-  if (quality === 'medium' || (rtt != null && rtt >= 120)) return 'q-medium';
-  return 'q-good';
+/** Цвет пинга — тот же, что у статуса: quality уже учитывает пинг (см. linkQuality в useVoice). */
+export function pingClass(_rtt: number | null, quality: 'good' | 'medium' | 'bad') {
+  return `q-${quality}`;
 }
 
 export const QUALITY_TITLE = { good: 'Подключено', medium: 'Связь нестабильна', bad: 'Плохое соединение' } as const;

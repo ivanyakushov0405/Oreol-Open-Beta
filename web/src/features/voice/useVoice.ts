@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ConnectionQuality, DisconnectReason, Participant, RemoteTrack, Room, RoomEvent, Track, type LocalAudioTrack, type LocalTrackPublication, type RemoteAudioTrack, type RemoteTrackPublication } from 'livekit-client';
+import { VideoPresets, ConnectionQuality, DisconnectReason, Participant, RemoteTrack, Room, RoomEvent, Track, type LocalAudioTrack, type LocalTrackPublication, type RemoteAudioTrack, type RemoteTrackPublication } from 'livekit-client';
 import { getToken } from '../../shared/api';
 import { getAudioPrefs, subscribeAudioPrefs } from '../../shared/audio/audioPrefs';
 import { playSound } from '../../shared/audio/sounds';
 import { createMicProcessor } from './micProcessor';
 import { getPeerVolume, subscribePeerVolume } from './peerVolume';
+import { VOICE_CHANGED, VOICE_LOCAL } from '../chat/useChat';
 
 export interface VoicePeer {
   identity: string;
@@ -49,6 +50,15 @@ function readDeafened(p: Participant) {
   } catch {
     return false;
   }
+}
+
+/** Пинг: до 200 мс — хорошо, до 400 — средне, дальше — плохо (пороги под мобильный интернет). */
+export const PING_MEDIUM = 200;
+export const PING_BAD = 400;
+function linkQuality(q: Quality, rtt: number | null): Quality {
+  const rank = { good: 0, medium: 1, bad: 2 } as const;
+  const byPing: Quality = rtt == null ? 'good' : rtt >= PING_BAD ? 'bad' : rtt >= PING_MEDIUM ? 'medium' : 'good';
+  return rank[byPing] > rank[q] ? byPing : q;
 }
 
 function samePeers(a: VoicePeer[], b: VoicePeer[]) {
@@ -218,12 +228,15 @@ export function useVoice(user: string) {
       if (!res.ok) throw new Error(data.error || 'Не удалось получить токен');
 
       const room = new Room({
-        adaptiveStream: true,
+        // качество чужой камеры — под реальные пиксели плитки: на iPhone 1 CSS-пиксель = 3 точки экрана,
+        // а по умолчанию поток подбирался под CSS-размер — приходил слой втрое меньше и картинка была мутной
+        adaptiveStream: { pixelDensity: 'screen' },
         dynacast: true,
         audioCaptureDefaults: micOptions(),
-        videoCaptureDefaults: getAudioPrefs().videoId ? { deviceId: getAudioPrefs().videoId } : undefined,
+        // своя камера — 720p, 30 кадров (без явного размера телефоны часто снимали 640×480)
+        videoCaptureDefaults: { resolution: VideoPresets.h720.resolution, ...(getAudioPrefs().videoId ? { deviceId: getAudioPrefs().videoId } : {}) },
         audioOutput: getAudioPrefs().outputId ? { deviceId: getAudioPrefs().outputId } : undefined,
-        publishDefaults: { dtx: false, red: true },
+        publishDefaults: { dtx: false, red: true, videoEncoding: { maxBitrate: 2_000_000, maxFramerate: 30 }, videoSimulcastLayers: [VideoPresets.h180, VideoPresets.h360] },
         // звук собеседников — через WebAudio: личная громкость до 200% (усиление дорожки, а не volume элемента)
         webAudioMix: true,
         // Перезагрузка страницы не должна выкидывать из канала: не отправляем «выход» при уходе со страницы.
@@ -428,7 +441,7 @@ export function useVoice(user: string) {
     if (!room) return;
     try {
       const id = getAudioPrefs().videoId;
-      await room.localParticipant.setCameraEnabled(!room.localParticipant.isCameraEnabled, id ? { deviceId: id } : undefined);
+      await room.localParticipant.setCameraEnabled(!room.localParticipant.isCameraEnabled, { resolution: VideoPresets.h720.resolution, ...(id ? { deviceId: id } : {}) });
     } catch {
       setError('Нет доступа к камере');
     }
@@ -447,6 +460,14 @@ export function useVoice(user: string) {
     }
     refresh();
   }, [refresh]);
+
+  // Зашли в войс или вышли — сообщаем всем сразу (через сокет чата), чтобы у других список обновился без задержки
+  const wasIn = useRef(false);
+  useEffect(() => {
+    const inNow = state === 'connected';
+    if (inNow !== wasIn.current) window.dispatchEvent(new Event(VOICE_LOCAL));
+    wasIn.current = inNow;
+  }, [state]);
 
   // Пинг до сервера LiveKit: RTT активной ICE-пары WebRTC (запасной вариант — RTT сигнального канала).
   useEffect(() => {
@@ -550,7 +571,9 @@ export function useVoice(user: string) {
     state,
     server,
     peers,
-    quality,
+    // Одна оценка связи на всё (статус, значок, точка, цвет пинга): худшее из оценки LiveKit и пинга.
+    // Раньше статус шёл от LiveKit, а пинг красился по своим порогам — «Подключено» зелёным рядом с красным пингом.
+    quality: linkQuality(quality, rtt),
     reconnecting,
     error,
     clearError: () => setError(null),
@@ -592,6 +615,14 @@ export function useVoiceRoster(enabled: boolean, server: string) {
     };
     setList([]);
     load();
+    // чужой вход/выход — перечитываем сразу и ещё раз чуть позже (LiveKit убирает вышедшего не мгновенно)
+    let again = 0;
+    const onVoice = () => {
+      void load();
+      window.clearTimeout(again);
+      again = window.setTimeout(() => void load(), 900);
+    };
+    window.addEventListener(VOICE_CHANGED, onVoice);
     // Пока сам не в голосе, состав узнаём опросом — раньше раз в 5 с, и вошедшие появлялись с задержкой.
     // Теперь чаще, а при возвращении на вкладку — сразу.
     const id = window.setInterval(() => document.visibilityState === 'visible' && load(), 1500);
@@ -600,6 +631,8 @@ export function useVoiceRoster(enabled: boolean, server: string) {
     return () => {
       alive = false;
       window.clearInterval(id);
+      window.clearTimeout(again);
+      window.removeEventListener(VOICE_CHANGED, onVoice);
       document.removeEventListener('visibilitychange', onVis);
     };
   }, [enabled, server]);
@@ -629,9 +662,18 @@ export function useVoiceCounts(servers: string[]) {
     };
     void load();
     const id = window.setInterval(() => document.visibilityState === 'visible' && load(), 3000);
+    let again = 0;
+    const onVoice = () => {
+      void load();
+      window.clearTimeout(again);
+      again = window.setTimeout(() => void load(), 900);
+    };
+    window.addEventListener(VOICE_CHANGED, onVoice);
     return () => {
       alive = false;
       window.clearInterval(id);
+      window.clearTimeout(again);
+      window.removeEventListener(VOICE_CHANGED, onVoice);
     };
   }, [key]);
   return counts;

@@ -11,7 +11,14 @@ type ServerEvent =
   | { type: 'forwarded'; to: string; count: number }
   | { type: 'typing'; user: string }
   | { type: 'presence'; statuses: Record<string, Status> }
-  | { type: 'profile'; user: PublicUser };
+  | { type: 'profile'; user: PublicUser }
+  | { type: 'voice'; user: string };
+
+/** Вход/выход из войса — мгновенно всем через сокет чата (иначе другие узнавали только при следующем опросе).
+ *  Своё событие отправляет один из открытых сокетов; приход чужого — событие окна, по нему перечитывают состав. */
+export const VOICE_LOCAL = 'oreol:voice-local';
+export const VOICE_CHANGED = 'oreol:voice';
+let voiceSentAt = 0;
 
 const TYPING_TTL = 3500;
 
@@ -37,6 +44,17 @@ export function useChat(room: string | null, user: string) {
   const [loaded, setLoaded] = useState<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const lastTypingSent = useRef(0);
+
+  useEffect(() => {
+    const send = () => {
+      const ws = wsRef.current;
+      if (!ws || ws.readyState !== WebSocket.OPEN || Date.now() - voiceSentAt < 300) return;
+      voiceSentAt = Date.now();
+      ws.send(JSON.stringify({ type: 'voice' }));
+    };
+    window.addEventListener(VOICE_LOCAL, send);
+    return () => window.removeEventListener(VOICE_LOCAL, send);
+  }, []);
 
   useEffect(() => {
     if (!room || !user) return;
@@ -133,6 +151,7 @@ export function useChat(room: string | null, user: string) {
         } else if (ev.type === 'typing') setTyping((t) => ({ ...t, [ev.user]: Date.now() }));
         else if (ev.type === 'presence') setStatuses(ev.statuses);
         else if (ev.type === 'profile') putUser(ev.user);
+        else if (ev.type === 'voice') window.dispatchEvent(new Event(VOICE_CHANGED));
       };
       ws.onclose = () => {
         setConnected(false);

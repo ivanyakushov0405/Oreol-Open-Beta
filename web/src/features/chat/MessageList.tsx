@@ -243,11 +243,23 @@ function MessageListImpl({
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const pin = () => {
+    let settle = 0;
+    const full = () => {
       sizeHead(el);
       if (stick.current) el.scrollTop = rest(el);
       report();
       paintGrad(true);
+    };
+    const pin = () => {
+      // Пока плавно появляется/уходит виджет звонка, отступ ленты меняется на каждом кадре — тогда только
+      // держим низ (дёшево), а полный пересчёт (замеры всех облачков) — один раз, когда отступ встанет
+      if (el.closest('.call-anim')) {
+        if (stick.current) el.scrollTop = rest(el);
+        window.clearTimeout(settle);
+        settle = window.setTimeout(full, 120);
+        return;
+      }
+      full();
     };
     const ro = new ResizeObserver(pin);
     ro.observe(el);
@@ -259,6 +271,7 @@ function MessageListImpl({
     });
     mo.observe(el, { childList: true });
     return () => {
+      window.clearTimeout(settle);
       ro.disconnect();
       mo.disconnect();
     };

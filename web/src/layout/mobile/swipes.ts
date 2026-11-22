@@ -66,8 +66,10 @@ export function useStageSwipes(stage: RefObject<HTMLElement>, opts: Opts) {
       const dx = e.clientX - s.x;
       const dy = e.clientY - s.y;
       if (!s.active) {
-        if (Math.abs(dy) > START && Math.abs(dy) >= Math.abs(dx)) return void (s = null);
-        if (Math.abs(dx) < START || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+        // Палец ведёт дугой: свайп засчитываем, как только вбок ушло больше, чем вверх-вниз
+        // (раньше требовали в 1,5 раза больше — обычный свайп большим пальцем часто не проходил)
+        if (Math.abs(dy) > START && Math.abs(dy) > Math.abs(dx)) return void (s = null);
+        if (Math.abs(dx) < START || Math.abs(dx) <= Math.abs(dy)) return;
         if (s.kind === 'back' && dx < 0) return void (s = null);
         s.active = true;
         window.getSelection()?.removeAllRanges();
@@ -181,12 +183,32 @@ export function useStageSwipes(stage: RefObject<HTMLElement>, opts: Opts) {
       e.stopPropagation();
     };
 
+    // Safari решает «это прокрутка» по первым движениям пальца и тогда забирает жест себе (pointercancel) —
+    // пока палец идёт скорее вбок, чем вверх-вниз, или наш свайп уже идёт, прокрутку браузеру не отдаём
+    let t0: { x: number; y: number } | null = null;
+    const tstart = (e: TouchEvent) => {
+      const t = e.touches[0];
+      t0 = e.touches.length === 1 && t ? { x: t.clientX, y: t.clientY } : null;
+    };
+    const tmove = (e: TouchEvent) => {
+      if (!s || !t0 || e.touches.length !== 1) return;
+      if (s.active) return void (e.cancelable && e.preventDefault());
+      const t = e.touches[0];
+      const dx = t.clientX - t0.x;
+      const dy = t.clientY - t0.y;
+      if (s.kind === 'back' && dx < 0) return;
+      if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 3 && e.cancelable) e.preventDefault();
+    };
+    el.addEventListener('touchstart', tstart, { passive: true });
+    el.addEventListener('touchmove', tmove, { passive: false });
     el.addEventListener('pointerdown', down);
     el.addEventListener('pointermove', move, { passive: false });
     el.addEventListener('pointerup', up);
     el.addEventListener('pointercancel', cancel);
     el.addEventListener('click', click, true);
     return () => {
+      el.removeEventListener('touchstart', tstart);
+      el.removeEventListener('touchmove', tmove);
       el.removeEventListener('pointerdown', down);
       el.removeEventListener('pointermove', move);
       el.removeEventListener('pointerup', up);

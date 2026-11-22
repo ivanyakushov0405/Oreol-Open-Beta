@@ -1569,6 +1569,9 @@ async def api_ws(websocket: WebSocket, room: str):
                         await hub.send(room, {"type": "read", "user": user, "id": last})
             elif kind == "typing":
                 await hub.send(room, {"type": "typing", "user": user}, skip=websocket)
+            elif kind == "voice":
+                # кто-то зашёл в войс или вышел — всем сразу «обновите состав», не дожидаясь опроса
+                await hub.broadcast_all({"type": "voice", "user": user})
     except WebSocketDisconnect:
         pass
     finally:

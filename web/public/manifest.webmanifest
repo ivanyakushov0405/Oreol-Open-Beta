@@ -1,0 +1,10 @@
+{
+  "name": "Ореол",
+  "short_name": "Ореол",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0b1626",
+  "theme_color": "#0b1626",
+  "icons": [{ "src": "/assets/apple-touch-icon.png", "sizes": "180x180", "type": "image/png" }]
+}
