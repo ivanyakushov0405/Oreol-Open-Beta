@@ -484,7 +484,7 @@ input, textarea { font: inherit; color: inherit; }
 .toggle::after { content: ''; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; transition: transform .2s; }
 .toggle.on { background: var(--btn-fill); }
 .toggle.on::after { transform: translateX(18px); }
-.theme-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 220px)); gap: 12px; }
+.theme-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 220px)); gap: 12px; }
 .theme-card { border-radius: 14px; padding: 10px; border: 1px solid var(--border-default); text-align: left; }
 .theme-card.on { border-color: var(--accent-cyan); }
 .theme-card .preview { height: 90px; border-radius: 10px; margin-bottom: 8px; }
@@ -4750,13 +4750,36 @@ html[data-theme='light'] .settings > .settings-body .btn-secondary:hover:not(:di
 .date-pill.sys-note { padding: 4px 12px; gap: 4px; }
 .msg-reply { padding: 4px 12px; }
 
-/* ===== «Личные сообщения» на десктопе — прозрачная кнопка: без заливки, размытия и тени, видна по кромке
-   (в светлой теме кромка плотнее — на белой панели иначе кнопку не видно) ===== */
-[data-theme='light'] .app .rail-home:not(.on)::after { display: block !important; background: #0a1a2e40 !important; }
-.app .rail-home, [data-theme='light'] .app .rail-home {
-  background: transparent !important; box-shadow: none !important;
-  backdrop-filter: none !important; -webkit-backdrop-filter: none !important;
+/* ===== «Личные сообщения» в светлой теме — лёгкое стекло, как в тёмной: чуть светлее панели, без тени ===== */
+[data-theme='light'] .app .rail-home:not(.on) { background: #ffffff4d; box-shadow: none !important; }
+[data-theme='light'] .app .rail-home:not(.on):hover { background: #ffffff99; }
+
+/* ===== Непрозрачные панели (без «Жидкого стекла») без бликов сверху: нет светлого пятна в углу,
+   кромка тёмной темы ровная по всему краю. С прозрачным фоном блики остаются. ===== */
+html:root[data-theme][data-glass='off'] { --panel-gloss: linear-gradient(#ffffff00, #ffffff00); }
+html:root:not([data-theme='light'])[data-glass='off'] :is(.rail, .sidebar, .members, .main, .side-chat).glass::after,
+html:root:not([data-theme='light'])[data-glass='off'] .m-members-list::after {
+  -webkit-mask: linear-gradient(#0000004d, #0000004d); mask: linear-gradient(#0000004d, #0000004d);
 }
-.app .rail-home:hover, [data-theme='light'] .app .rail-home:hover { background: var(--glass-el-hover) !important; }
-.app .rail-home.on, .app .rail-home.on:hover,
-[data-theme='light'] .app .rail-home.on, [data-theme='light'] .app .rail-home.on:hover { box-shadow: 0 0 0 2px var(--accent-cyan) !important; }
+
+/* ===== Кнопка «вниз» в ленте — по умолчанию прозрачная: без заливки, размытия и тени, только тонкая кромка ===== */
+html[data-theme] .to-bottom {
+  background: transparent !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important;
+  box-shadow: inset 0 0 0 1px #ffffff2e !important;
+}
+html[data-theme='light'] .to-bottom { box-shadow: inset 0 0 0 1px #0a1a2e2e !important; }
+@media (hover: hover) {
+  html[data-theme] .to-bottom:hover { background: #ffffff14 !important; filter: none; }
+  html[data-theme='light'] .to-bottom:hover { background: #0a1a2e0d !important; }
+}
+
+/* ===== Карточка участника при «Жидком стекле» — прозрачная, как остальные всплывающие окна ===== */
+html[data-theme][data-glass='on'] .member-card {
+  background: var(--g3-bg); border-color: transparent;
+  backdrop-filter: var(--g3-blur); -webkit-backdrop-filter: var(--g3-blur);
+  box-shadow: inset 0 0 0 1px var(--g-edge), inset 0 1px 0 var(--g-hi), var(--g3-shadow);
+}
+html[data-theme][data-glass='on'] .member-card .mc-info {
+  background: var(--g2-bg); border-color: transparent; box-shadow: inset 0 0 0 1px var(--g-edge);
+}
+html[data-theme][data-glass='on'] .member-card :is(.mc-avatar, .pm-avatar) { box-shadow: none; }

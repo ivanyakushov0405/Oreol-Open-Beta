@@ -354,7 +354,7 @@ export function ChatBody({ app, chat, channel, compact }: { app: AppState; chat:
         </span>
       ) : null}
       <button type="button" className="pb-body" onClick={openPin} title="Перейти к сообщению">
-        <b>Закреплённое сообщение{pins.length > 1 ? ` #${pinNo}` : ''}</b>
+        <b>Закреплённое сообщение</b>
         <span>
           {shownPin.fwd ? <>Переслано от <DisplayName name={shownPin.fwd.user} />: </> : null}
           {shownPin.content}

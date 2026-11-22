@@ -6,6 +6,23 @@ import type { Server, ServerId, Status } from '../shared/model';
 import { useToast, type ToastKind } from '../shared/ui/Toast';
 
 export type Theme = 'dark' | 'light';
+/** Выбор в настройках: «Как в системе» (по умолчанию) или конкретная тема. */
+export type ThemePref = 'system' | Theme;
+
+const SYSTEM_LIGHT = '(prefers-color-scheme: light)';
+export const systemTheme = (): Theme => (window.matchMedia(SYSTEM_LIGHT).matches ? 'light' : 'dark');
+
+/** Тема системы; меняется вместе с ней. */
+export function useSystemTheme() {
+  const [t, setT] = useState<Theme>(systemTheme);
+  useEffect(() => {
+    const mq = window.matchMedia(SYSTEM_LIGHT);
+    const on = () => setT(mq.matches ? 'light' : 'dark');
+    mq.addEventListener('change', on);
+    return () => mq.removeEventListener('change', on);
+  }, []);
+  return t;
+}
 
 /** Старый «вход по имени» — ключ чистим, теперь вход по email и паролю. */
 /** Смена темы или прозрачности — плавно: на полсекунды включаем переходы фона, размытия и кромок у поверхностей
@@ -65,7 +82,8 @@ export function useAppState(
   setMe: (u: Me) => void,
   logout: () => void,
   theme: Theme,
-  setTheme: (t: Theme) => void,
+  themePref: ThemePref,
+  setTheme: (t: ThemePref) => void,
 ) {
   const name = me.username;
   // Справочник профилей (аватары, фоны, отображаемые имена) — при входе и раз в 30 с
@@ -104,7 +122,8 @@ export function useAppState(
     lsSet(LS_PATTERN, v ? '1' : '0');
   };
   // Живой фон (тор и свечения) — отдельно от прозрачности; без него — спокойный однотонный фон
-  const [liveBg, setLiveBgState] = useState(() => lsGet(LS_LIVE_BG) !== '0');
+  // По умолчанию выключен — включается в «Внешнем виде»
+  const [liveBg, setLiveBgState] = useState(() => lsGet(LS_LIVE_BG) === '1');
   const setLiveBg = (v: boolean) => {
     setLiveBgState(v);
     lsSet(LS_LIVE_BG, v ? '1' : '0');
@@ -258,6 +277,7 @@ export function useAppState(
       logout();
     },
     theme,
+    themePref,
     setTheme,
     glassUi,
     setGlassUi,

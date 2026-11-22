@@ -1,18 +1,32 @@
 import { flushSync } from 'react-dom';
-import type { AppState } from '../../app/useAppState';
+import { systemTheme, type AppState, type ThemePref } from '../../app/useAppState';
 import { AccountEdit, AccountView } from './AccountSettings';
 import { Toggle } from './Toggle';
 import { CameraSettings, SoundSettings, VoiceDevices } from './VoiceSettings';
 import type { UserSection } from './nav';
 
+const THEME_LABEL: Record<ThemePref, string> = { system: 'Как в системе', dark: 'Тёмная', light: 'Светлая' };
+const THEME_PREVIEW: Record<ThemePref, string> = {
+  dark: 'linear-gradient(135deg,#040a14,#0e2238 60%,#2f7bff)',
+  light: 'linear-gradient(135deg,#ffffff,#eef4fb 60%,#9fc2ff)',
+  // половина тёмной, половина светлой
+  system: 'linear-gradient(135deg,#040a14,#0e2238 49.5%,#eef4fb 50.5%,#9fc2ff)',
+};
+
 /** Смена темы: новая тема «выходит» из выбранной плашки — светлая разливается светом, тёмная — тьмой. */
-function switchTheme(app: AppState, t: 'dark' | 'light', from: HTMLElement) {
-  if (app.theme === t) return;
+function switchTheme(app: AppState, pref: ThemePref, from: HTMLElement) {
+  if (app.themePref === pref) return;
+  const t = pref === 'system' ? systemTheme() : pref;
+  // тема на экране не меняется (например, «Как в системе» при тёмной системе и выбранной тёмной) — без анимации
+  if (app.theme === t) {
+    app.setTheme(pref);
+    return;
+  }
   const doc = document as Document & { startViewTransition?: (cb: () => void) => { ready: Promise<void> } };
   // Firefox рисует снимки «разлива» без насыщенности стекла (backdrop-filter): во время анимации всё тусклее,
   // а в конце фон и панели «вспыхивают». Там тема меняется плавными переходами цветов, без снимков.
   if (!doc.startViewTransition || /firefox/i.test(navigator.userAgent)) {
-    app.setTheme(t);
+    app.setTheme(pref);
     return;
   }
   const b = from.getBoundingClientRect();
@@ -25,7 +39,7 @@ function switchTheme(app: AppState, t: 'dark' | 'light', from: HTMLElement) {
   const apply = () => {
     if (applied) return;
     applied = true;
-    flushSync(() => app.setTheme(t));
+    flushSync(() => app.setTheme(pref));
     root.dataset.theme = t;
   };
   const vt = doc.startViewTransition(apply) as { ready: Promise<void>; finished?: Promise<void>; skipTransition?: () => void };
@@ -117,18 +131,10 @@ export function UserSettingsBody({
             <h3>Тема</h3>
             <p className="hint">Сохраняется на этом устройстве</p>
             <div className="theme-cards">
-              {(['dark', 'light'] as const).map((t) => (
-                <button key={t} className={'theme-card' + (app.theme === t ? ' on' : '')} onClick={(e) => switchTheme(app, t, e.currentTarget)}>
-                  <div
-                    className="preview"
-                    style={{
-                      background:
-                        t === 'dark'
-                          ? 'linear-gradient(135deg,#040a14,#0e2238 60%,#2f7bff)'
-                          : 'linear-gradient(135deg,#ffffff,#eef4fb 60%,#9fc2ff)',
-                    }}
-                  />
-                  {t === 'dark' ? 'Тёмная' : 'Светлая'}
+              {(['system', 'dark', 'light'] as const).map((t) => (
+                <button key={t} className={'theme-card' + (app.themePref === t ? ' on' : '')} onClick={(e) => switchTheme(app, t, e.currentTarget)}>
+                  <div className="preview" style={{ background: THEME_PREVIEW[t] }} />
+                  {THEME_LABEL[t]}
                 </button>
               ))}
             </div>
@@ -138,7 +144,7 @@ export function UserSettingsBody({
               <div>
                 <h3>Прозрачность интерфейса</h3>
                 <p className="hint" style={{ margin: 0 }}>
-                  Стеклянные панели, сквозь которые виден фон. Выключите — всё станет непрозрачным
+                  Стеклянные панели, сквозь которые виден фон
                 </p>
               </div>
               <Toggle on={app.glassUi} onChange={app.setGlassUi} />
@@ -169,7 +175,7 @@ export function UserSettingsBody({
               <div>
                 <h3>Живой фон</h3>
                 <p className="hint" style={{ margin: 0 }}>
-                  Кольцо и мягкие свечения за панелями. Выключите — фон станет спокойным однотонным
+                  Кольцо и мягкие свечения за панелями
                 </p>
               </div>
               <Toggle on={app.liveBg} onChange={app.setLiveBg} />

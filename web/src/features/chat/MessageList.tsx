@@ -303,7 +303,7 @@ export function MessageList({
           {...pressProps(m)}
         >
           <span className="date-pill sys-note sn-one">
-            <Icon name={m.sys === 'pin' ? 'pin-fill' : 'pin'} size={13} />
+            <Icon name={m.sys === 'pin' ? 'pin-fill' : 'pin-off'} size={13} />
             <span className="sn-nick">
               <Nick name={m.user} />
             </span>

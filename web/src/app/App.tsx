@@ -9,7 +9,7 @@ import { api, clearUsers, getToken, SESSION_EXPIRED, setToken, type Me } from '.
 import type { Server } from '../shared/model';
 import { ConnBanner } from '../shared/ui/Toast';
 import { Backdrop } from './Backdrop';
-import { animateSurfaces, LS_NAME, LS_THEME, lsGet, lsSet, useAppState, useIsMobile, type Theme } from './useAppState';
+import { animateSurfaces, LS_NAME, LS_THEME, lsGet, lsSet, useAppState, useIsMobile, useSystemTheme, type Theme, type ThemePref } from './useAppState';
 
 function Shell(props: {
   me: Me;
@@ -17,9 +17,10 @@ function Shell(props: {
   setMe: (u: Me) => void;
   logout: () => void;
   theme: Theme;
-  setTheme: (t: Theme) => void;
+  themePref: ThemePref;
+  setTheme: (t: ThemePref) => void;
 }) {
-  const app = useAppState(props.me, props.servers, props.setMe, props.logout, props.theme, props.setTheme);
+  const app = useAppState(props.me, props.servers, props.setMe, props.logout, props.theme, props.themePref, props.setTheme);
   const mobile = useIsMobile();
   return (
     <>
@@ -115,7 +116,13 @@ function AppScreens() {
       .then((r) => setServers(r.servers))
       .catch((e) => setServersError(e?.message || 'Не удалось загрузить серверы'));
   }, [meId, serversTry]);
-  const [theme, setThemeState] = useState<Theme>(() => (lsGet(LS_THEME) === 'light' ? 'light' : 'dark'));
+  // Тема: по умолчанию — как в системе. Экран входа всегда в теме системы, с живым фоном и стеклом.
+  const sysTheme = useSystemTheme();
+  const [themePref, setThemePref] = useState<ThemePref>(() => {
+    const v = lsGet(LS_THEME);
+    return v === 'light' || v === 'dark' ? v : 'system';
+  });
+  const theme: Theme = me && themePref !== 'system' ? themePref : sysTheme;
 
   useEffect(() => {
     const d = document.documentElement.dataset;
@@ -123,9 +130,17 @@ function AppScreens() {
     d.theme = theme;
   }, [theme]);
 
-  const setTheme = useCallback((t: Theme) => {
-    setThemeState(t);
-    lsSet(LS_THEME, t);
+  // Экран входа: стекло и живой фон включены всегда (после входа их ставит useAppState по настройкам)
+  useEffect(() => {
+    if (me || checking) return;
+    const d = document.documentElement.dataset;
+    d.glass = 'on';
+    d.backdrop = 'on';
+  }, [me, checking]);
+
+  const setTheme = useCallback((t: ThemePref) => {
+    setThemePref(t);
+    lsSet(LS_THEME, t === 'system' ? null : t);
   }, []);
 
   const login = (token: string, user: Me) => {
@@ -167,5 +182,5 @@ function AppScreens() {
       </>
     );
   }
-  return <Shell key={me.id} me={me} servers={servers} setMe={setMe} logout={logout} theme={theme} setTheme={setTheme} />;
+  return <Shell key={me.id} me={me} servers={servers} setMe={setMe} logout={logout} theme={theme} themePref={themePref} setTheme={setTheme} />;
 }

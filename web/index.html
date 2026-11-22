@@ -16,12 +16,15 @@
       rel="stylesheet"
     />
     <script>
-      // Тема, прозрачность и живой фон — до первой отрисовки, иначе при перезагрузке на миг мелькал тор и тёмная тема
+      // Тема, прозрачность и живой фон — до первой отрисовки, иначе при перезагрузке на миг мелькал тор и тёмная тема.
+      // По умолчанию: тема как в системе, стекло и живой фон выключены. Экран входа (нет токена) — тема системы, стекло и фон включены.
       try {
         var d = document.documentElement.dataset, ls = localStorage;
-        d.theme = ls.getItem('oreol.theme') === 'light' ? 'light' : 'dark';
-        d.glass = ls.getItem('oreol.glassUi') === '1' ? 'on' : 'off';
-        d.backdrop = ls.getItem('oreol.liveBg') === '0' ? 'off' : 'on';
+        var sys = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+        var t = ls.getItem('oreol.theme'), auth = !!ls.getItem('oreol.token');
+        d.theme = auth && (t === 'light' || t === 'dark') ? t : sys;
+        d.glass = !auth || ls.getItem('oreol.glassUi') === '1' ? 'on' : 'off';
+        d.backdrop = !auth || ls.getItem('oreol.liveBg') === '1' ? 'on' : 'off';
       } catch (e) {}
     </script>
   </head>
