@@ -1,4 +1,4 @@
-import { useState, type MouseEvent as RMouseEvent } from 'react';
+import { useState, type PointerEvent as RPointerEvent } from 'react';
 import { createPortal } from 'react-dom';
 import type { AppState } from '../../app/useAppState';
 import { Icon, LogoPeople } from '../../shared/icons';
@@ -24,11 +24,13 @@ export function Rail({
   const counts = useVoiceCounts(app.servers.map((s) => s.id));
   const [tip, setTip] = useState<{ text: string; x: number; y: number } | null>(null);
   const hover = (text: string) => ({
-    onMouseEnter: (e: RMouseEvent<HTMLElement>) => {
+    // подсказка с названием — только для мыши: на телефоне палец «наводит» при каждом нажатии, и она лишь мешала
+    onPointerEnter: (e: RPointerEvent<HTMLElement>) => {
+      if (e.pointerType !== 'mouse') return;
       const r = e.currentTarget.getBoundingClientRect();
       setTip({ text, x: r.right + 14, y: r.top + r.height / 2 });
     },
-    onMouseLeave: () => setTip(null),
+    onPointerLeave: () => setTip(null),
   });
   return (
     <nav className="rail glass" onScroll={() => setTip(null)}>

@@ -26,6 +26,9 @@ const TYPING_TTL = 3500;
 /** Длительность анимации удаления сообщения (как у @keyframes msg-out). */
 const MSG_OUT_MS = 450;
 
+/** Последние ленты комнат за эту сессию: чат открывается сразу и не пустеет без связи. */
+const chatCache = new Map<string, { messages: ChatMessage[]; pinned: ChatMessage[]; reads: Record<string, number> }>();
+
 export function useChat(room: string | null, user: string) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   /** Все закреплённые в комнате (не только из загруженной истории). */
@@ -58,11 +61,13 @@ export function useChat(room: string | null, user: string) {
 
   useEffect(() => {
     if (!room || !user) return;
-    setMessages([]);
-    setPinned([]);
-    setReads({});
+    // Комнату уже открывали — сразу показываем последнюю известную ленту, пока сокет (пере)подключается
+    const cached = chatCache.get(room);
+    setMessages(cached?.messages ?? []);
+    setPinned(cached?.pinned ?? []);
+    setReads(cached?.reads ?? {});
     setFloor(0);
-    setLoaded(null);
+    setLoaded(cached ? room : null);
     readSent.current = 0;
     setView('all');
     setTyping({});
@@ -154,6 +159,8 @@ export function useChat(room: string | null, user: string) {
         else if (ev.type === 'voice') window.dispatchEvent(new Event(VOICE_CHANGED));
       };
       ws.onclose = () => {
+        // старый сокет, на смену которому уже открыли новый (см. wake), ничего не трогает
+        if (wsRef.current !== ws) return;
         setConnected(false);
         if (closed) return;
         attempt += 1;
@@ -161,9 +168,25 @@ export function useChat(room: string | null, user: string) {
       };
     };
     open();
+    // Вернулись в приложение (телефон снимал его с экрана — сокет за это время умирает) или снова появилась сеть:
+    // переподключаемся сразу, а не по таймеру повторов (он успевал дорасти до 8 с)
+    const wake = () => {
+      if (closed || document.visibilityState !== 'visible') return;
+      const ws = wsRef.current;
+      if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+      window.clearTimeout(retry);
+      attempt = 0;
+      open();
+    };
+    document.addEventListener('visibilitychange', wake);
+    window.addEventListener('online', wake);
+    window.addEventListener('pageshow', wake);
 
     return () => {
       closed = true;
+      document.removeEventListener('visibilitychange', wake);
+      window.removeEventListener('online', wake);
+      window.removeEventListener('pageshow', wake);
       window.clearTimeout(retry);
       wsRef.current?.close();
       wsRef.current = null;
@@ -173,6 +196,11 @@ export function useChat(room: string | null, user: string) {
       setTyping({});
     };
   }, [room, user]);
+
+  // Последняя лента комнаты — в кэш (показывается сразу при повторном открытии и пока нет связи)
+  useEffect(() => {
+    if (room && loaded === room) chatCache.set(room, { messages: messages.filter((m) => !m.leaving), pinned, reads });
+  }, [room, loaded, messages, pinned, reads]);
 
   // Чистим устаревшие «печатает».
   useEffect(() => {

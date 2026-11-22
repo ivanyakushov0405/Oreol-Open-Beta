@@ -24,7 +24,7 @@ export function useOpenChat(room: string | null | undefined) {
 }
 const isWatching = (room: string) => openChats.has(room) && document.visibilityState === 'visible';
 
-type Alert = { key: string; user: string; text: string; where: string; path: string; mention: boolean };
+type Alert = { key: string; user: string; text: string; where: string; path: string; mention: boolean; photo?: string | null };
 const SHOW_MS = 6000;
 const MAX = 3;
 
@@ -48,16 +48,20 @@ export function MessageAlerts({ app }: { app: AppState }) {
     // только то, что пришло только что (а не догрузилось из истории при возвращении на сервер)
     const now = Date.now();
     const fresh = msgs.filter(
-      (m) => Number(m.id) > prev && !m.sys && m.user !== app.name && (!m.ts || now - new Date(m.ts).getTime() < 30_000),
+      (m) => Number(m.id) > prev && (!m.sys || m.sys === 'pin') && m.user !== app.name && (!m.ts || now - new Date(m.ts).getTime() < 30_000),
     );
     if (!fresh.length || isWatching(room)) return;
     const mention = fresh.some((m) => mentionsMe(m.content || '', myTag));
     playSound(mention ? 'mention' : 'message');
     const m = fresh[fresh.length - 1];
     const where = (channel.kind === 'voice' ? `Чат «${channel.name}»` : `#${channel.name}`) + ' · ' + app.server.name;
-    const text = previewText(m).trim() || 'Вложение';
+    // закреп: «закрепил(а): …» с текстом закреплённого сообщения
+    const pinned = m.reply && 'content' in m.reply ? (m.reply.content || '').trim() : '';
+    const text = m.sys === 'pin' ? `Закрепил(а): ${pinned || 'сообщение'}` : previewText(m).trim() || 'Вложение';
+    // миниатюра: первое фото сообщения, у закрепа — фото закреплённого
+    const photo = m.sys === 'pin' ? (m.reply && 'photo' in m.reply ? m.reply.photo : null) : m.attachments?.[0]?.url;
     setAlerts((a) =>
-      [...a.filter((x) => x.key !== room), { key: room, user: m.user, text, where, path: paths.channel(app.serverId, channel.id, channel.kind === 'voice'), mention }].slice(-MAX),
+      [...a.filter((x) => x.key !== room), { key: room, user: m.user, text, where, path: paths.channel(app.serverId, channel.id, channel.kind === 'voice'), mention, photo }].slice(-MAX),
     );
   };
 
@@ -114,6 +118,7 @@ function AlertCard({ al, onOpen, onClose }: { al: Alert; onOpen: () => void; onC
         </div>
         <div className="msg-alert-text">{al.text}</div>
       </div>
+      {al.photo && <img className="msg-alert-thumb" src={al.photo} alt="" draggable={false} />}
       <button
         className="msg-alert-x"
         aria-label="Закрыть"

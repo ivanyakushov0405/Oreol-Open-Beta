@@ -298,6 +298,16 @@ def init_chat_features():
             PRIMARY KEY (user_id, room)
         )"""
     )
+    # Когда отметка сдвигалась — по ней видно, кто и когда прочитал конкретное сообщение
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS chat_read_log (
+            user_id INTEGER NOT NULL,
+            room TEXT NOT NULL,
+            last_id INTEGER NOT NULL,
+            at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+        )"""
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS chat_read_log_room ON chat_read_log (room, last_id)")
     conn.execute(
         """CREATE TABLE IF NOT EXISTS message_hidden (
             user_id INTEGER NOT NULL,
@@ -731,6 +741,7 @@ def mark_read(user_id: int, room: str, last_id: int) -> bool:
         "ON CONFLICT(user_id, room) DO UPDATE SET last_id = excluded.last_id",
         (user_id, room, last_id),
     )
+    conn.execute("INSERT INTO chat_read_log (user_id, room, last_id) VALUES (?, ?, ?)", (user_id, room, last_id))
     conn.commit()
     conn.close()
     return True
@@ -1605,6 +1616,32 @@ async def servers_list(request: Request):
     out = [server_json(conn, r) for r in rows]
     conn.close()
     return {"servers": out}
+
+
+@app.get("/api/chat/{room}/reads/{msg_id}")
+async def message_reads(room: str, msg_id: int, request: Request):
+    """Кто и когда прочитал сообщение: время — первый сдвиг отметки участника до этого сообщения или дальше.
+    Прочтения до появления журнала времени не имеют (at = null)."""
+    row = current_user(request)
+    if not row:
+        return unauthorized()
+    conn = db()
+    ok = member_channel(conn, row["id"], room)
+    conn.close()
+    if not ok:
+        return JSONResponse({"error": "Нет доступа к этому чату"}, status_code=403)
+    conn = chat_conn()
+    author = conn.execute("SELECT username FROM messages WHERE id = ? AND room = ?", (msg_id, room)).fetchone()
+    rows = conn.execute(
+        "SELECT u.username, (SELECT MIN(l.at) FROM chat_read_log l WHERE l.user_id = r.user_id AND l.room = r.room AND l.last_id >= ?) AS at "
+        "FROM chat_reads r JOIN users u ON u.id = r.user_id WHERE r.room = ? AND r.last_id >= ?",
+        (msg_id, room, msg_id),
+    ).fetchall()
+    conn.close()
+    who = author["username"] if author else None
+    out = [{"user": r["username"], "at": r["at"]} for r in rows if r["username"] != who]
+    out.sort(key=lambda x: x["at"] or "", reverse=True)
+    return {"reads": out}
 
 
 @app.get("/api/servers/{server_id}/members")

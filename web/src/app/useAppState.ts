@@ -146,7 +146,15 @@ export function useAppState(
     if (d.glass && d.glass !== next) animateSurfaces();
     d.glass = next;
     d.pattern = chatPattern ? 'on' : 'off';
-    d.backdrop = liveBg ? 'on' : 'off';
+    const bg = liveBg ? 'on' : 'off';
+    // Фон включают/выключают — на это время свечения не перетекают сами по себе: каждый их кадр внутри SVG
+    // заново считает размытие тора, и на телефоне фон мигал и дёргался. Они гаснут/проявляются вместе со всем слоем.
+    if (d.backdrop && d.backdrop !== bg) {
+      d.bgSwitch = '';
+      window.clearTimeout(Number(d.bgSwitchT));
+      d.bgSwitchT = String(window.setTimeout(() => delete document.documentElement.dataset.bgSwitch, 700));
+    }
+    d.backdrop = bg;
     d.glows = bgGlows ? 'on' : 'off';
   }, [glassUi, chatPattern, liveBg, bgGlows]);
   // Серверы — те, где пользователь участник (с бэкенда). Выбранный запоминаем локально.
@@ -257,21 +265,36 @@ export function useAppState(
   }, []);
   const everConnected = useRef(false);
   const [lost, setLost] = useState(false);
+  // Телефон: связь чата показывает сама шапка чата (колесо «Подключение…»), без плашек сверху и тостов снизу
+  const phoneUi = useIsMobile();
+  /** Когда приложение снова стало видно: телефон рвёт сокет в фоне, и после возврата он переподключается — это не «нет связи». */
+  const shownAt = useRef(Date.now());
+  useEffect(() => {
+    const vis = () => document.visibilityState === 'visible' && (shownAt.current = Date.now());
+    document.addEventListener('visibilitychange', vis);
+    return () => document.removeEventListener('visibilitychange', vis);
+  }, []);
   useEffect(() => {
     if (general.connected) {
-      if (lost) show('Соединение восстановлено', 'success');
+      if (lost && !phoneUi) show('Соединение восстановлено', 'success');
       everConnected.current = true;
       setLost(false);
       return;
     }
     if (!everConnected.current) return;
-    // Короткие обрывы (смена канала, перезапуск сокета) не показываем
-    const id = window.setTimeout(() => setLost(true), 1500);
+    // Короткие обрывы (смена канала, перезапуск сокета, возврат в приложение) не показываем
+    let id = 0;
+    const check = () => {
+      const fresh = Date.now() - shownAt.current < 5000;
+      if (document.visibilityState === 'visible' && !fresh) setLost(true);
+      else id = window.setTimeout(check, 1000);
+    };
+    id = window.setTimeout(check, 1500);
     return () => window.clearTimeout(id);
   }, [general.connected]); // eslint-disable-line react-hooks/exhaustive-deps
   const connBanner = !online
     ? 'Нет подключения к интернету'
-    : lost
+    : lost && !phoneUi
       ? 'Нет связи с сервером — переподключаемся…'
       : voice.reconnecting
         ? 'Голосовой канал: переподключаемся…'

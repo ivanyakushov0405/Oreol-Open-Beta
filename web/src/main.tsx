@@ -27,6 +27,17 @@ for (const type of ['gesturestart', 'gesturechange', 'gestureend']) {
 // там при повороте остаётся мобильная версия, см. useIsMobile)
 (screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> } | undefined)?.lock?.('portrait').catch(() => undefined);
 
+// Телефон набок — своя раскладка (html[data-land] в styles.css): таб-панель ниже, поля под вырез экрана, плитки в ряд
+{
+  const mq = matchMedia('(pointer: coarse) and (orientation: landscape) and (max-height: 520px)');
+  const sync = () => {
+    if (mq.matches) document.documentElement.dataset.land = '';
+    else delete document.documentElement.dataset.land;
+  };
+  sync();
+  mq.addEventListener('change', sync);
+}
+
 // Пока интерфейс поднимается, анимации выключены (класс снимает Shell после первой отрисовки)
 document.documentElement.classList.add('boot');
 

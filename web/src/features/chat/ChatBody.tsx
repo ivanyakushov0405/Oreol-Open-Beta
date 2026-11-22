@@ -2,12 +2,15 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode }
 import { createPortal } from 'react-dom';
 import { paths } from '../../app/router';
 import type { AppState } from '../../app/useAppState';
+import { getToken } from '../../shared/api';
 import { Icon, type IconName } from '../../shared/icons';
+import { Avatar } from '../../shared/ui/Avatar';
 import { previewText, type Channel, type ChatMessage } from '../../shared/model';
 import { DisplayName } from '../members/Nick';
 import { useOpenChat } from '../notifications/notifications';
 import { Composer } from './Composer';
 import { MessageList } from './MessageList';
+import { copyPhoto, prefetchPhoto, savePhoto, touchDevice } from './Photos';
 
 type Chat = AppState['general'];
 type Id = number | string;
@@ -35,47 +38,297 @@ interface MenuItem {
   label: string;
   danger?: boolean;
   flip?: boolean;
+  /** Нижняя группа (изменить, удалить) — отделена чертой. */
+  tail?: boolean;
+  /** Не действие, а переход на страницу меню (подтверждение удаления). */
+  page?: 'delete';
   run: () => void;
 }
+/** Подтверждение удаления прямо в меню: mine — своё (можно удалить у всех). */
+interface DeleteAsk {
+  mine: boolean;
+  run: (scope: 'me' | 'all') => void;
+}
 
-function MessageMenu({ x, y, items, onClose }: { x: number; y: number; items: MenuItem[]; onClose: () => void }) {
+const readTimeFmt = new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit' });
+const readDayFmt = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short' });
+function readWhen(iso: string | null) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const t = readTimeFmt.format(d);
+  const today = new Date();
+  const y = new Date();
+  y.setDate(today.getDate() - 1);
+  if (d.toDateString() === today.toDateString()) return `сегодня в ${t}`;
+  if (d.toDateString() === y.toDateString()) return `вчера в ${t}`;
+  return `${readDayFmt.format(d)} в ${t}`;
+}
+
+type Reads = { user: string; at: string | null }[] | null;
+/** Кто и когда прочитал сообщение. */
+function useReads(src?: { room: string; id: Id }) {
+  const [reads, setReads] = useState<Reads>(null);
+  const room = src?.room;
+  const id = src?.id;
+  useEffect(() => {
+    if (!room || id == null) return;
+    let alive = true;
+    fetch(`/api/chat/${encodeURIComponent(room)}/reads/${encodeURIComponent(String(id))}`, { headers: { Authorization: `Bearer ${getToken() ?? ''}` } })
+      .then((r) => (r.ok ? r.json() : { reads: [] }))
+      .then((d) => alive && setReads(d.reads ?? []))
+      .catch(() => alive && setReads([]));
+    return () => {
+      alive = false;
+    };
+  }, [room, id]);
+  return reads;
+}
+
+/** Список прочитавших (вторая страница меню): имя, под ним — когда, справа — галочки. */
+function ReadsList({ reads }: { reads: NonNullable<Reads> }) {
+  return (
+    <div className="mm-reads-list">
+      {reads.map((r) => (
+        <div key={r.user} className="mm-read">
+          <Avatar name={r.user} size={32} />
+          <span className="mm-read-text">
+            <span className="mm-read-name">
+              <DisplayName name={r.user} />
+            </span>
+            <span className="mm-read-at">{r.at ? readWhen(r.at) : 'время неизвестно'}</span>
+          </span>
+          <Icon name="check-double" size={18} className="mm-read-tick" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function MessageMenu({
+  x,
+  y,
+  row,
+  lift,
+  readsOf,
+  del,
+  items,
+  onClose,
+}: {
+  x: number;
+  y: number;
+  /** Строка сообщения: меню встаёт вплотную над ней или под ней, не закрывая её. */
+  row?: HTMLElement;
+  /** Телефон: открыто долгим нажатием — сообщение поднято над размытым экраном. */
+  lift?: boolean;
+  /** Сообщение, для которого показать «кто прочитал» (служебным строкам — не нужно). */
+  readsOf?: { room: string; id: Id };
+  del?: DeleteAsk;
+  items: MenuItem[];
+  onClose: () => void;
+}) {
   const ref = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState({ left: x, top: y, origin: 'top left' });
-  // Меню не вылезает за экран: прижимаем к краям и открываем вверх/влево, если снизу/справа мало места
+  const reads = useReads(readsOf);
+  /** Страница меню: действия, список прочитавших или подтверждение удаления (переезжают внутри того же окна). */
+  const [page, setPage] = useState<'main' | 'reads' | 'delete'>('main');
+  /** Ширина меню на странице действий — другие страницы не уже неё (окно не «прыгает»). */
+  const [width, setWidth] = useState<number | null>(null);
+  const host = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ left: number; top?: number; bottom?: number; maxH?: number; origin: string }>({ left: x, top: y, origin: 'top left' });
+  const focus = !!lift && !!row;
+  /** Палец, который держал сообщение, отпускают уже над меню — это отпускание ничего не нажимает. */
+  const armed = useRef(!focus);
+  // Меню не вылезает за экран и не закрывает сообщение: вплотную под ним, а если снизу мало места — над ним
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
     const w = el.offsetWidth;
     const h = el.offsetHeight;
     const pad = 8;
+    const gap = 6;
+    if (row) {
+      const r = row.getBoundingClientRect();
+      const bubble = (row.querySelector('.bubble, .sys-note') as HTMLElement | null)?.getBoundingClientRect() ?? r;
+      const box = host.current;
+      if (focus && box) {
+        // копия сообщения поверх размытия — там же, где оригинал
+        box.replaceChildren();
+        const clone = row.cloneNode(true) as HTMLElement;
+        clone.removeAttribute('data-pressing');
+        clone.style.cssText = '';
+        // классы ленты оставляем (от них зависят цвета облачка), а её собственную раскладку снимаем
+        const scroll = document.createElement('div');
+        scroll.className = 'chat-scroll';
+        scroll.style.cssText = 'all: unset; display: block';
+        scroll.appendChild(clone);
+        box.appendChild(scroll);
+        box.style.left = `${r.left}px`;
+        box.style.width = `${r.width}px`;
+        box.style.top = `${r.top}px`;
+      }
+      const mine = row.classList.contains('mine');
+      // по горизонтали — у края облачка (своё — справа); мышью — ближе к курсору, но в пределах облачка
+      const want = focus ? (mine ? bubble.right - w : bubble.left) : Math.min(Math.max(x - 24, bubble.left), Math.max(bubble.left, bubble.right - w));
+      const left = Math.max(pad, Math.min(want, innerWidth - w - pad));
+      const spaceBelow = innerHeight - pad - (bubble.bottom + gap);
+      const spaceAbove = bubble.top - gap - pad;
+      const below = spaceBelow >= h || (spaceBelow >= spaceAbove && spaceBelow >= 160);
+      const origin = `${below ? 'top' : 'bottom'} ${mine ? 'right' : 'left'}`;
+      if (below) return setPos({ left, top: bubble.bottom + gap, maxH: spaceBelow, origin });
+      // над сообщением меню держится нижним краем: страницы («кто прочитал», удаление) растут вверх, а не на сообщение
+      if (spaceAbove >= h) return setPos({ left, bottom: innerHeight - bubble.top + gap, maxH: spaceAbove, origin });
+      // высокое сообщение на низком экране (телефон набок, фото): сбоку от облачка, если там есть место
+      const side = mine ? bubble.left - gap - w : bubble.right + gap;
+      if (side >= pad && side + w <= innerWidth - pad) {
+        const st = Math.max(pad, Math.min(bubble.top, innerHeight - h - pad));
+        return setPos({ left: side, top: st, maxH: innerHeight - st - pad, origin: `top ${mine ? 'right' : 'left'}` });
+      }
+      if (spaceAbove >= Math.min(h, 160) || !focus) return setPos({ left, bottom: innerHeight - bubble.top + gap, maxH: Math.max(spaceAbove, 120), origin });
+      // длинное сообщение на телефоне: меню прижато к низу экрана, сообщение — над ним насколько влезает
+      const top = innerHeight - h - pad;
+      if (box) box.style.top = `${Math.max(pad, Math.min(r.top, top - gap - r.height))}px`;
+      setPos({ left, top, maxH: h, origin });
+      return;
+    }
     const up = y + h + pad > innerHeight;
     const left = Math.max(pad, Math.min(x, innerWidth - w - pad));
     const top = Math.max(pad, up ? y - h : y);
     setPos({ left, top, origin: `${up ? 'bottom' : 'top'} ${left < x - w / 2 ? 'right' : 'left'}` });
-  }, [x, y]);
+  }, [x, y, row, focus]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
+  /** Размер окна до смены страницы — новая страница плавно дорастает от него, а не прыгает. */
+  const before = useRef<DOMRect | null>(null);
+  const go = (to: 'main' | 'reads' | 'delete') => {
+    if (ref.current) {
+      before.current = ref.current.getBoundingClientRect();
+      if (to !== 'main') setWidth(ref.current.offsetWidth);
+    }
+    setPage(to);
+  };
+  useLayoutEffect(() => {
+    const el = ref.current;
+    const old = before.current;
+    before.current = null;
+    if (!el || !old) return;
+    const now = el.getBoundingClientRect();
+    // окно у правого края облачка (своё сообщение) держит правый край на месте и не вылезает за экран
+    const right = pos.origin.endsWith('right');
+    const left = Math.max(8, Math.min(right ? old.right - now.width : old.left, innerWidth - now.width - 8));
+    if (Math.abs(left - now.left) > 0.5) setPos((p) => ({ ...p, left }));
+    if (Math.abs(old.height - now.height) < 1 && Math.abs(old.width - now.width) < 1) return;
+    el.animate(
+      [
+        { height: `${old.height}px`, width: `${old.width}px` },
+        { height: `${now.height}px`, width: `${now.width}px` },
+      ],
+      { duration: 240, easing: 'cubic-bezier(.2, .8, .2, 1)' },
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page]);
+  const main = items.filter((it) => !it.tail);
+  const tail = items.filter((it) => it.tail);
+  const button = (it: MenuItem) => (
+    <button
+      key={it.label}
+      role="menuitem"
+      className={'msg-menu-item' + (it.danger ? ' danger' : '')}
+      onPointerDown={() => (armed.current = true)}
+      onClick={() => {
+        if (!armed.current) return;
+        if (it.page) return go(it.page);
+        onClose();
+        it.run();
+      }}
+    >
+      <Icon name={it.icon} size={18} className={it.flip ? 'flip' : undefined} />
+      <span>{it.label}</span>
+    </button>
+  );
   return createPortal(
     <>
-      <div className="msg-menu-backdrop" onClick={onClose} onContextMenu={(e) => (e.preventDefault(), onClose())} />
-      <div ref={ref} className="msg-menu" role="menu" style={{ left: pos.left, top: pos.top, transformOrigin: pos.origin }}>
-        {items.map((it) => (
-          <button
-            key={it.label}
-            role="menuitem"
-            className={'msg-menu-item' + (it.danger ? ' danger' : '')}
-            onClick={() => {
-              onClose();
-              it.run();
-            }}
-          >
-            <Icon name={it.icon} size={18} className={it.flip ? 'flip' : undefined} />
-            <span>{it.label}</span>
-          </button>
-        ))}
+      <div
+        className={'msg-menu-backdrop' + (focus ? ' msg-focus' : '')}
+        onPointerDown={() => (armed.current = true)}
+        onClick={() => armed.current && onClose()}
+        onContextMenu={(e) => (e.preventDefault(), onClose())}
+      />
+      {focus && <div ref={host} className="msg-focus-host" aria-hidden="true" onClick={() => armed.current && onClose()} />}
+      <div
+        ref={ref}
+        className={'msg-menu' + (focus ? ' focus' : '')}
+        role="menu"
+        style={{
+          left: pos.left,
+          top: pos.top,
+          bottom: pos.bottom,
+          transformOrigin: pos.origin,
+          maxHeight: pos.maxH ?? 'calc(100dvh - 16px)',
+          overflowY: 'auto',
+          minWidth: page !== 'main' && width ? Math.max(width, 260) : undefined,
+          maxWidth: page === 'delete' && width ? Math.max(width, 280) : undefined,
+        }}
+      >
+        {page === 'main' ? (
+          <div className={'mm-page' + (width ? ' anim' : '')} key="main">
+            {readsOf && (
+              <>
+                <button
+                  type="button"
+                  className="msg-menu-item mm-reads-btn"
+                  disabled={!reads?.length}
+                  onPointerDown={() => (armed.current = true)}
+                  onClick={() => armed.current && reads?.length && go('reads')}
+                >
+                  <Icon name={reads?.length ? 'check-double' : 'check'} size={18} />
+                  <span>{!reads ? 'Загружаем…' : reads.length ? `Прочитали: ${reads.length}` : 'Ещё никто не прочитал'}</span>
+                  {!!reads?.length && <Icon name="chevron-right" size={16} className="mm-chev" />}
+                </button>
+                <div className="msg-menu-sep" />
+              </>
+            )}
+            {main.map(button)}
+            {tail.length > 0 && main.length > 0 && <div className="msg-menu-sep" />}
+            {tail.map(button)}
+          </div>
+        ) : page === 'delete' && del ? (
+          <div className="mm-page mm-page-reads anim" key="delete">
+            <button type="button" className="msg-menu-item mm-back" onClick={() => go('main')}>
+              <Icon name="back" size={18} />
+              <span>Удалить сообщение?</span>
+            </button>
+            <div className="msg-menu-sep" />
+            <p className="mm-del-text">
+              {del.mine ? 'Можно убрать только у себя или удалить у всех участников чата.' : 'Чужое сообщение можно убрать только у себя — у остальных оно останется.'}
+            </p>
+            {del.mine && (
+              <button type="button" className="msg-menu-item danger" onClick={() => (onClose(), del.run('all'))}>
+                <Icon name="users" size={18} />
+                <span>Удалить у всех</span>
+              </button>
+            )}
+            <button type="button" className="msg-menu-item danger" onClick={() => (onClose(), del.run('me'))}>
+              <Icon name="user" size={18} />
+              <span>Удалить у меня</span>
+            </button>
+            <div className="msg-menu-sep" />
+            <button type="button" className="msg-menu-item" onClick={() => go('main')}>
+              <Icon name="close" size={18} />
+              <span>Отмена</span>
+            </button>
+          </div>
+        ) : (
+          <div className="mm-page mm-page-reads anim" key="reads">
+            <button type="button" className="msg-menu-item mm-back" onClick={() => go('main')}>
+              <Icon name="back" size={18} />
+              <span>Прочитали: {reads?.length ?? 0}</span>
+            </button>
+            <div className="msg-menu-sep" />
+            {reads && <ReadsList reads={reads} />}
+          </div>
+        )}
       </div>
     </>,
     document.body,
@@ -121,7 +374,7 @@ export function ChatBody({ app, chat, channel, compact }: { app: AppState; chat:
   const me = app.name;
   useOpenChat(channel.room);
 
-  const [menu, setMenu] = useState<{ m: ChatMessage; x: number; y: number } | null>(null);
+  const [menu, setMenu] = useState<{ m: ChatMessage; x: number; y: number; row?: HTMLElement; lift?: boolean; photo?: string } | null>(null);
   const [reply, setReply] = useState<ChatMessage | null>(null);
   const [editing, setEditing] = useState<ChatMessage | null>(null);
   const [seed, setSeed] = useState<{ key: number; text: string | null } | null>(null);
@@ -216,23 +469,37 @@ export function ChatBody({ app, chat, channel, compact }: { app: AppState; chat:
     });
   const selList = (selected ? chat.messages.filter((m) => selected.has(String(m.id))) : []) as ChatMessage[];
 
-  const menuItems = (m: ChatMessage): MenuItem[] => {
+  const photoItems = (url: string): MenuItem[] => {
+    const saved = (res: 'ok' | 'cancel' | 'fail') => res === 'fail' && app.notify('Не удалось сохранить фото', 'error');
+    // телефон: только «Сохранить» (системное «Поделиться» → «Сохранить изображение»)
+    if (touchDevice()) return [{ icon: 'download', label: 'Сохранить фото', run: () => void savePhoto(url, false).then(saved) }];
+    return [
+      {
+        icon: 'copy',
+        label: 'Копировать изображение',
+        run: () => void copyPhoto(url).then((ok) => app.notify(ok ? 'Изображение скопировано' : 'Не удалось скопировать', ok ? 'success' : 'error')),
+      },
+      { icon: 'download', label: 'Сохранить как…', run: () => void savePhoto(url, true).then(saved) },
+    ];
+  };
+  const menuItems = (m: ChatMessage, photo?: string): MenuItem[] => {
     // Служебная строка о закрепе: только выделить и удалить
     if (m.sys) {
       return [
         { icon: 'check', label: 'Выделить', run: () => setSelected(new Set([String(m.id)])) },
-        { icon: 'trash', label: 'Удалить', danger: true, run: () => setDel([m.id]) },
+        { icon: 'trash', label: 'Удалить', danger: true, tail: true, page: 'delete', run: () => setDel([m.id]) },
       ];
     }
     const mine = m.user === me;
     const items: MenuItem[] = [{ icon: 'reply', label: 'Ответить', run: () => startReply(m) }];
-    if (mine) items.push({ icon: 'pencil', label: 'Изменить', run: () => startEdit(m) });
+    if (mine) items.push({ icon: 'pencil', label: 'Изменить', tail: true, run: () => startEdit(m) });
     items.push(
       ...(m.content ? [{ icon: 'copy' as IconName, label: 'Копировать текст', run: () => copy(m.content) }] : []),
+      ...(photo ? photoItems(photo) : []),
       { icon: m.pinned ? 'pin-off' : 'pin', label: m.pinned ? 'Открепить' : 'Закрепить', run: () => chat.pin(m.id, !m.pinned) },
       { icon: 'reply', label: 'Переслать', flip: true, run: () => setFwd([m.id]) },
       { icon: 'check', label: 'Выделить', run: () => setSelected(new Set([String(m.id)])) },
-      { icon: 'trash', label: 'Удалить', danger: true, run: () => setDel([m.id]) },
+      { icon: 'trash', label: 'Удалить', danger: true, tail: true, page: 'delete', run: () => setDel([m.id]) },
     );
     return items;
   };
@@ -401,7 +668,16 @@ export function ChatBody({ app, chat, channel, compact }: { app: AppState; chat:
             </>
           )
         }
-        onMenu={(m, x, y) => setMenu({ m, x, y })}
+        onMenu={(m, x, y, row, lift) => {
+          // фото, на котором держали палец / нажали ПКМ (иначе — первое в сообщении)
+          const img = document.elementFromPoint(x, y)?.closest('img');
+          const urls = (m.attachments ?? []).map((a) => a.url);
+          const hit = img ? urls.find((u) => img.src.endsWith(u) || img.src === u) : undefined;
+          const photo = hit ?? urls[0];
+          if (photo && touchDevice()) prefetchPhoto(photo);
+          setMenu({ m, x, y, row, lift, photo });
+        }}
+        onReply={startReply}
         selecting={!!selected}
         selected={selected ?? undefined}
         onToggle={toggle}
@@ -466,7 +742,24 @@ export function ChatBody({ app, chat, channel, compact }: { app: AppState; chat:
         />
       )}
 
-      {menu && <MessageMenu x={menu.x} y={menu.y} items={menuItems(menu.m)} onClose={() => setMenu(null)} />}
+      {menu && (
+        <MessageMenu
+          x={menu.x}
+          y={menu.y}
+          row={menu.row}
+          lift={menu.lift}
+          del={{
+            mine: menu.m.user === me && !menu.m.sys,
+            run: (scope) => {
+              chat.remove([menu.m.id], scope);
+              setSelected(null);
+            },
+          }}
+          readsOf={menu.m.sys ? undefined : { room: channel.room, id: menu.m.id }}
+          items={menuItems(menu.m, menu.photo)}
+          onClose={() => setMenu(null)}
+        />
+      )}
 
       {del && (
         <Modal title={del.length > 1 ? `Удалить ${msgs(del.length)}?` : 'Удалить сообщение?'} onClose={() => setDel(null)}>

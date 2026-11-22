@@ -26,6 +26,14 @@ const fade = (list: Iterable<HTMLElement>, v: number | null) => {
     else n.style.setProperty('opacity', String(v), 'important');
   }
 };
+/** Нижние экраны целиком (для сдвига вслед за пальцем). */
+const UNDER_BOX = ':scope > .m-under.dim:not(.tabbar)';
+const shift = (list: Iterable<HTMLElement>, v: string | null, tr = 'none') => {
+  for (const n of list) {
+    if (v === null) (n.style.removeProperty('transform'), n.style.removeProperty('transition'));
+    else (n.style.setProperty('transform', v, 'important'), n.style.setProperty('transition', tr, 'important'));
+  }
+};
 const SKIP = 'input, textarea, select, [contenteditable], .tabbar, .m-call, .m-call-pill, .member-card, .popover-backdrop, .msg-menu, .m-menu, .dialog';
 
 export function useStageSwipes(stage: RefObject<HTMLElement>, opts: Opts) {
@@ -97,7 +105,10 @@ export function useStageSwipes(stage: RefObject<HTMLElement>, opts: Opts) {
         // шапка не едет с экраном — стоит на месте, как при обычном «Назад»
         const head = s.node.querySelector<HTMLElement>(':scope > .m-head');
         if (head) head.style.transform = `translateX(${-x}px)`;
-        fade(el.querySelectorAll<HTMLElement>(UNDER), Math.min(1, x / w));
+        const p = Math.min(1, x / w);
+        fade(el.querySelectorAll<HTMLElement>(UNDER), p);
+        // нижний экран подъезжает вслед за пальцем (как в iOS), а не стоит сдвинутым
+        shift(el.querySelectorAll<HTMLElement>(UNDER_BOX), `translateX(${(-22 * (1 - p)).toFixed(2)}%)`);
       } else {
         // к краю (вкладки дальше нет) — тянется с сопротивлением
         // экран не «летает» — лишь чуть поддаётся пальцу и гаснет, к краю (вкладки дальше нет) ещё слабее
@@ -131,10 +142,26 @@ export function useStageSwipes(stage: RefObject<HTMLElement>, opts: Opts) {
           n.style.setProperty('--swipe-x', `${cur.dx}px`);
           n.style.transform = '';
           if (head) head.style.transform = '';
+          // Нижний экран уже почти проявлен: доводим его до конца плавно и без своей анимации «возврата» —
+          // раньше прозрачность сбрасывалась, и всё под экраном мигало (сначала гасло, потом проявлялось заново)
+          const under = [...el.querySelectorAll<HTMLElement>(UNDER)];
+          const boxes = [...el.querySelectorAll<HTMLElement>(UNDER_BOX)];
+          el.dataset.swiped = '';
+          for (const u of under) u.style.setProperty('transition', 'opacity .22s ease', 'important');
+          fade(under, 1);
+          shift(boxes, 'none', 'transform .22s cubic-bezier(.4, 0, .7, .2)');
           n.querySelector<HTMLButtonElement>(':scope > .m-head .pill-btn')?.click();
           swallow();
-          fade(el.querySelectorAll<HTMLElement>(UNDER), null);
-          window.setTimeout(() => o.current.onPeek(false), 400);
+          window.setTimeout(() => {
+            o.current.onPeek(false);
+            // экран, уехавший вправо, уже убран — снимаем всё, что держали руками
+            window.setTimeout(() => {
+              fade(under, null);
+              for (const u of under) u.style.removeProperty('transition');
+              shift(boxes, null);
+              delete el.dataset.swiped;
+            }, 80);
+          }, 400);
         } else {
           n.style.transition = 'transform .26s cubic-bezier(.2, .8, .2, 1)';
           n.style.transform = 'translateX(0)';
@@ -145,9 +172,12 @@ export function useStageSwipes(stage: RefObject<HTMLElement>, opts: Opts) {
           swallow();
           el.dataset.swipe = 'cancel';
           const under = [...el.querySelectorAll<HTMLElement>(UNDER)];
+          const boxes = [...el.querySelectorAll<HTMLElement>(UNDER_BOX)];
           fade(under, 0);
+          shift(boxes, 'translateX(-22%)', 'transform .26s cubic-bezier(.2, .8, .2, 1)');
           window.setTimeout(() => {
             fade(under, null);
+            shift(boxes, null);
             n.style.transition = '';
             n.style.transform = '';
             if (head) head.style.transition = head.style.transform = '';

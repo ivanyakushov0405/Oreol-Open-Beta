@@ -1,5 +1,6 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { haptic } from '../../shared/haptic';
 import { Icon } from '../../shared/icons';
 import { handleOf, type Attachment, type ChatMessage } from '../../shared/model';
 import { Avatar } from '../../shared/ui/Avatar';
@@ -29,7 +30,10 @@ function dayLabel(d: Date) {
 
 /** Действия с сообщением из ленты (меню по ПКМ / долгому нажатию, выделение, переход к оригиналу ответа). */
 export interface MessageActions {
-  onMenu?: (m: ChatMessage, x: number, y: number) => void;
+  /** row — строка сообщения, если меню открыли долгим нажатием (телефон: оно поднимается над размытым экраном). */
+  onMenu?: (m: ChatMessage, x: number, y: number, row?: HTMLElement, lift?: boolean) => void;
+  /** Свайп сообщения влево (телефон) — ответить на него. */
+  onReply?: (m: ChatMessage) => void;
   /** Режим выделения: нажатие отмечает сообщение. */
   selecting?: boolean;
   selected?: Set<string>;
@@ -57,7 +61,8 @@ export function MessageList(props: ListProps) {
   latest.current = props;
   const stable = useMemo(
     () => ({
-      onMenu: (m: ChatMessage, x: number, y: number) => latest.current.onMenu?.(m, x, y),
+      onMenu: (m: ChatMessage, x: number, y: number, row?: HTMLElement, lift?: boolean) => latest.current.onMenu?.(m, x, y, row, lift),
+      onReply: (m: ChatMessage) => latest.current.onReply?.(m),
       onToggle: (m: ChatMessage) => latest.current.onToggle?.(m),
       onJump: (id: number | string) => latest.current.onJump?.(id),
       onView: (id: number) => latest.current.onView?.(id),
@@ -68,6 +73,7 @@ export function MessageList(props: ListProps) {
     <MessageListView
       {...props}
       onMenu={props.onMenu && stable.onMenu}
+      onReply={props.onReply && stable.onReply}
       onToggle={props.onToggle && stable.onToggle}
       onJump={props.onJump && stable.onJump}
       onView={props.onView && stable.onView}
@@ -92,6 +98,7 @@ function MessageListImpl({
   me,
   empty,
   onMenu,
+  onReply,
   selecting,
   selected,
   onToggle,
@@ -160,7 +167,9 @@ function MessageListImpl({
     t.style.height = h + 'px';
     if (!stick.current) el.scrollTop += h - cur;
   };
-  const press = useRef<{ t: number; x: number; y: number } | null>(null);
+  const press = useRef<{ t: number; x: number; y: number; hold: number; row: HTMLElement } | null>(null);
+  /** Свайп сообщения влево для ответа. */
+  const swipe = useRef<{ id: number; x: number; y: number; row: HTMLElement; m: ChatMessage; on: boolean; dx: number; ticked: boolean } | null>(null);
   /** Открытое на весь экран фото. */
   const [viewer, setViewer] = useState<{ photos: Attachment[]; i: number } | null>(null);
   // Кнопка «вниз»: появляется, когда ушли от низа ленты; на ней — сколько новых сообщений пришло, пока смотрели выше
@@ -293,8 +302,28 @@ function MessageListImpl({
   }, [focus]);
 
   const cancelPress = () => {
-    if (press.current) window.clearTimeout(press.current.t);
+    const p = press.current;
+    if (p) {
+      window.clearTimeout(p.t);
+      window.clearTimeout(p.hold);
+      delete p.row.dataset.pressing;
+    }
     press.current = null;
+  };
+  const SWIPE_REPLY = 56;
+  const endSwipe = () => {
+    const sw = swipe.current;
+    swipe.current = null;
+    if (!sw || !sw.on) return;
+    const row = sw.row;
+    row.style.transition = 'transform .26s cubic-bezier(.2, .8, .2, 1)';
+    row.style.transform = '';
+    row.style.removeProperty('--swp');
+    window.setTimeout(() => {
+      row.style.transition = '';
+      delete row.dataset.swiping;
+    }, 260);
+    if (-sw.dx >= SWIPE_REPLY) onReply?.(sw.m);
   };
 
   const myTag = handleOf(me);
@@ -309,29 +338,71 @@ function MessageListImpl({
     onContextMenu: (e: React.MouseEvent) => {
       if (!onMenu) return;
       e.preventDefault();
+      // на сенсорном экране меню открывает своё долгое нажатие (с подъёмом сообщения), системное не нужно
+      if (matchMedia('(hover: none)').matches) return;
       cancelPress();
-      if (!selecting) onMenu(m, e.clientX, e.clientY);
+      if (!selecting) onMenu(m, e.clientX, e.clientY, e.currentTarget as HTMLElement, false);
     },
     onPointerDown: (e: React.PointerEvent) => {
-      if (e.pointerType !== 'touch' || selecting || !onMenu) return;
+      if (selecting) return;
+      const mouse = e.pointerType === 'mouse';
+      if (mouse && e.button !== 0) return;
+      const row = e.currentTarget as HTMLElement;
       const x = e.clientX;
       const y = e.clientY;
+      // свайп для ответа — и пальцем, и мышью (кроме нажатий на ссылки, фото и кнопки внутри)
+      const inner = (e.target as HTMLElement).closest('a, button, img, video, .msg-reply, .msg-ava');
+      if (onReply && !m.sys && !m.leaving && !(mouse && inner)) swipe.current = { id: e.pointerId, x, y, row, m, on: false, dx: 0, ticked: false };
+      // долгое нажатие с меню — только пальцем (мышью меню открывает ПКМ)
+      if (mouse || !onMenu) return;
       press.current = {
         x,
         y,
+        row,
+        // пока держат — сообщение чуть «вдавливается»
+        hold: window.setTimeout(() => (row.dataset.pressing = ''), 140),
         t: window.setTimeout(() => {
           press.current = null;
-          navigator.vibrate?.(10);
-          onMenu(m, x, y);
+          delete row.dataset.pressing;
+          swipe.current = null;
+          haptic();
+          onMenu(m, x, y, row, true);
         }, LONG_PRESS_MS),
       };
     },
     onPointerMove: (e: React.PointerEvent) => {
       const p = press.current;
       if (p && Math.hypot(e.clientX - p.x, e.clientY - p.y) > 8) cancelPress();
+      const sw = swipe.current;
+      if (!sw || e.pointerId !== sw.id) return;
+      const dx = e.clientX - sw.x;
+      const dy = e.clientY - sw.y;
+      if (!sw.on) {
+        if (Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx)) return void (swipe.current = null);
+        if (dx > -10 || Math.abs(dx) <= Math.abs(dy)) return;
+        sw.on = true;
+        sw.x = e.clientX;
+        sw.row.dataset.swiping = '';
+        window.getSelection()?.removeAllRanges();
+        try {
+          sw.row.setPointerCapture(e.pointerId);
+        } catch {
+          /* палец уже отпущен */
+        }
+      }
+      // влево — за пальцем, дальше порога — с сопротивлением; вправо не едет
+      const raw = Math.min(0, e.clientX - sw.x);
+      const d = raw < -SWIPE_REPLY ? -SWIPE_REPLY + (raw + SWIPE_REPLY) * 0.3 : raw;
+      sw.dx = raw;
+      sw.row.style.transform = `translateX(${d}px)`;
+      sw.row.style.setProperty('--swp', String(Math.min(1, -raw / SWIPE_REPLY)));
+      if (!sw.ticked && -raw >= SWIPE_REPLY) {
+        sw.ticked = true;
+        haptic();
+      } else if (sw.ticked && -raw < SWIPE_REPLY) sw.ticked = false;
     },
-    onPointerUp: cancelPress,
-    onPointerCancel: cancelPress,
+    onPointerUp: () => (cancelPress(), endSwipe()),
+    onPointerCancel: () => (cancelPress(), endSwipe()),
   });
   messages.forEach((m) => {
     const d = m.ts ? new Date(m.ts) : new Date();
@@ -408,6 +479,11 @@ function MessageListImpl({
         }}
       >
         {selecting && <span className={'msg-check' + (isSel ? ' on' : '')}>{isSel && <Icon name="check" size={14} />}</span>}
+        {onReply && (
+          <span className="msg-swipe-ico" aria-hidden="true">
+            <Icon name="reply" size={20} />
+          </span>
+        )}
         {!mine && (
           <span className="msg-ava" {...userMenuProps(m.user)} onClick={(e) => (e.stopPropagation(), !selecting && openProfile(m.user))}>
             <Avatar name={m.user} size={34} />

@@ -34,7 +34,8 @@ export function unreadCount(messages: { id: string | number; user: string; sys?:
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i];
     if (Number(m.id) <= readId) break;
-    if (!m.sys && m.user !== me) n++;
+    // закреп — тоже новость в чате (открепление — нет)
+    if ((!m.sys || m.sys === 'pin') && m.user !== me) n++;
   }
   return n;
 }

@@ -23,6 +23,7 @@ import { handleOf, type Channel, type ServerId } from '../../shared/model';
 import { Avatar, Banner, BannerTop } from '../../shared/ui/Avatar';
 import { MobileCall, MobileCallPill, PILL_SPACE } from './MobileCall';
 import { Head } from './MobileHead';
+import { useServerSwipe } from './serverSwipe';
 import { useStageSwipes } from './swipes';
 import { useJellyTabs, useSettled, useTabShadeClip } from './tabs';
 
@@ -54,6 +55,30 @@ const Hold = memo(
   },
   (_prev, next) => next.hold,
 );
+
+/** Телефон лёг набок (см. data-land в main.tsx). */
+const LAND_QUERY = '(pointer: coarse) and (orientation: landscape) and (max-height: 520px)';
+function useLandscape() {
+  const [on, setOn] = useState(() => matchMedia(LAND_QUERY).matches);
+  useEffect(() => {
+    const mq = matchMedia(LAND_QUERY);
+    const upd = () => setOn(mq.matches);
+    mq.addEventListener('change', upd);
+    return () => mq.removeEventListener('change', upd);
+  }, []);
+  return on;
+}
+
+/** true, только если on держится дольше ms (короткие переподключения не мелькают). */
+function useLagged(on: boolean, ms: number) {
+  const [v, setV] = useState(false);
+  useEffect(() => {
+    if (!on) return void setV(false);
+    const id = window.setTimeout(() => setV(true), ms);
+    return () => window.clearTimeout(id);
+  }, [on, ms]);
+  return v;
+}
 
 export function Mobile({ app }: { app: AppState }) {
   const stageRef = useRef<HTMLDivElement>(null);
@@ -116,12 +141,64 @@ export function Mobile({ app }: { app: AppState }) {
   const srvSwitchAt = useRef(0);
   /** Сервер сменился из-за виджета (открыли войс другого сервера или вернулись из него) — без анимации смены. */
   const srvQuiet = useRef(false);
+  /** Сервер сменился на вкладке «Серверы» не из-за виджета — панель каналов уезжает, новая въезжает. */
+  const wantSlide = useRef(false);
   if (lastSrv.current !== app.server.id) {
     lastSrv.current = app.server.id;
+    wantSlide.current = !srvQuiet.current && tab === 'servers';
     if (!srvQuiet.current && tab === 'servers') srvSwitchAt.current = Date.now();
     srvQuiet.current = false;
   }
   const srvSwitch = tab === 'servers' && Date.now() - srvSwitchAt.current < 700;
+  /** Куда сменился сервер: 1 — на следующий (ниже в списке), -1 — на предыдущий. Панель каналов въезжает с той стороны. */
+  const srvDir = useRef<1 | -1>(1);
+  const prevSrv = useRef(app.server.id);
+  /** Панель каналов прошлого сервера (снимок DOM) — уезжает поверх, пока на её место въезжает новая. */
+  const stackRef = useRef<HTMLDivElement>(null);
+  const outgoing = useRef<{ node: HTMLElement; dir: 1 | -1 } | null>(null);
+  if (prevSrv.current !== app.server.id) {
+    const ids = app.servers.map((x) => x.id);
+    srvDir.current = ids.indexOf(app.server.id) >= ids.indexOf(prevSrv.current) ? 1 : -1;
+    prevSrv.current = app.server.id;
+    // во время отрисовки в DOM ещё старая панель — снимаем копию (с тем сдвигом, где её отпустил палец)
+    const old = wantSlide.current ? stackRef.current?.querySelector<HTMLElement>(':scope > .sidebar') : null;
+    if (old) outgoing.current = { node: old.cloneNode(true) as HTMLElement, dir: srvDir.current };
+    wantSlide.current = false;
+  }
+  useLayoutEffect(() => {
+    const out = outgoing.current;
+    outgoing.current = null;
+    const stack = stackRef.current;
+    const cur = stack?.querySelector<HTMLElement>(':scope > .sidebar');
+    if (!out || !stack || !cur) return;
+    const from = out.node.style.transform || 'translateY(0)';
+    const fromOp = out.node.style.opacity || '1';
+    out.node.style.transition = out.node.style.transform = out.node.style.opacity = '';
+    out.node.classList.add('srv-out');
+    out.node.setAttribute('aria-hidden', 'true');
+    out.node.querySelectorAll('[key], [id]').forEach((n) => n.removeAttribute('id'));
+    stack.appendChild(out.node);
+    cur.style.transition = cur.style.transform = cur.style.opacity = '';
+    const ease = 'cubic-bezier(.22, .8, .25, 1)';
+    const ms = 380;
+    const away = out.dir === 1 ? 'translateY(-104%)' : 'translateY(104%)';
+    const come = out.dir === 1 ? 'translateY(104%)' : 'translateY(-104%)';
+    out.node.animate([{ transform: from, opacity: fromOp }, { transform: away, opacity: 0.5 }], { duration: ms, easing: ease, fill: 'forwards' });
+    const a = cur.animate([{ transform: come }, { transform: 'translateY(0)' }], { duration: ms, easing: ease });
+    const done = () => out.node.remove();
+    a.onfinish = done;
+    a.oncancel = done;
+    const id = window.setTimeout(done, ms + 120);
+    return () => window.clearTimeout(id);
+  }, [app.server.id]);
+  const srvIdx = app.servers.findIndex((x) => x.id === app.server.id);
+  useServerSwipe(stageRef, {
+    can: (dir) => !!app.servers[srvIdx + dir],
+    go: (dir) => {
+      const next = app.servers[srvIdx + dir];
+      if (next) app.setServerId(next.id as ServerId);
+    },
+  });
   // Профиль из чата, упоминаний и т.п. открывается той же шторкой, что и из списка участников
   useEffect(() => {
     setProfileOpener((name) => setCard(name));
@@ -180,7 +257,10 @@ export function Mobile({ app }: { app: AppState }) {
   const cardMember = card ? app.members.find((m) => m.username === card) : undefined;
 
   /** Виджет звонка свёрнут в пилюлю. */
-  const [callMin, setCallMin] = useState(false);
+  const [callMinPref, setCallMin] = useState(false);
+  // набок экран низкий: виджет звонка всегда свёрнут в пилюлю (развёрнутый занимал полэкрана), по ней — в войс
+  const land = useLandscape();
+  const callMin = callMinPref || land;
   /** Меню «…» виджета: под кнопкой. */
   const [callMenu, setCallMenu] = useState<{ top: number; right: number } | null>(null);
   const inCall = app.voice.state !== 'idle';
@@ -324,6 +404,8 @@ export function Mobile({ app }: { app: AppState }) {
     frozen.current = null;
   }
   const chat = frozen.current?.chat ?? app.general;
+  // нет связи с чатом — колесо в шапке вместо подписи; лента остаётся (последняя загруженная)
+  const chatOffline = useLagged(!!chatCh && !chat.connected && !frozen.current, 700);
   /** Экраны под войсом, открытым из виджета: спрятаны, пока войс на месте. */
   const belowVoice = open?.kind === 'voice' && overVoice.current ? ' m-below' : '';
 
@@ -433,7 +515,7 @@ export function Mobile({ app }: { app: AppState }) {
           setCallMenu((m) => (m ? null : { top: r.bottom + 8, right: Math.max(12, window.innerWidth - r.right) }));
         }}
       />
-      <MobileCallPill app={app} shown={inCall && callMin && !onOwnVoice} onExpand={() => setCallMin(false)} />
+      <MobileCallPill app={app} shown={inCall && callMin && !onOwnVoice} onExpand={() => (land ? openVoice() : setCallMin(false))} />
       {callMenu && (
         <>
           <div className="popover-backdrop m-menu-backdrop" onClick={() => setCallMenu(null)} />
@@ -460,7 +542,9 @@ export function Mobile({ app }: { app: AppState }) {
           <h2 className="m-tab-title">Серверы</h2>
           <div className="m-servers-row">
           <Rail app={app} home={false} noHome onHome={() => setTab('chats')} onServer={(id: ServerId) => app.setServerId(id)} />
-          <aside className={'sidebar glass' + (srvSwitch ? ' srv-switch' : '')}>
+          <div className="srv-stack" ref={stackRef}>
+          <aside className={'sidebar glass' + (srvSwitch ? ' srv-switch' : '')} data-srv-dir={srvDir.current === 1 ? 'next' : 'prev'}>
+            <div key={app.server.id} className="srv-body">
             <div className="sidebar-head">
               <button className="grow srv-name" title="Настройки сервера" onClick={() => setServerHome(true)}>
                 <span key={app.server.id}>{app.server.name}</span>
@@ -482,7 +566,9 @@ export function Mobile({ app }: { app: AppState }) {
               />
               </div>
             </div>
+            </div>
           </aside>
+          </div>
           </div>
           </Hold>
         </div>
@@ -584,7 +670,16 @@ export function Mobile({ app }: { app: AppState }) {
                 </button>
               </>
             }
-            sub={<TypingLine users={chat.typingUsers.filter((u) => u !== app.name)} fallback={frozen.current?.sub ?? heldSub ?? (app.membersReady ? `${online.length} в сети` : ' ')} />}
+            sub={
+              chatOffline ? (
+                <span className="m-connecting">
+                  <i className="conn-spin" />
+                  Подключение…
+                </span>
+              ) : (
+                <TypingLine users={chat.typingUsers.filter((u) => u !== app.name)} fallback={frozen.current?.sub ?? heldSub ?? (app.membersReady ? `${online.length} в сети` : ' ')} />
+              )
+            }
           />
           <ChatBody app={app} chat={chat} channel={chatCh} compact />
           {chatMenu && (
