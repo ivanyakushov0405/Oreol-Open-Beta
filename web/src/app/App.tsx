@@ -5,11 +5,12 @@ import { MessageAlerts } from '../features/notifications/notifications';
 import { ProfileHost } from '../features/profile/profile';
 import { Desktop } from '../layout/desktop/Desktop';
 import { Mobile } from '../layout/mobile/Mobile';
-import { api, clearUsers, getToken, SESSION_EXPIRED, setToken, type Me } from '../shared/api';
+import { api, clearUsers, hasSession, SESSION_EXPIRED, setSession, type Me } from '../shared/api';
 import type { Server } from '../shared/model';
 import { ConnBanner } from '../shared/ui/Toast';
 import { Backdrop } from './Backdrop';
 import { animateSurfaces, LS_NAME, LS_THEME, lsGet, lsSet, useAppState, useIsMobile, useSystemTheme, type Theme, type ThemePref } from './useAppState';
+import { t } from '../shared/i18n';
 
 function Shell(props: {
   me: Me;
@@ -28,26 +29,25 @@ function Shell(props: {
       <ProfileHost app={app} />
       <UserMenuHost app={app} />
       <MessageAlerts app={app} />
-      {app.connBanner && <ConnBanner text={app.connBanner} tone={app.connBanner.startsWith('Нет') ? 'error' : 'warn'} />}
+      {app.connBanner && <ConnBanner text={app.connBanner} tone={app.connBanner.startsWith(t('Нет')) ? 'error' : 'warn'} />}
       {app.toast}
     </>
   );
 }
 
-/** Полноэкранная ошибка загрузки: бэкенд недоступен или ответил ошибкой. */
 function ErrorScreen({ text, retry, onLogout }: { text: string; retry: () => void; onLogout?: () => void }) {
   return (
     <>
       <div className="empty-state error-screen" role="alert">
-        <b>Не удалось загрузить Ореол</b>
+        <b>{t('Не удалось загрузить Ореол')}</b>
         <span>{text}</span>
         <div className="row">
           <button className="btn btn-primary" onClick={retry}>
-            Повторить
+            {t('Повторить')}
           </button>
           {onLogout && (
             <button className="btn btn-secondary" onClick={onLogout}>
-              Выйти
+              {t('Выйти')}
             </button>
           )}
         </div>
@@ -56,8 +56,7 @@ function ErrorScreen({ text, retry, onLogout }: { text: string; retry: () => voi
   );
 }
 
-/** Фон — один на всё приложение и не пересоздаётся при смене экранов (загрузка → вход → приложение):
- *  раньше у каждого экрана был свой, и при переходах свечения и тор появлялись заново — «мигали». */
+/** One backdrop for the whole app: remounting it per screen restarted the glows and made them flicker. */
 export default function App() {
   const mobile = useIsMobile();
   return (
@@ -70,40 +69,39 @@ export default function App() {
 
 function AppScreens() {
   const [me, setMe] = useState<Me | null>(null);
-  // Пока проверяем сохранённую сессию, экран входа не мигает
-  const [checking, setChecking] = useState(() => !!getToken());
-  /** Бэкенд недоступен при старте — экран ошибки с повтором вместо экрана входа. */
+  // Hold the login screen while the stored session is being checked, so it does not flash.
+  const [checking, setChecking] = useState(() => hasSession());
   const [bootError, setBootError] = useState<string | null>(null);
   const [bootTry, setBootTry] = useState(0);
-  // Первые мгновения после загрузки — без анимаций и переходов: интерфейс встаёт сразу в итоговом виде.
-  // Снимаем на любом экране, включая вход: раньше класс снимал только интерфейс после входа,
-  // и на экране входа переходы «Вход ⇄ Регистрация» не работали.
+  // Disable animations for the first moments after load so the UI appears in its final state.
   useEffect(() => {
     const id = window.setTimeout(() => document.documentElement.classList.remove('boot'), 700);
     return () => window.clearTimeout(id);
   }, []);
   useEffect(() => {
     lsSet(LS_NAME, null);
-    if (!getToken()) return;
+    if (!hasSession()) return;
     api<{ user: Me }>('/api/auth/me')
-      .then((r) => setMe(r.user))
+      .then((r) => {
+        setSession(true);
+        setMe(r.user);
+      })
       .catch((e) => {
-        if (e?.status === 401) setToken(null);
-        else setBootError(e?.message || 'Не удалось связаться с сервером');
+        if (e?.status === 401) setSession(false);
+        else setBootError(e?.message || t('Не удалось связаться с сервером'));
       })
       .finally(() => setChecking(false));
   }, [bootTry]);
-  // Сервер перестал принимать токен (сессия завершена с другого устройства, аккаунт удалён) — на экран входа
+  // The server rejected the session (signed out elsewhere, account deleted): back to the login screen.
   useEffect(() => {
     const expired = () => {
-      setToken(null);
+      setSession(false);
       clearUsers();
       setMe(null);
     };
     window.addEventListener(SESSION_EXPIRED, expired);
     return () => window.removeEventListener(SESSION_EXPIRED, expired);
   }, []);
-  // Серверы, где пользователь участник, — после входа
   const [servers, setServers] = useState<Server[] | null>(null);
   const [serversError, setServersError] = useState<string | null>(null);
   const [serversTry, setServersTry] = useState(0);
@@ -114,15 +112,14 @@ function AppScreens() {
     if (!meId) return;
     api<{ servers: Server[] }>('/api/servers')
       .then((r) => setServers(r.servers))
-      .catch((e) => setServersError(e?.message || 'Не удалось загрузить серверы'));
+      .catch((e) => setServersError(e?.message || t('Не удалось загрузить серверы')));
   }, [meId, serversTry]);
-  // Тема: по умолчанию — как в системе. Экран входа всегда в теме системы, с живым фоном и стеклом.
   const sysTheme = useSystemTheme();
   const [themePref, setThemePref] = useState<ThemePref>(() => {
     const v = lsGet(LS_THEME);
     return v === 'light' || v === 'dark' ? v : 'system';
   });
-  // пока проверяется сохранённая сессия — уже тема пользователя, иначе при перезагрузке мигала тема системы
+  // While the session is being checked, use the user's theme already, otherwise the system theme flashes on reload.
   const theme: Theme = (me || checking) && themePref !== 'system' ? themePref : sysTheme;
 
   useEffect(() => {
@@ -131,7 +128,7 @@ function AppScreens() {
     d.theme = theme;
   }, [theme]);
 
-  // Экран входа: стекло и живой фон включены всегда (после входа их ставит useAppState по настройкам)
+  // The login screen always has glass and the live backdrop; after login useAppState applies the user's settings.
   useEffect(() => {
     if (me || checking) return;
     const d = document.documentElement.dataset;
@@ -145,13 +142,13 @@ function AppScreens() {
     lsSet(LS_THEME, t === 'system' ? null : t);
   }, []);
 
-  const login = (token: string, user: Me) => {
-    setToken(token);
+  const login = (user: Me) => {
+    setSession(true);
     setMe(user);
   };
   const logout = () => {
     void api('/api/auth/logout', { method: 'POST' }).catch(() => undefined);
-    setToken(null);
+    setSession(false);
     clearUsers();
     setMe(null);
   };
@@ -176,9 +173,9 @@ function AppScreens() {
     return (
       <>
         <div className="empty-state" style={{ position: 'fixed', inset: 0, justifyContent: 'center' }}>
-          <b>Вы пока не состоите ни в одном сервере</b>
+          <b>{t('Вы пока не состоите ни в одном сервере')}</b>
           <button className="btn btn-secondary" onClick={logout} style={{ marginTop: 12 }}>
-            Выйти
+            {t('Выйти')}
           </button>
         </div>
       </>

@@ -7,8 +7,8 @@ import { Avatar } from '../../shared/ui/Avatar';
 import { MENTION_EVENT } from '../chat/mentions';
 import { getPeerVolume, setPeerVolume, subscribePeerVolume } from '../voice/peerVolume';
 import { DisplayName } from './Nick';
+import { t } from '../../shared/i18n';
 
-/* ---------- Открыть меню можно откуда угодно: openUserMenu(имя, x, y) ---------- */
 type Open = { name: string; x: number; y: number; mentionOnly?: boolean; inChat?: boolean } | null;
 let state: Open = null;
 const subs = new Set<() => void>();
@@ -16,21 +16,17 @@ const set = (v: Open) => {
   state = v;
   subs.forEach((f) => f());
 };
-/** mentionOnly — короткое меню (только «Упомянуть»): кнопка «…» в полном профиле. */
 export function openUserMenu(name: string, x: number, y: number, mentionOnly?: boolean, inChat?: boolean) {
   set({ name, x, y, mentionOnly, inChat: inChat ?? mentionOnly });
 }
-/** Обработчик ПКМ для элемента с пользователем. */
 export const userMenuProps = (name: string) => ({
   onContextMenu: (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    // «Упомянуть» — только если меню открыли в чате (есть куда вставить упоминание)
     openUserMenu(name, e.clientX, e.clientY, false, !!(e.currentTarget as Element).closest('.chat'));
   },
 });
 
-/** Меню пользователя по ПКМ: громкость, упомянуть, написать. Ставится один раз в корне приложения. */
 export function UserMenuHost({ app }: { app: AppState }) {
   const open = useSyncExternalStore(
     (f) => (subs.add(f), () => void subs.delete(f)),
@@ -94,7 +90,7 @@ function UserMenu({
       <div className="msg-menu-backdrop" onClick={onClose} onContextMenu={(e) => (e.preventDefault(), onClose())} />
       <div ref={ref} className="msg-menu user-menu" role="menu" style={{ left: pos.left, top: pos.top, transformOrigin: pos.origin }}>
         {mentionOnly ? (
-          item('at', 'Упомянуть', () => window.dispatchEvent(new CustomEvent(MENTION_EVENT, { detail: name })))
+          item('at', t('Упомянуть'), () => window.dispatchEvent(new CustomEvent(MENTION_EVENT, { detail: name })))
         ) : (
         <>
         <div className="um-head">
@@ -110,7 +106,7 @@ function UserMenu({
           <label className="um-volume">
             <span className="um-vol-top">
               <Icon name="headphones" size={16} />
-              <span>Громкость</span>
+              <span>{t('Громкость')}</span>
               <b>{Math.round(vol * 100)}%</b>
             </span>
             <input
@@ -124,9 +120,9 @@ function UserMenu({
             />
           </label>
         )}
-        {!self && inChat && item('at', 'Упомянуть', () => window.dispatchEvent(new CustomEvent(MENTION_EVENT, { detail: name })))}
-        {!self && item('chats', 'Написать сообщение', () => app.notify('Личные сообщения скоро будут'))}
-        {self && item('copy', 'Копировать юзернейм', () => void navigator.clipboard?.writeText(handleOf(name)))}
+        {!self && inChat && item('at', t('Упомянуть'), () => window.dispatchEvent(new CustomEvent(MENTION_EVENT, { detail: name })))}
+        {!self && item('chats', t('Написать сообщение'), () => app.notify(t('Личные сообщения скоро будут')))}
+        {self && item('copy', t('Копировать юзернейм'), () => void navigator.clipboard?.writeText(handleOf(name)))}
         </>
         )}
       </div>

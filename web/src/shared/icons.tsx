@@ -1,13 +1,14 @@
 import { useId } from 'react';
+import { t } from './i18n';
 
-// Иконки экспортированы из Figma (страница Components → Icons), цвет заменён на currentColor.
+// Icons exported from Figma (Components > Icons) with the color replaced by currentColor.
 const S = 'stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"';
 const F = 'fill="currentColor"';
 
 export const ICONS: Record<string, string> = {
+  'speaker-off': `<path d="M4 9.5H7L11.5 5.5V18.5L7 14.5H4Z" ${S}/><path d="M15.5 9.5L20.5 14.5M20.5 9.5L15.5 14.5" ${S}/>`,
   check: `<path d="M5 12.5L10 17.5L19 7" ${S}/>`,
   'check-double': `<path d="M2.5 12.5L7 17L15.5 7.5" ${S}/><path d="M11.5 16L12.5 17L21 7.5" ${S}/>`,
-  // Ответ с толстым «хвостом» — для счётчика ответов в шапке сообщения
   'reply-fill': `<path d="M10 9V5.5L3 12L10 18.5V14.9C15 14.9 18.5 16.5 21 20C20 15 17 10 10 9Z" ${F}/>`,
   oreol: `<g clip-path="url(#oreol-c)"><path d="M5.18 9.43C5.42 10.1 5.8 10.71 6.29 11.22C3.96 13.12 2.74 15.36 3.32 17.09L3.41 17.32L1.27 18.28C.08 15.61 1.76 12.12 5.18 9.43ZM21.17 6.85C21.81 7.31 22.32 7.88 22.66 8.56L22.73 8.72L20.59 9.68L20.47 9.45C20.41 9.34 20.34 9.24 20.27 9.14C20.75 8.49 21.07 7.7 21.17 6.85Z" fill="currentColor"/><mask id="oreol-m0" style="mask-type:alpha" maskUnits="userSpaceOnUse" x="-3" y="-3" width="30" height="22"><path d="M27 11.7H19.61C19.06 13.49 16.74 15.6 13.57 17.02C9.38 18.88 5.28 18.82 4.42 16.88C3.78 15.45 5.06 13.42 7.43 11.7H-3V-3H27V11.7Z" fill="#000"/></mask><g mask="url(#oreol-m0)"><mask id="oreol-m1" style="mask-type:alpha" maskUnits="userSpaceOnUse" x="-3" y="-3" width="30" height="30"><path d="M27 27H15.9V16.8C15.9 14.58 14.71 12.63 12.93 11.57C14.01 10.67 14.7 9.31 14.7 7.8C14.7 5.09 12.51 2.9 9.8 2.9C7.09 2.9 4.9 5.09 4.9 7.8C4.9 9.31 5.59 10.67 6.67 11.57C4.89 12.63 3.7 14.58 3.7 16.8V27H-3V-3H27V27Z" fill="#000"/></mask><g mask="url(#oreol-m1)"><circle cx="16.4" cy="6.3" r="2.1" ${S}/><path d="M20.6 23V15.9C20.6 13.5 18.3 11.5 16.4 11.5C13.8 11.5 12 13.1 11.4 15.1" ${S}/></g><circle cx="9.8" cy="7.8" r="2.2" ${S}/><path d="M5.6 23V16.8C5.6 14.48 7.48 12.6 9.8 12.6C12.12 12.6 14 14.48 14 16.8V23" ${S}/></g><path d="M22.73 8.72C24.32 12.28 20.8 17.3 14.87 19.94C8.94 22.58 2.85 21.84 1.27 18.28L3.41 17.32C4.53 19.82 9.27 20.13 14.01 18.02C18.76 15.91 21.7 12.17 20.59 9.68L22.73 8.72Z" fill="currentColor"/></g><defs><clipPath id="oreol-c"><rect width="24" height="24" fill="#fff"/></clipPath></defs>`,
   chats: `<path d="M3.5 5H12.5C13.03 5 13.54 5.21 13.91 5.59C14.29 5.96 14.5 6.47 14.5 7V11.5C14.5 12.03 14.29 12.54 13.91 12.91C13.54 13.29 13.03 13.5 12.5 13.5H8L5 16V13.5H3.5C2.97 13.5 2.46 13.29 2.09 12.91C1.71 12.54 1.5 12.03 1.5 11.5V7C1.5 6.47 1.71 5.96 2.09 5.59C2.46 5.21 2.97 5 3.5 5Z" ${S}/><path d="M17.5 8.5H20C20.53 8.5 21.04 8.71 21.41 9.09C21.79 9.46 22 9.97 22 10.5V15C22 15.53 21.79 16.04 21.41 16.41C21.04 16.79 20.53 17 20 17H19V19.5L16 17H12C11.47 17 10.96 16.79 10.59 16.41C10.21 16.04 10 15.53 10 15V14.5" ${S}/>`,
@@ -32,6 +33,7 @@ export const ICONS: Record<string, string> = {
   video: `<path d="M5.20001 6H12.7C14.357 6 15.7 7.343 15.7 9V15C15.7 16.657 14.357 18 12.7 18H5.20001C3.54301 18 2.20001 16.657 2.20001 15V9C2.20001 7.343 3.54301 6 5.20001 6Z" fill="currentColor"/><path d="M17 10.2L20.3 7.9C20.95 7.45 21.8 7.9 21.8 8.7V15.3C21.8 16.1 20.95 16.55 20.3 16.1L17 13.8V10.2Z" fill="currentColor"/>`,
   'video-off': `<path d="M14.009 17.6956C13.6131 17.8882 13.1703 18.0002 12.7004 18.0003H5.20044C3.54353 18.0003 2.20059 16.6571 2.20044 15.0003V9.00027C2.20044 8.14313 2.56066 7.37116 3.13696 6.82449L14.009 17.6956ZM20.3 7.89969C20.95 7.44993 21.8 7.90056 21.8 8.70047V15.3001C21.8 16.1 20.95 16.5499 20.3 16.0999L17.0002 13.8001V10.2005L20.3 7.89969ZM12.7004 6.00027C14.3572 6.00054 15.7004 7.34344 15.7004 9.00027V14.013L7.68774 6.00027H12.7004Z" fill="currentColor"/><rect x="3.03638" y="2.76361" width="25.4558" height="1.8" rx="0.9" transform="rotate(45 3.03638 2.76361)" fill="currentColor"/>`,
   'camera-flip': `<path d="M4 8.5C4 7.67 4.67 7 5.5 7H7.6L9 5H15L16.4 7H18.5C19.33 7 20 7.67 20 8.5V17.5C20 18.33 19.33 19 18.5 19H5.5C4.67 19 4 18.33 4 17.5V8.5Z" ${S}/><path d="M14.6 11.2A3 3 0 0 0 9.2 11.6" ${S}/><path d="M9.4 14.8A3 3 0 0 0 14.8 14.4" ${S}/><path d="M14.9 9.6V11.4H13.1" ${S}/><path d="M9.1 16.4V14.6H10.9" ${S}/>`,
+  file: `<path d="M13.5 3H7C5.9 3 5 3.9 5 5V19C5 20.1 5.9 21 7 21H17C18.1 21 19 20.1 19 19V8.5L13.5 3Z" ${S}/><path d="M13.5 3V8.5H19" ${S}/>`,
   download: `<path d="M12 4V15" ${S}/><path d="M7.5 10.5L12 15L16.5 10.5" ${S}/><path d="M5 19.5H19" ${S}/>`,
   expand: `<path d="M14 4H20V10" ${S}/><path d="M20 4L13.5 10.5" ${S}/><path d="M10 20H4V14" ${S}/><path d="M4 20L10.5 13.5" ${S}/>`,
   play: `<path d="M8 5.2V18.8L19 12L8 5.2Z" ${F} stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>`,
@@ -39,12 +41,13 @@ export const ICONS: Record<string, string> = {
   'screen-share': `<path d="M18.9998 3.70001C20.5461 3.70001 21.7995 4.95351 21.7996 6.49982V14.4998C21.7996 16.0462 20.5462 17.2996 18.9998 17.2996H4.99976C3.45345 17.2995 2.19995 16.0461 2.19995 14.4998V6.49982C2.20006 4.95357 3.45351 3.70012 4.99976 3.70001H18.9998ZM12.5652 7.43439C12.2722 7.14162 11.809 7.1233 11.4949 7.3797L11.4343 7.43439L8.93433 9.93439C8.62197 10.2467 8.62211 10.7528 8.93433 11.0652C9.24675 11.3777 9.75277 11.3777 10.0652 11.0652L11.2 9.93048V12.9998C11.2 13.4416 11.558 13.7995 11.9998 13.7996C12.4416 13.7996 12.7996 13.4416 12.7996 12.9998V9.93048L13.9343 11.0652C14.2467 11.3777 14.7528 11.3777 15.0652 11.0652C15.3776 10.7528 15.3776 10.2468 15.0652 9.93439L12.5652 7.43439Z" fill="currentColor"/><path d="M8 20H16M12 16.5V20" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>`,
   'screen-share-stop': `<path d="M19 3.7C20.55 3.7 21.8 4.95 21.8 6.5V14.5C21.8 16.05 20.55 17.3 19 17.3H5C3.45 17.3 2.2 16.05 2.2 14.5V6.5C2.2 4.95 3.45 3.7 5 3.7H19ZM15.04 7.46C14.69 7.11 14.12 7.11 13.76 7.46L12 9.23L10.24 7.46C9.89 7.11 9.32 7.11 8.96 7.46C8.61 7.82 8.61 8.39 8.96 8.74L10.73 10.5L8.96 12.26C8.61 12.62 8.61 13.19 8.96 13.54C9.32 13.89 9.89 13.89 10.24 13.54L12 11.77L13.76 13.54C14.12 13.89 14.69 13.89 15.04 13.54C15.39 13.19 15.39 12.62 15.04 12.26L13.27 10.5L15.04 8.74C15.39 8.39 15.39 7.82 15.04 7.46Z" ${F}/><path d="M8 20H16M12 16.5V20" ${S}/>`,
   smartphone: `<path d="M14.3997 3C15.946 3 17.2003 4.2535 17.2004 5.7998V18.2002C17.2003 19.7465 15.946 21 14.3997 21H9.59985C8.05361 20.9999 6.80015 19.7464 6.80005 18.2002V5.7998C6.80015 4.25356 8.05361 3.00011 9.59985 3H14.3997ZM10.8997 17.5996C10.5133 17.5998 10.2005 17.9134 10.2004 18.2998C10.2004 18.6863 10.5132 18.9998 10.8997 19H13.0999C13.4865 19 13.8 18.6864 13.8 18.2998C13.7999 17.9133 13.4864 17.5996 13.0999 17.5996H10.8997Z" fill="currentColor"/>`,
+  'bell-off': `<path d="M8.6 5.9C9.6 5.3 10.8 5 12 5C13.59 5 15.12 5.63 16.24 6.76C17.37 7.88 18 9.41 18 11V14" ${S}/><path d="M6.2 9.2C6.07 9.79 6 10.39 6 11V16L4.5 18H17" ${S}/><path d="M10 20.5C10 21.6 10.9 22.5 12 22.5C13.1 22.5 14 21.6 14 20.5" ${S}/><path d="M3.5 3.5L20.5 20.5" ${S}/>`,
+  link: `<path d="M10 14C10.9 14.9 12.1 15.4 13.4 15.4C14.7 15.4 15.9 14.9 16.8 14L19.6 11.2C21.5 9.3 21.5 6.3 19.6 4.4C17.7 2.5 14.7 2.5 12.8 4.4L11.4 5.8" ${S}/><path d="M14 10C13.1 9.1 11.9 8.6 10.6 8.6C9.3 8.6 8.1 9.1 7.2 10L4.4 12.8C2.5 14.7 2.5 17.7 4.4 19.6C6.3 21.5 9.3 21.5 11.2 19.6L12.6 18.2" ${S}/>`,
   bell: `<path d="M6 16V11C6 9.41 6.63 7.88 7.76 6.76C8.88 5.63 10.41 5 12 5C13.59 5 15.12 5.63 16.24 6.76C17.37 7.88 18 9.41 18 11V16L19.5 18H4.5L6 16Z" ${S}/><path d="M10 20.5C10 21.03 10.21 21.54 10.59 21.91C10.96 22.29 11.47 22.5 12 22.5C12.53 22.5 13.04 22.29 13.41 21.91C13.79 21.54 14 21.03 14 20.5" ${S}/>`,
   reply: `<path d="M10 6L4 12L10 18" ${S}/><path d="M4 12H14C15.59 12 17.12 12.63 18.24 13.76C19.37 14.88 20 16.41 20 18V19" ${S}/>`,
   close: `<path d="M6 6L18 18M18 6L6 18" ${S}/>`,
   at: `<circle cx="12" cy="12" r="3.5" ${S}/><path d="M15.5 12V13.5C15.5 14.16 15.76 14.8 16.23 15.27C16.7 15.74 17.34 16 18 16C18.66 16 19.3 15.74 19.77 15.27C20.24 14.8 20.5 14.16 20.5 13.5V12C20.49 10.09 19.85 8.24 18.66 6.75C17.48 5.25 15.82 4.2 13.96 3.76C12.11 3.32 10.16 3.51 8.43 4.31C6.69 5.12 5.28 6.48 4.42 8.18C3.56 9.88 3.29 11.83 3.67 13.7C4.04 15.57 5.03 17.26 6.49 18.5C7.94 19.73 9.77 20.45 11.67 20.52C13.58 20.59 15.46 20.02 17 18.9" ${S}/>`,
   pin: `<path d="M9 4H15L14 9L17 12V14H7V12L10 9L9 4Z" ${S}/><path d="M12 14V20" ${S}/>`,
-  // Залитый пин, перечёркнутый линией; под линией — прорезь (маска), чтобы она читалась на заливке
   'pin-off': `<mask id="pin-off-cut" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff"/><path class="strike" pathLength="1" d="M4 4L20 20" stroke="#000" stroke-width="4.4" stroke-linecap="round"/></mask><g mask="url(#pin-off-cut)"><path d="M9 4H15L14 9L17 12V14H7V12L10 9L9 4Z" ${F} ${S}/><path d="M12 14V20" ${S}/></g><path class="strike" pathLength="1" d="M4 4L20 20" ${S}/>`,
   'pin-fill': `<path d="M9 4H15L14 9L17 12V14H7V12L10 9L9 4Z" ${F} ${S}/><path d="M12 14V20" ${S}/>`,
   logout: `<path d="M14 4H18C18.53 4 19.04 4.21 19.41 4.59C19.79 4.96 20 5.47 20 6V18C20 18.53 19.79 19.04 19.41 19.41C19.04 19.79 18.53 20 18 20H14" ${S}/><path d="M10 8L6 12L10 16" ${S}/><path d="M6 12H16" ${S}/>`,
@@ -53,9 +56,7 @@ export const ICONS: Record<string, string> = {
   block: `<circle cx="12" cy="12" r="8.5" ${S}/><path d="M6 6L18 18" ${S}/>`,
   copy: `<rect x="8" y="8" width="12" height="12" rx="2" ${S}/><path d="M16 8V6C16 5.47 15.79 4.96 15.41 4.59C15.04 4.21 14.53 4 14 4H6C5.47 4 4.96 4.21 4.59 4.59C4.21 4.96 4 5.47 4 6V14C4 14.53 4.21 15.04 4.59 15.41C4.96 15.79 5.47 16 6 16H8" ${S}/>`,
   pencil: `<path d="M4 20H8L19 9C19.53 8.47 19.83 7.75 19.83 7C19.83 6.25 19.53 5.53 19 5C18.47 4.47 17.75 4.17 17 4.17C16.25 4.17 15.53 4.47 15 5L4 16V20Z" ${S}/><path d="M13.5 6.5L17.5 10.5" ${S}/>`,
-  // Один человек (учётная запись) — голова и плечи по центру рамки
   user: `<circle cx="12" cy="8" r="3.8" ${S}/><path d="M4.5 20.5C4.5 18.51 5.29 16.6 6.7 15.2C8.1 13.79 10.01 13 12 13C13.99 13 15.9 13.79 17.3 15.2C18.71 16.6 19.5 18.51 19.5 20.5" ${S}/>`,
-  // Показать / скрыть пароль
   eye: `<path d="M2.5 12C4.5 7.5 8 5.5 12 5.5C16 5.5 19.5 7.5 21.5 12C19.5 16.5 16 18.5 12 18.5C8 18.5 4.5 16.5 2.5 12Z" ${S}/><circle cx="12" cy="12" r="3" ${S}/>`,
   'eye-off': `<path d="M9.9 5.8C10.58 5.6 11.28 5.5 12 5.5C16 5.5 19.5 7.5 21.5 12C20.95 13.24 20.25 14.3 19.43 15.17M14.1 14.2C13.56 14.7 12.82 15 12 15C10.34 15 9 13.66 9 12C9 11.18 9.3 10.44 9.8 9.9M6.6 7.1C4.9 8.2 3.5 9.85 2.5 12C4.5 16.5 8 18.5 12 18.5C13.86 18.5 15.6 18.07 17.12 17.18M3.5 3.5L20.5 20.5" ${S}/>`,
   'user-minus': `<circle cx="9" cy="8.5" r="3.5" ${S}/><path d="M2.5 20C2.5 18.28 3.18 16.62 4.4 15.4C5.62 14.18 7.28 13.5 9 13.5C10.72 13.5 12.38 14.18 13.6 15.4C14.82 16.62 15.5 18.28 15.5 20" ${S}/><path d="M16 11H22" ${S}/>`,
@@ -68,7 +69,7 @@ export const ICONS: Record<string, string> = {
 export type IconName = keyof typeof ICONS;
 
 export function Icon({ name, size = 20, className }: { name: IconName; size?: number; className?: string }) {
-  // id масок внутри иконки — свои у каждого экземпляра, иначе все копии берут маску первой
+  // Mask ids are unique per instance, otherwise every copy uses the first one's mask.
   const uid = useId().replace(/:/g, '');
   const html = ICONS[name].includes('id="pin-off-cut"') ? ICONS[name].replace(/pin-off-cut/g, `pin-off-cut-${uid}`) : ICONS[name];
   return (
@@ -84,8 +85,6 @@ export function Icon({ name, size = 20, className }: { name: IconName; size?: nu
   );
 }
 
-/** Микрофон/наушники с анимированным перечёркиванием, как у открепления пина:
- *  при выключении линия прорисовывается по диагонали, под ней прорезь в иконке; при включении — стирается обратно. */
 export function StrikeIcon({ name, off, size = 20, className }: { name: 'mic' | 'headphones' | 'eye'; off: boolean; size?: number; className?: string }) {
   const cut = 'strike-cut-' + useId().replace(/:/g, '');
   const html =
@@ -109,12 +108,10 @@ export function StrikeIcon({ name, off, size = 20, className }: { name: 'mic' | 
 const GRAD = (id: string) =>
   `<linearGradient id="${id}" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#00E5FF"/><stop offset="0.5" stop-color="#2F7BFF"/><stop offset="1" stop-color="#7A5CFF"/></linearGradient>`;
 
-/** Логотип «Ореол · люди» (Logo/Oreol people): форма из logo.svg, цвет — currentColor, без градиента. */
 export function LogoPeople({ size = 28 }: { size?: number }) {
-  return <span className="logo-people" role="img" aria-label="Ореол" style={{ width: size, height: size }} />;
+  return <span className="logo-people" role="img" aria-label={t('Ореол')} style={{ width: size, height: size }} />;
 }
 
-/** Кольцо-знак Ореола (используется на экране входа). */
 export function HaloMark({ size = 104 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 104 104" fill="none" aria-hidden="true">
@@ -136,7 +133,6 @@ export function HaloMark({ size = 104 }: { size?: number }) {
   );
 }
 
-/** Вордмарк OREOL (Unbounded ExtraBold с наклонённой «О»), сплошной циан. */
 export function Wordmark({ height = 36 }: { height?: number }) {
   return (
     <svg height={height} viewBox="0 0 286 53" fill="none" aria-label="OREOL">
@@ -151,8 +147,10 @@ export function Wordmark({ height = 36 }: { height?: number }) {
   );
 }
 
-/** «Ползунки» для анимации в меню настроек: линии целые, а прорезь под каждый кружок — маска, которая едет вместе с ним.
- *  В обычной иконке линии разрезаны вокруг кружков, и при сдвиге кружка под ним оставались пустые места. */
+/**
+ * "Sliders" for the settings menu animation: lines are whole and the cut under each knob is a mask that moves with it.
+ * In the regular icon the lines are cut around the knobs, leaving gaps when a knob moves.
+ */
 export function SlidersIcon({ size = 20 }: { size?: number }) {
   const id = 'sl-cut-' + useId().replace(/:/g, '');
   const html =
@@ -163,9 +161,10 @@ export function SlidersIcon({ size = 20 }: { size?: number }) {
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true" dangerouslySetInnerHTML={{ __html: html }} />;
 }
 
-/** «Чаты» для анимации в меню настроек: правый пузырь целый, а вырез под левым — маска той же формы,
- *  которая двигается вместе с левым пузырём. В обычной иконке угол правого пузыря просто не нарисован —
- *  и когда левый подпрыгивал, на его месте открывалась пустота. */
+/**
+ * "Chats" for the settings menu animation: the right bubble is whole and the cut under the left one is a mask that
+ * moves with the left bubble. In the regular icon that corner is simply missing and showed a gap when the left one bounced.
+ */
 export function ChatsIcon({ size = 20 }: { size?: number }) {
   const id = 'ch-cut-' + useId().replace(/:/g, '');
   const left = ICONS.chats.match(/<path d="([^"]+)"/)![1];
@@ -174,7 +173,7 @@ export function ChatsIcon({ size = 20 }: { size?: number }) {
     `<mask id="${id}" maskUnits="userSpaceOnUse" x="-4" y="-4" width="32" height="32"><rect x="-4" y="-4" width="32" height="32" fill="#fff"/>` +
     `<path class="b1" d="${left}" fill="#000" stroke="#000" stroke-width="4.4" stroke-linejoin="round"/></mask>` +
     `<path class="b1" d="${left}" ${S}/>` +
-    // вырез держит группа: путь внутри неё двигается сам по себе, а маска остаётся на месте левого пузыря
+    // The group holds the cut-out: the path inside moves on its own while the mask stays where the left bubble is.
     `<g mask="url(#${id})"><path class="b2" d="${right}" ${S}/></g>`;
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true" dangerouslySetInnerHTML={{ __html: html }} />;
 }

@@ -1,24 +1,25 @@
 import { useEffect, useRef, type RefObject } from 'react';
 
-/** Жесты телефона на сцене:
- *  — свайп вправо по верхнему экрану (чат, войс, участники, настройки) — экран едет за пальцем и закрывается, как «Назад»;
- *  — горизонтальный свайп по основному экрану (не по таб-панели) — соседняя вкладка.
- *  Вертикальная прокрутка не мешает: жест начинается, только когда палец ушёл вбок заметно сильнее, чем вверх-вниз. */
+/**
+ * Phone gestures on the stage:
+ * - swipe right on an upper screen (chat, voice, members, settings): the screen follows the finger and closes like Back;
+ * - horizontal swipe on the main screen (not on the tab bar): neighbouring tab.
+ * Vertical scrolling is unaffected: a gesture starts only when the finger moves sideways clearly more than vertically.
+ */
 interface Opts {
-  /** Нижний экран нужен во время свайпа назад (обычно он скрыт под верхним). */
   onPeek: (on: boolean) => void;
-  /** -1 — вкладка слева, 1 — справа. false — туда некуда. */
   canTab: (dir: -1 | 1) => boolean;
   onTab: (dir: -1 | 1) => void;
 }
 
 const START = 10;
-/** Что проявляется под верхним экраном при свайпе назад. Прозрачность ставим прямо этим элементам:
- *  CSS-переменная на сцене (как было) на каждом движении пальца заставляла Safari пересчитывать стили всего приложения. */
+/**
+ * What appears under the upper screen during a back swipe. Opacity is set on these elements directly: a CSS variable
+ * on the stage made Safari restyle the whole app on every finger move.
+ */
 const UNDER =
   ':scope > .m-under.dim, :scope > .m-under.dim:not(.tabbar) > :not(.m-servers-row), :scope > .m-under.dim .m-servers-row > :not(.srv-stack), :scope > .m-under.dim .m-servers-row > .srv-stack > .sidebar, ' +
   ':scope > .m-settings:has(~ .m-settings.m-slide:not(.out)) > :not(.m-head)';
-/** Панели экрана вкладки, которые чуть гаснут при свайпе по вкладкам. */
 const PANELS = ':scope > :not(.m-servers-row), :scope > .m-servers-row > :not(.srv-stack), :scope > .m-servers-row > .srv-stack > .sidebar';
 const fade = (list: Iterable<HTMLElement>, v: number | null) => {
   for (const n of list) {
@@ -26,7 +27,6 @@ const fade = (list: Iterable<HTMLElement>, v: number | null) => {
     else n.style.setProperty('opacity', String(v), 'important');
   }
 };
-/** Нижние экраны целиком (для сдвига вслед за пальцем). */
 const UNDER_BOX = ':scope > .m-under.dim:not(.tabbar)';
 const shift = (list: Iterable<HTMLElement>, v: string | null, tr = 'none') => {
   for (const n of list) {
@@ -46,21 +46,24 @@ export function useStageSwipes(stage: RefObject<HTMLElement>, opts: Opts) {
     let s: S | null = null;
     let swallowClick = false;
 
-    /** Что проявляется под уезжающим экраном. Экраны друг над другом (Настройки → Заблокированные): только предыдущий
-     *  экран — вкладку под ними не показываем (она просвечивала сквозь стекло настроек сдвинутой «кашей»). */
+    /**
+     * What appears under the leaving screen. With stacked screens (Settings > Blocked) only the previous screen shows;
+     * the tab below is hidden (it showed through the settings glass as a shifted mess).
+     */
     const underEls = (): HTMLElement[] => {
-      // верхний — не обязательно последний в разметке (войс поверх экранов стоит раньше них), поэтому берём «все, кроме верхнего»
+      // The upper screen is not necessarily last in the markup (voice over other screens comes before them), so take "all but the upper one".
       const top = topSlide();
       const rest = [...el.querySelectorAll<HTMLElement>(':scope > .m-slide:not(.out)')].filter((n) => n !== top);
       if (rest.length) return [...rest[rest.length - 1].querySelectorAll<HTMLElement>(':scope > :not(.m-head)')];
       return [...el.querySelectorAll<HTMLElement>(UNDER)];
     };
-    /** Нижний экран, который подъезжает за пальцем, — только если под верхним экраном сразу экран вкладки.
-     *  Когда экраны открыты друг над другом (Настройки → Голос и звук), сдвигать вкладку под ними нельзя:
-     *  она просвечивала сквозь настройки съехавшей. */
+    /**
+     * The lower screen that follows the finger, only when the tab screen sits right under the upper screen. With stacked
+     * screens (Settings > Voice) the tab below must not move: it showed through the settings shifted.
+     */
     const boxesUnder = () =>
       el.querySelectorAll(':scope > .m-slide:not(.out)').length > 1 ? [] : [...el.querySelectorAll<HTMLElement>(UNDER_BOX)];
-    /** Снять всё, что жест держал руками (если он оборвался и ни отпускание, ни отмена так и не пришли). */
+    /** Release everything the gesture held manually (if it broke off and neither up nor cancel ever came). */
     const resetAll = () => {
       for (const n of el.querySelectorAll<HTMLElement>(':scope > .m-slide, :scope > .m-slide > .m-head, :scope > .m-under')) {
         n.style.removeProperty('transform');
@@ -74,7 +77,7 @@ export function useStageSwipes(stage: RefObject<HTMLElement>, opts: Opts) {
       delete el.dataset.swiped;
     };
     const topSlide = () => {
-      // войс, открытый из виджета поверх других экранов, стоит в разметке раньше них, но он верхний
+      // Voice opened from the widget over other screens comes earlier in the markup but is on top.
       const over = el.querySelector<HTMLElement>(':scope > .m-slide.m-over:not(.out)');
       if (over) return over;
       const list = el.querySelectorAll<HTMLElement>(':scope > .m-slide:not(.out)');
@@ -84,8 +87,8 @@ export function useStageSwipes(stage: RefObject<HTMLElement>, opts: Opts) {
     const down = (e: PointerEvent) => {
       if (e.button !== 0) return;
       if (s) {
-        // прошлый жест так и не закончился (iOS иногда не присылает ни pointerup, ни pointercancel) —
-        // раньше из‑за этого свайпы переставали работать совсем, а экраны оставались сдвинутыми
+        // The previous gesture never finished (iOS sometimes sends neither pointerup nor pointercancel);
+        // this used to stop swipes from working entirely and left screens shifted.
         if (s.id === e.pointerId) return;
         const was = s;
         s = null;
@@ -112,19 +115,18 @@ export function useStageSwipes(stage: RefObject<HTMLElement>, opts: Opts) {
       const dx = e.clientX - s.x;
       const dy = e.clientY - s.y;
       if (!s.active) {
-        // Палец ведёт дугой: свайп засчитываем, как только вбок ушло больше, чем вверх-вниз
-        // (раньше требовали в 1,5 раза больше — обычный свайп большим пальцем часто не проходил)
+        // The finger moves in an arc: count the swipe as soon as horizontal travel exceeds vertical.
         if (Math.abs(dy) > START && Math.abs(dy) > Math.abs(dx)) return void (s = null);
         if (Math.abs(dx) < START || Math.abs(dx) <= Math.abs(dy)) return;
         if (s.kind === 'back' && dx < 0) return void (s = null);
         s.active = true;
         window.getSelection()?.removeAllRanges();
-        // начало жеста отсчитываем отсюда — без рывка на первые пиксели
+        // Measure the gesture from here, so the first pixels do not jump.
         s.x = e.clientX - Math.sign(dx);
         try {
           el.setPointerCapture(e.pointerId);
         } catch {
-          /* указатель уже отпущен */
+          /* ignore */
         }
         if (s.kind === 'back') {
           o.current.onPeek(true);
@@ -140,19 +142,16 @@ export function useStageSwipes(stage: RefObject<HTMLElement>, opts: Opts) {
       if (s.kind === 'back') {
         x = Math.max(0, x);
         s.node.style.transform = `translateX(${x}px)`;
-        // шапка не едет с экраном — стоит на месте, как при обычном «Назад»
         const head = s.node.querySelector<HTMLElement>(':scope > .m-head');
         if (head) head.style.transform = `translateX(${-x}px)`;
         const p = Math.min(1, x / w);
         fade(underEls(), p);
-        // нижний экран подъезжает вслед за пальцем (как в iOS), а не стоит сдвинутым
+        // The lower screen follows the finger (as in iOS) instead of sitting shifted.
         shift(boxesUnder(), `translateX(${(-22 * (1 - p)).toFixed(2)}%)`);
       } else {
-        // к краю (вкладки дальше нет) — тянется с сопротивлением
-        // экран не «летает» — лишь чуть поддаётся пальцу и гаснет, к краю (вкладки дальше нет) ещё слабее
         const k = o.current.canTab(x < 0 ? 1 : -1) ? 0.12 : 0.05;
         s.node.style.transform = `translateX(${x * k}px)`;
-        // гаснут сами панели: opacity на экране целиком отрезала бы стеклу фон
+        // Fade the panels themselves: opacity on the whole screen would cut the glass off from its backdrop.
         fade(s.node.querySelectorAll<HTMLElement>(PANELS), 1 - Math.min(0.35, (Math.abs(x) / w) * 0.5));
       }
       s.dx = x;
@@ -176,12 +175,12 @@ export function useStageSwipes(stage: RefObject<HTMLElement>, opts: Opts) {
         delete n.dataset.swiping;
         const go = !cancelled && (cur.dx > w * 0.35 || (v > 0.45 && cur.dx > 40));
         if (go) {
-          // уезжает дальше с того места, где его отпустили (см. @keyframes m-slide-out)
+          // Slides further from where it was released (see @keyframes m-slide-out).
           n.style.setProperty('--swipe-x', `${cur.dx}px`);
           n.style.transform = '';
           if (head) head.style.transform = '';
-          // Нижний экран уже почти проявлен: доводим его до конца плавно и без своей анимации «возврата» —
-          // раньше прозрачность сбрасывалась, и всё под экраном мигало (сначала гасло, потом проявлялось заново)
+          // The lower screen is almost visible: finish smoothly without its own "return" animation;
+          // resetting opacity used to make everything under the screen flash.
           const under = underEls();
           const boxes = boxesUnder();
           el.dataset.swiped = '';
@@ -192,7 +191,6 @@ export function useStageSwipes(stage: RefObject<HTMLElement>, opts: Opts) {
           swallow();
           window.setTimeout(() => {
             o.current.onPeek(false);
-            // экран, уехавший вправо, уже убран — снимаем всё, что держали руками
             window.setTimeout(() => {
               fade(under, null);
               for (const u of under) u.style.removeProperty('transition');
@@ -230,7 +228,6 @@ export function useStageSwipes(stage: RefObject<HTMLElement>, opts: Opts) {
       const dir: -1 | 1 = cur.dx < 0 ? 1 : -1;
       const go = !cancelled && o.current.canTab(dir) && (Math.abs(cur.dx) > w * 0.25 || (Math.abs(v) > 0.45 && Math.abs(cur.dx) > 40));
       if (go) {
-        // новая вкладка сама проявляется из размытия (см. Mobile: pickTab)
         n.style.transition = n.style.transform = '';
         fade(n.querySelectorAll<HTMLElement>(PANELS), null);
         o.current.onTab(dir);
@@ -244,21 +241,21 @@ export function useStageSwipes(stage: RefObject<HTMLElement>, opts: Opts) {
 
     const up = (e: PointerEvent) => finish(e, false);
     const cancel = (e: PointerEvent) => finish(e, true);
-    // после жеста отпускание пальца не должно нажимать то, что под ним (канал, сообщение)
+    // After a gesture, lifting the finger must not tap what is under it (channel, message).
     const click = (e: MouseEvent) => {
       if (!swallowClick) return;
       e.preventDefault();
       e.stopPropagation();
     };
 
-    // Safari решает «это прокрутка» по первым движениям пальца и тогда забирает жест себе (pointercancel) —
-    // пока палец идёт скорее вбок, чем вверх-вниз, или наш свайп уже идёт, прокрутку браузеру не отдаём
+    // Safari decides "this is a scroll" from the first finger moves and then takes the gesture (pointercancel);
+    // while the finger moves more sideways than vertically, or our swipe is running, scrolling is not handed to the browser.
     let t0: { x: number; y: number } | null = null;
     const tstart = (e: TouchEvent) => {
       const t = e.touches[0];
       t0 = e.touches.length === 1 && t ? { x: t.clientX, y: t.clientY } : null;
     };
-    // запасное завершение: палец отпущен, а pointerup/pointercancel не пришли — заканчиваем жест сами
+    // Fallback end: the finger is up but pointerup/pointercancel never came, so finish the gesture ourselves.
     const tend = (e: TouchEvent) => {
       if (e.touches.length) return;
       const cur = s;
@@ -275,7 +272,7 @@ export function useStageSwipes(stage: RefObject<HTMLElement>, opts: Opts) {
       const dx = t.clientX - t0.x;
       const dy = t.clientY - t0.y;
       if (s.kind === 'back' && dx < 0) return;
-      // только явно вбок: отменённое первое движение iOS запоминает на весь жест, и списки переставали листаться
+      // Only clearly sideways: iOS remembers a cancelled first move for the whole gesture and lists stopped scrolling.
       if (Math.abs(dx) > 6 && Math.abs(dx) > Math.abs(dy) * 1.3 && e.cancelable) e.preventDefault();
     };
     el.addEventListener('touchstart', tstart, { passive: true });

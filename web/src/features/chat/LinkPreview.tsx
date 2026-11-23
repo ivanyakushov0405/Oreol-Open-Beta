@@ -7,9 +7,11 @@ interface Preview {
   description: string;
   image: string | null;
   site: string;
+  gif?: boolean;
+  w?: number | null;
+  h?: number | null;
 }
 
-/** Ответы сервера по адресу: одна ссылка в ленте не запрашивается дважды. */
 const cache = new Map<string, Promise<Preview | null>>();
 function load(url: string) {
   let p = cache.get(url);
@@ -20,7 +22,6 @@ function load(url: string) {
   return p;
 }
 
-/** Карточка ссылки под текстом сообщения: сайт, заголовок, описание и картинка. */
 export function LinkPreview({ url }: { url: string }) {
   const [data, setData] = useState<Preview | null>(null);
   const [imgOk, setImgOk] = useState(true);
@@ -32,6 +33,23 @@ export function LinkPreview({ url }: { url: string }) {
     };
   }, [url]);
   if (!data) return null;
+  if (data.gif && data.image) {
+    if (!imgOk) return null;
+    return (
+      <a className="link-gif" href={url} target="_blank" rel="noopener noreferrer nofollow" onClick={(e) => e.stopPropagation()} draggable={false}>
+        <img
+          src={data.image}
+          alt={data.title}
+          width={data.w ?? undefined}
+          height={data.h ?? undefined}
+          decoding="async"
+          referrerPolicy="no-referrer"
+          draggable={false}
+          onError={() => setImgOk(false)}
+        />
+      </a>
+    );
+  }
   return (
     <a
       className="link-card"

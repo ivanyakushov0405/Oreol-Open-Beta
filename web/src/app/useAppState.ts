@@ -4,15 +4,14 @@ import { IS_MOBILE_DEVICE, savedVoice, useVoice, useVoiceRoster, type RosterEntr
 import { api, putUser, refreshUsers, type Me, type Member } from '../shared/api';
 import type { Server, ServerId, Status } from '../shared/model';
 import { useToast, type ToastKind } from '../shared/ui/Toast';
+import { t } from '../shared/i18n';
 
 export type Theme = 'dark' | 'light';
-/** Выбор в настройках: «Как в системе» (по умолчанию) или конкретная тема. */
 export type ThemePref = 'system' | Theme;
 
 const SYSTEM_LIGHT = '(prefers-color-scheme: light)';
 export const systemTheme = (): Theme => (window.matchMedia(SYSTEM_LIGHT).matches ? 'light' : 'dark');
 
-/** Тема системы; меняется вместе с ней. */
 export function useSystemTheme() {
   const [t, setT] = useState<Theme>(systemTheme);
   useEffect(() => {
@@ -24,12 +23,10 @@ export function useSystemTheme() {
   return t;
 }
 
-/** Старый «вход по имени» — ключ чистим, теперь вход по email и паролю. */
-/** Смена темы или прозрачности — плавно: на полсекунды включаем переходы фона, размытия и кромок у поверхностей
- *  (иначе размытый цвет панелей и меню прыгал разом, и казалось, что резко меняется тор за ними). */
+/** Theme or transparency change: enable surface transitions for half a second so blurred panels do not jump. */
 export function animateSurfaces() {
   const html = document.documentElement;
-  // тему меняет «разлив» (View Transition) — он сам анимирует смену; свои переходы поверх него давали второе мигание
+  // The View Transition reveal animates theme changes itself; extra transitions on top caused a second flash.
   if (html.dataset.vt) return;
   html.classList.add('glass-anim');
   window.clearTimeout(Number(html.dataset.glassAnimT));
@@ -45,7 +42,6 @@ const LS_PATTERN = 'oreol.chatPattern';
 const LS_LIVE_BG = 'oreol.liveBg';
 const LS_GLOWS = 'oreol.bgGlows';
 const LS_SERVER = 'oreol.server';
-/** Статус раньше хранился локально — теперь он на сервере, старый ключ чистим. */
 const LS_STATUS = 'oreol.status';
 
 export function lsGet(key: string) {
@@ -60,12 +56,12 @@ export function lsSet(key: string, value: string | null) {
     if (value === null) localStorage.removeItem(key);
     else localStorage.setItem(key, value);
   } catch {
-    /* хранилище недоступно */
+    /* ignore */
   }
 }
 
 export function useIsMobile() {
-  // Телефон, повёрнутый горизонтально, — тоже мобильная версия (по ширине он уже «компьютер», но высоты мало и экран сенсорный)
+  // A phone in landscape is still mobile: wide enough for desktop, but short and touch-only.
   const q = '(max-width: 768px), (pointer: coarse) and (max-height: 520px)';
   const [m, setM] = useState(() => window.matchMedia(q).matches);
   useEffect(() => {
@@ -77,7 +73,6 @@ export function useIsMobile() {
   return m;
 }
 
-/** Всё общее состояние приложения: имя, чаты, голос, настройки внешнего вида. */
 export function useAppState(
   me: Me,
   servers: Server[],
@@ -88,21 +83,16 @@ export function useAppState(
   setTheme: (t: ThemePref) => void,
 ) {
   const name = me.username;
-  // Справочник профилей (аватары, фоны, отображаемые имена) — при входе и раз в 30 с
   useEffect(() => {
     putUser(me);
     void refreshUsers();
     const id = window.setInterval(() => void refreshUsers(), 30000);
     return () => window.clearInterval(id);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  /** Сохранить свой обновлённый профиль (после правок в настройках). */
   const updateMe = (u: Me) => {
     setMe(u);
     putUser(u);
   };
-  // Внешний вид. «Прозрачность интерфейса» — главный переключатель: без неё панели непрозрачные,
-  // а прозрачный чат и прозрачный войс (её подпункты) выключаются вместе с ней.
-  // По умолчанию прозрачность выключена — включается в «Внешнем виде»
   const [glassUi, setGlassUiState] = useState(() => lsGet(LS_GLASS_UI) === '1');
   const setGlassUi = (v: boolean) => {
     setGlassUiState(v);
@@ -123,14 +113,11 @@ export function useAppState(
     setChatPatternState(v);
     lsSet(LS_PATTERN, v ? '1' : '0');
   };
-  // Живой фон (тор и свечения) — отдельно от прозрачности; без него — спокойный однотонный фон
-  // По умолчанию выключен — включается в «Внешнем виде»
   const [liveBg, setLiveBgState] = useState(() => lsGet(LS_LIVE_BG) === '1');
   const setLiveBg = (v: boolean) => {
     setLiveBgState(v);
     lsSet(LS_LIVE_BG, v ? '1' : '0');
   };
-  // Свечения по краям фона — подпункт живого фона, по умолчанию выключены
   const [bgGlowsPref, setBgGlowsState] = useState(() => lsGet(LS_GLOWS) === '1');
   const setBgGlows = (v: boolean) => {
     setBgGlowsState(v);
@@ -142,13 +129,12 @@ export function useAppState(
   useEffect(() => {
     const d = document.documentElement.dataset;
     const next = glassUi ? 'on' : 'off';
-    // смена режима — плавно: на полсекунды включаем переходы фона/размытия у стеклянных поверхностей
     if (d.glass && d.glass !== next) animateSurfaces();
     d.glass = next;
     d.pattern = chatPattern ? 'on' : 'off';
     const bg = liveBg ? 'on' : 'off';
-    // Фон включают/выключают — на это время свечения не перетекают сами по себе: каждый их кадр внутри SVG
-    // заново считает размытие тора, и на телефоне фон мигал и дёргался. Они гаснут/проявляются вместе со всем слоем.
+    // While the backdrop toggles, the glows do not animate on their own: each SVG frame recomputes the torus blur
+    // and the backdrop flickered on phones. They fade with the whole layer instead.
     if (d.backdrop && d.backdrop !== bg) {
       d.bgSwitch = '';
       window.clearTimeout(Number(d.bgSwitchT));
@@ -157,7 +143,6 @@ export function useAppState(
     d.backdrop = bg;
     d.glows = bgGlows ? 'on' : 'off';
   }, [glassUi, chatPattern, liveBg, bgGlows]);
-  // Серверы — те, где пользователь участник (с бэкенда). Выбранный запоминаем локально.
   const serverById = useCallback((id: string | null | undefined) => servers.find((s) => s.id === id), [servers]);
   const [serverId, setServerIdState] = useState<ServerId>(() => (serverById(lsGet(LS_SERVER)) ?? servers[0]).id);
   const setServerId = (id: ServerId) => {
@@ -165,19 +150,15 @@ export function useAppState(
     lsSet(LS_SERVER, id);
   };
   const server = serverById(serverId) ?? servers[0];
-  /** Каналы сервера: чат текстового канала и чат голосового идут каждый в свою комнату на бэкенде. */
   const textChannel = server.channels.find((c) => c.kind === 'text') ?? null;
   const voiceChannel = server.channels.find((c) => c.kind === 'voice') ?? null;
-  /** Свой статус хранится на сервере и рассылается остальным; offline — «невидимый». */
   const [status, setStatusState] = useState<Status>(me.status ?? 'online');
   useEffect(() => lsSet(LS_STATUS, null), []);
   const voice = useVoice(name);
   const general = useChat(textChannel?.room ?? null, name);
   const lobby = useChat(voiceChannel?.room ?? null, name);
-  // Участники сервера и их статусы: список — из /api/servers/{id}/members, статусы — живые из WebSocket
   const statuses = useMemo(() => ({ ...lobby.statuses, ...general.statuses }), [general.statuses, lobby.statuses]);
-  // Списки участников по серверам: при переключении сразу показываем последний известный список,
-  // а не пустой (иначе «n в сети» на долю секунды показывает 0 и панель участников моргает)
+  // Show the last known member list when switching servers, otherwise "n online" shows 0 for a moment.
   const memberCache = useRef(new Map<string, Member[]>());
   const [memberRows, setMemberRows] = useState<Member[]>([]);
   const loadMembers = useCallback(async () => {
@@ -187,7 +168,7 @@ export function useAppState(
       memberCache.current.set(serverId, r.members);
       setMemberRows(r.members);
     } catch {
-      /* сеть — попробуем при следующем обновлении */
+      /* ignore */
     }
   }, [serverId]);
   useEffect(() => {
@@ -196,22 +177,18 @@ export function useAppState(
     const id = window.setInterval(() => void loadMembers(), 30000);
     return () => window.clearInterval(id);
   }, [loadMembers]);
-  // Подключился кто-то, кого ещё нет в списке (например, только что зарегистрировался) — перечитываем
   useEffect(() => {
     if (memberRows.length && Object.keys(statuses).some((n) => !memberRows.some((m) => m.username === n))) void loadMembers();
   }, [statuses]); // eslint-disable-line react-hooks/exhaustive-deps
-  /** Видимый статус участника. Свой — выбранный (у «невидимого» это offline). */
   const statusOf = useCallback((n: string): Status => (n === name ? status : statuses[n] ?? 'offline'), [name, status, statuses]);
   const members = useMemo(() => memberRows.map((m) => ({ ...m, status: statusOf(m.username) })), [memberRows, statusOf]);
   const membersOnline = members.filter((m) => m.status !== 'offline');
   const membersOffline = members.filter((m) => m.status === 'offline');
-  /** Список участников этого сервера уже загружался хоть раз (до этого число «в сети» не показываем). */
   const membersReady = memberCache.current.has(serverId);
-  /** Мы в голосе именно этого сервера. */
   const inVoiceHere = voice.state !== 'idle' && voice.server === serverId;
   const liveHere = inVoiceHere && voice.state === 'connected';
-  // Только что вышли из голоса этого сервера: сервер ещё секунду считает нас в канале — себя в списке не показываем,
-  // иначе своя плитка появлялась снова и тут же уезжала
+  // Right after leaving this server's voice the server still lists us for a second; hide ourselves meanwhile,
+  // otherwise our tile reappears and slides out again.
   const wasLive = useRef(false);
   const hideSelfUntil = useRef(0);
   if (wasLive.current && !liveHere && voice.state === 'idle') hideSelfUntil.current = Date.now() + 5000;
@@ -222,12 +199,10 @@ export function useAppState(
     : undefined;
   const rosterAll = useVoiceRoster(!liveHere, serverId, seed);
   const roster = hideSelfUntil.current > Date.now() ? rosterAll.filter((r) => r.identity !== name) : rosterAll;
-  /** Зайти в голос текущего сервера (если уже в голосе другого — перейти). */
   const joinVoice = () => {
     if (!inVoiceHere) void voice.join(serverId);
   };
   const { toast, show } = useToast();
-  // После перезагрузки возвращаемся в голос, где были (если всё ещё участник этого сервера)
   useEffect(() => {
     const saved = savedVoice();
     if (saved && serverById(saved.server)) void voice.join(saved.server, saved.startedAt);
@@ -239,7 +214,7 @@ export function useAppState(
     setMe({ ...me, status: s });
     api('/api/status', { method: 'PUT', body: { status: s } }).catch(() => {
       setStatusState(prev);
-      show('Не удалось сменить статус', 'error');
+      show(t('Не удалось сменить статус'), 'error');
     });
   };
 
@@ -250,8 +225,6 @@ export function useAppState(
     }
   }, [voice.error, show, voice]);
 
-  // Связь с сервером: чат текущего канала держит WebSocket. Плашку показываем, только если связь была и пропала,
-  // а при восстановлении — зелёный тост.
   const [online, setOnline] = useState(() => navigator.onLine);
   useEffect(() => {
     const up = () => setOnline(true);
@@ -265,9 +238,9 @@ export function useAppState(
   }, []);
   const everConnected = useRef(false);
   const [lost, setLost] = useState(false);
-  // Телефон: связь чата показывает сама шапка чата (колесо «Подключение…»), без плашек сверху и тостов снизу
+  // On phones the chat header shows the connection state itself, no banners or toasts.
   const phoneUi = useIsMobile();
-  /** Когда приложение снова стало видно: телефон рвёт сокет в фоне, и после возврата он переподключается — это не «нет связи». */
+  /** Phones drop the socket in the background and reconnect on return; that is not a lost connection. */
   const shownAt = useRef(Date.now());
   useEffect(() => {
     const vis = () => document.visibilityState === 'visible' && (shownAt.current = Date.now());
@@ -276,13 +249,13 @@ export function useAppState(
   }, []);
   useEffect(() => {
     if (general.connected) {
-      if (lost && !phoneUi) show('Соединение восстановлено', 'success');
+      if (lost && !phoneUi) show(t('Соединение восстановлено'), 'success');
       everConnected.current = true;
       setLost(false);
       return;
     }
     if (!everConnected.current) return;
-    // Короткие обрывы (смена канала, перезапуск сокета, возврат в приложение) не показываем
+    // Short drops (channel switch, socket restart, returning to the app) are not shown.
     let id = 0;
     const check = () => {
       const fresh = Date.now() - shownAt.current < 5000;
@@ -293,21 +266,21 @@ export function useAppState(
     return () => window.clearTimeout(id);
   }, [general.connected]); // eslint-disable-line react-hooks/exhaustive-deps
   const connBanner = !online
-    ? 'Нет подключения к интернету'
+    ? t('Нет подключения к интернету')
     : lost && !phoneUi
-      ? 'Нет связи с сервером, переподключаемся…'
+      ? t('Нет связи с сервером, переподключаемся…')
       : voice.reconnecting
-        ? 'Голосовой канал: переподключаемся…'
+        ? t('Голосовой канал: переподключаемся…')
         : null;
 
-  // Кто в «Лобби» текущего сервера: если мы в нём — из LiveKit, иначе опрашиваем бэкенд.
+  // Who is in the current server's lobby: from LiveKit when we are in it, otherwise polled from the backend.
   const voiceSource: 'live' | 'roster' = inVoiceHere && voice.state === 'connected' ? 'live' : 'roster';
   const voiceUsers: VoicePeer[] =
     voiceSource === 'live'
       ? voice.peers
       : [
           ...roster.map((r) => ({ identity: r.identity, isLocal: r.identity === name, speaking: false, micMuted: r.isMuted, deafened: Boolean(r.deafened), camOn: Boolean(r.camera), screenOn: Boolean(r.screen), mobile: Boolean(r.mobile) })),
-          // пока переподключаемся (например, после перезагрузки) — себя в канале показываем сразу
+          // While reconnecting (e.g. after reload) show ourselves in the channel right away.
           ...(inVoiceHere && voice.state === 'connecting' && !roster.some((r) => r.identity === name)
             ? [{ identity: name, isLocal: true, speaking: false, micMuted: false, deafened: false, mobile: IS_MOBILE_DEVICE }]
             : []),

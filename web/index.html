@@ -4,14 +4,15 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <meta name="theme-color" content="#040a14" />
-    <title>Ореол</title>
+    <title>Oreol Web</title>
     <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-ring-32.png?v=4" />
     <link rel="icon" type="image/png" sizes="64x64" href="/assets/favicon-ring-64.png?v=4" />
     <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg?v=4" />
     <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png?v=3" />
     <link rel="manifest" href="/manifest.webmanifest" />
-    <!-- превью ссылки (карточка на домашней странице Safari, мессенджеры): текстовый логотип -->
+    <link rel="canonical" href="https://new.halomvp.ru/" />
     <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://new.halomvp.ru/" />
     <meta property="og:site_name" content="Ореол" />
     <meta property="og:title" content="Ореол" />
     <meta property="og:description" content="Серверы, текстовые и голосовые каналы, личные сообщения и звонки" />
@@ -29,7 +30,7 @@
       try {
         var d = document.documentElement.dataset, ls = localStorage;
         var sys = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
-        var t = ls.getItem('oreol.theme'), auth = !!ls.getItem('oreol.token');
+        var t = ls.getItem('oreol.theme'), auth = ls.getItem('oreol.auth') === '1' || !!ls.getItem('oreol.token');
         d.theme = auth && (t === 'light' || t === 'dark') ? t : sys;
         d.glass = !auth || ls.getItem('oreol.glassUi') === '1' ? 'on' : 'off';
         d.backdrop = !auth || ls.getItem('oreol.liveBg') === '1' ? 'on' : 'off';

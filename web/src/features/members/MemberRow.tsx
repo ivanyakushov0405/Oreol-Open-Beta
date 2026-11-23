@@ -2,6 +2,7 @@ import type { Status } from '../../shared/model';
 import { Avatar } from '../../shared/ui/Avatar';
 import { Nick } from './Nick';
 import { userMenuProps } from './userMenu';
+import { t } from '../../shared/i18n';
 
 export function MemberRow({
   name,
@@ -20,7 +21,7 @@ export function MemberRow({
     <button className={'member' + (status === 'offline' ? ' offline' : '')} onClick={onClick} {...userMenuProps(name)}>
       <Avatar name={name} size={34} status={status} />
       <span className="info">
-        <Nick name={name}>{me && <span className="you-tag"> · вы</span>}</Nick>
+        <Nick name={name}>{me && <span className="you-tag">{t(' · вы')}</span>}</Nick>
         <span>{sub}</span>
       </span>
     </button>

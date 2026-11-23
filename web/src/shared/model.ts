@@ -1,14 +1,11 @@
-// Типы и утилиты интерфейса. Серверы, каналы и участники приходят с бэкенда (/api/servers),
-// здесь их нет. Мок остаётся только у витрины ролей (ROLES) в настройках сервера.
+import { lang, t } from './i18n';
 
 export type Status = 'online' | 'idle' | 'dnd' | 'offline';
 
 export interface Channel {
-  /** Идентификатор канала внутри сервера (slug). */
   id: string;
   name: string;
   kind: 'text' | 'voice';
-  /** Комната чата на бэкенде (WebSocket /api/ws/{room}). */
   room: string;
 }
 
@@ -25,26 +22,18 @@ export type ServerId = Server['id'];
 
 export interface ChatMessage {
   id: string | number;
-  /** Сообщение удалили — оно ещё на экране, пока проигрывается анимация ухода (только на клиенте). */
+  /** Deleted message still on screen while its leave animation plays (client only). */
   leaving?: boolean;
   user: string;
   content: string;
   ts: string | null;
-  /** Когда сообщение изменили (ISO), иначе null. */
   edited?: string | null;
   pinned?: boolean;
-  /** Ответ на сообщение: короткая копия оригинала (или пометка, что его удалили). */
-  /** photo — первое фото оригинала, миниатюра в цитате. */
   reply?: { id: number | string; user?: string; content?: string; photo?: string | null; deleted?: boolean } | null;
-  /** Пересланное: автор оригинала и когда он его написал. */
   fwd?: { user: string; ts: string | null } | null;
-  /** Служебная строка ленты: 'pin' — user закрепил сообщение reply.id. */
   sys?: string | null;
-  /** Сколько раз на сообщение ответили. */
   replies?: number;
-  /** Фото в сообщении (размеры — для раскладки коллажа до загрузки картинки). */
   attachments?: Attachment[];
-  /** Реакции: эмодзи и кто поставил (в порядке первой реакции). */
   reactions?: Reaction[];
 }
 
@@ -53,7 +42,6 @@ export interface Reaction {
   users: string[];
 }
 
-/** Реакции из меню сообщения (тот же набор проверяет сервер). */
 export const REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🔥', '👎', '🤡', '🎉', '🙏'];
 
 export interface Attachment {
@@ -61,48 +49,63 @@ export interface Attachment {
   url: string;
   w: number;
   h: number;
-  /** Видео (MP4/WebM), а не фото. */
   video?: boolean;
+  /** A document: downloaded, never shown inline. */
+  file?: boolean;
+  name?: string;
+  size?: number;
 }
 
-/** Ограничения фото — те же, что проверяет сервер. */
+/** Photo limits; the server checks the same ones. */
 export const MAX_PHOTOS = 10;
 export const MAX_PHOTO_MB = 10;
 export const PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 export const VIDEO_TYPES = ['video/mp4', 'video/webm', 'video/quicktime'];
 export const MAX_VIDEO_MB = 50;
+export const MAX_FILE_MB = 50;
 
-/** Короткий текст сообщения для цитат, закрепов и уведомлений: у сообщения из одних фото — «Фото». */
-/** «Залго» — сотни диакритических знаков на одной букве: оставляем не больше двух (старые сообщения до серверной очистки). */
+export const isMedia = (a: Attachment) => !a.file;
+
+export function fileSize(bytes = 0) {
+  if (bytes < 1024) return t('{0} Б', { 0: bytes });
+  const units = [t('КБ'), t('МБ'), t('ГБ')];
+  let v = bytes / 1024;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i++;
+  }
+  return `${v < 10 ? (lang === 'ru' ? v.toFixed(1).replace('.', ',') : v.toFixed(1)) : Math.round(v)} ${units[i]}`;
+}
+
+/** Zalgo text: hundreds of combining marks on one letter. Keep at most two (old messages from before server-side cleanup). */
 export const cleanText = (t: string) => t.replace(/(\p{Mn}{2})[\p{Mn}\p{Me}]+/gu, '$1');
 
-/** Адрес первого фото (не видео) — для миниатюр в цитатах и уведомлениях. */
-export const firstPhotoUrl = (atts?: Attachment[]) => atts?.find((a) => !a.video)?.url;
+export const firstPhotoUrl = (atts?: Attachment[]) => atts?.find((a) => !a.video && !a.file)?.url;
 
 export function previewText(m: Pick<ChatMessage, 'content' | 'attachments'>) {
   if (m.content) return cleanText(m.content);
   const list = m.attachments ?? [];
   const n = list.length;
   if (!n) return '';
+  const f = list.filter((a) => a.file).length;
+  if (f === n) return n === 1 ? list[0].name || t('Файл') : t('Файлы · {0}', { 0: n });
   const v = list.filter((a) => a.video).length;
-  const label = v === n ? 'Видео' : v ? 'Медиа' : 'Фото';
+  const label = f ? t('Вложения') : v === n ? t('Видео') : v ? t('Медиа') : t('Фото');
   return n === 1 ? label : `${label} · ${n}`;
 }
 
-/** Имя при входе: латиница, цифры, пробел, точка, дефис, подчёркивание; 2–32 символа. */
 export const NAME_RE = /^[A-Za-z][A-Za-z0-9 ._-]{1,31}$/;
 
-/** Имена, которые нельзя занять (то же, что на сервере): @everyone и @here зовут весь чат. */
+/** Names that cannot be taken (same list as the server): @everyone and @here ping the whole chat. */
 const RESERVED_NAMES = new Set(['everyone', 'here', 'all', 'channel', 'admin', 'administrator', 'moderator', 'system', 'oreol', 'support']);
 export const reservedName = (name: string) => RESERVED_NAMES.has(name.toLowerCase().replace(/[^a-z0-9]/g, ''));
-/** Упоминания, которые зовут всех в чате. */
 export const MENTION_ALL = ['@everyone', '@here'];
 
 export function normalizeName(raw: string) {
   return raw.replace(/\s+/g, ' ').trim();
 }
 
-/** Юзернейм формируется из имени: «Ivan Petrov» → @ivan.petrov */
 export function handleOf(name: string) {
   return (
     '@' +
@@ -128,7 +131,6 @@ function hash(s: string) {
   return Math.abs(h);
 }
 
-/** Цвет ника. В макете он задаётся ролью; у подключившихся пользователей ролей нет — цвет общий. */
 export function nameColor(_name: string) {
   return 'var(--text-primary)';
 }

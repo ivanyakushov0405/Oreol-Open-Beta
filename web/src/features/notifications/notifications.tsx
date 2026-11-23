@@ -3,14 +3,15 @@ import { paths } from '../../app/router';
 import type { AppState } from '../../app/useAppState';
 import { playSound } from '../../shared/audio/sounds';
 import { Icon } from '../../shared/icons';
+import { displayNameOf } from '../../shared/api';
 import { firstPhotoUrl, handleOf, previewText } from '../../shared/model';
 import { Avatar } from '../../shared/ui/Avatar';
 import { mentionsMe } from '../chat/mentions';
 import { DisplayName } from '../members/Nick';
+import { isMuted } from './mute';
+import { BRAND, t } from '../../shared/i18n';
 
-/* ---------- Какие чаты сейчас открыты на экране (их сообщения не озвучиваем и не показываем) ---------- */
 const openChats = new Map<string, number>();
-/** Ставится в открытом чате: пока он на экране и вкладка видна, уведомлений о его сообщениях нет. */
 export function useOpenChat(room: string | null | undefined) {
   useEffect(() => {
     if (!room) return;
@@ -24,11 +25,32 @@ export function useOpenChat(room: string | null | undefined) {
 }
 const isWatching = (room: string) => openChats.has(room) && document.visibilityState === 'visible';
 
+/** While the tab is hidden the title counts new messages and alternates with the latest one. */
+const tabTitle = { count: 0, line: '', timer: 0 };
+function titleAlert(line: string) {
+  if (document.visibilityState === 'visible') return;
+  tabTitle.count++;
+  tabTitle.line = line;
+  const counted = () => `(${tabTitle.count}) ${BRAND}`;
+  document.title = counted();
+  if (tabTitle.timer) return;
+  let showLine = false;
+  tabTitle.timer = window.setInterval(() => {
+    showLine = !showLine;
+    document.title = showLine ? tabTitle.line : counted();
+  }, 1500);
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible') return;
+  window.clearInterval(tabTitle.timer);
+  Object.assign(tabTitle, { count: 0, line: '', timer: 0 });
+  document.title = BRAND;
+});
+
 type Alert = { key: string; user: string; text: string; where: string; path: string; mention: boolean; photo?: string | null };
 const SHOW_MS = 6000;
 const MAX = 3;
 
-/** Новые сообщения в чатах сервера: звук и карточка справа внизу (если этот чат сейчас не открыт). */
 export function MessageAlerts({ app }: { app: AppState }) {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const last = useRef(new Map<string, number>());
@@ -38,28 +60,27 @@ export function MessageAlerts({ app }: { app: AppState }) {
     if (!channel) return;
     const room = channel.room;
     const msgs = chat.messages;
-    // пока история не пришла, чат пустой — это не «всё прочитано»: иначе вся загруженная история считалась новой
+    // Until history arrives the chat is empty, which is not "all read"; otherwise all loaded history counted as new.
     if (!msgs.length) return;
     const top = Number(msgs[msgs.length - 1].id) || 0;
     const prev = last.current.get(room);
     last.current.set(room, Math.max(prev ?? 0, top));
-    // первая загрузка истории — не уведомляем о старом
     if (prev === undefined || top <= prev) return;
-    // только то, что пришло только что (а не догрузилось из истории при возвращении на сервер)
+    // Only what just arrived, not history loaded again when returning to the server.
     const now = Date.now();
     const fresh = msgs.filter(
       (m) => Number(m.id) > prev && (!m.sys || m.sys === 'pin') && m.user !== app.name && (!m.ts || now - new Date(m.ts).getTime() < 30_000),
     );
     if (!fresh.length || isWatching(room)) return;
     const mention = fresh.some((m) => mentionsMe(m.content || '', myTag));
+    if (!mention && isMuted(room)) return;
     playSound(mention ? 'mention' : 'message');
     const m = fresh[fresh.length - 1];
-    const where = (channel.kind === 'voice' ? `Чат «${channel.name}»` : `#${channel.name}`) + ' · ' + app.server.name;
-    // закреп: «закрепил(а): …» с текстом закреплённого сообщения
+    const where = (channel.kind === 'voice' ? t('Чат «{0}»', { 0: channel.name }) : `#${channel.name}`) + ' · ' + app.server.name;
     const pinned = m.reply && 'content' in m.reply ? (m.reply.content || '').trim() : '';
-    const text = m.sys === 'pin' ? `Закрепил(а): ${pinned || 'сообщение'}` : previewText(m).trim() || 'Вложение';
-    // миниатюра: первое фото сообщения, у закрепа — фото закреплённого
+    const text = m.sys === 'pin' ? t('Закрепил(а): {0}', { 0: pinned || t('сообщение') }) : previewText(m).trim() || t('Вложение');
     const photo = m.sys === 'pin' ? (m.reply && 'photo' in m.reply ? m.reply.photo : null) : firstPhotoUrl(m.attachments);
+    titleAlert(`${displayNameOf(m.user)}: ${text}`);
     setAlerts((a) =>
       [...a.filter((x) => x.key !== room), { key: room, user: m.user, text, where, path: paths.channel(app.serverId, channel.id, channel.kind === 'voice'), mention, photo }].slice(-MAX),
     );
@@ -121,7 +142,7 @@ function AlertCard({ al, onOpen, onClose }: { al: Alert; onOpen: () => void; onC
       {al.photo && <img className="msg-alert-thumb" src={al.photo} alt="" draggable={false} />}
       <button
         className="msg-alert-x"
-        aria-label="Закрыть"
+        aria-label={t('Закрыть')}
         onClick={(e) => {
           e.stopPropagation();
           setOut(true);

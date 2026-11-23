@@ -1,10 +1,12 @@
 import { useEffect, useRef, type RefObject } from 'react';
 
-/** Вертикальный свайп по панели каналов — соседний сервер (как в списке серверов слева: вверх — следующий, вниз — предыдущий).
- *  Пальцем — только когда список каналов упёрся в край (иначе это обычная прокрутка); решение принимаем на первом же
- *  движении: потом Safari уже забирает жест себе. Мышью — перетаскиванием панели (колесо по-прежнему прокручивает список).
- *  Панель едет за пальцем; при отпускании дальше порога — go(dir), и панель уезжает с того места, где её отпустили
- *  (саму смену с анимацией делает Mobile). */
+/**
+ * Vertical swipe on the channel panel switches to the neighbouring server (up: next, down: previous).
+ * With a finger only when the channel list is scrolled to its edge (otherwise it is a normal scroll); the decision
+ * is made on the first move because Safari takes over the gesture after that. With a mouse by dragging the panel
+ * (the wheel still scrolls). The panel follows the finger; past the threshold go(dir) is called and the panel leaves
+ * from where it was released (Mobile does the switch animation).
+ */
 export function useServerSwipe(stage: RefObject<HTMLElement>, opts: { can: (dir: -1 | 1) => boolean; go: (dir: -1 | 1) => void }) {
   const o = useRef(opts);
   o.current = opts;
@@ -27,7 +29,6 @@ export function useServerSwipe(stage: RefObject<HTMLElement>, opts: { can: (dir:
       const bottom = !sc || sc.scrollTop + sc.clientHeight >= sc.scrollHeight - 1;
       s = { panel: p, y, x, t, top, bottom, dir: 0, decided: false, dy: 0, mouse };
     };
-    /** false — жест не наш (отдаём прокрутке). */
     const step = (x: number, y: number) => {
       if (!s) return false;
       const dy = y - s.y;
@@ -35,7 +36,6 @@ export function useServerSwipe(stage: RefObject<HTMLElement>, opts: { can: (dir:
       if (!s.decided) {
         if (Math.abs(dy) < (s.mouse ? 6 : 8) && Math.abs(dx) < 8) return false;
         s.decided = true;
-        // палец вниз — предыдущий сервер, вверх — следующий
         const dir: -1 | 1 = dy > 0 ? -1 : 1;
         const edge = s.mouse || (dir === -1 ? s.top : s.bottom);
         if (Math.abs(dy) <= Math.abs(dx) * 1.5 || !edge || !o.current.can(dir)) return void (s = null), false;
@@ -43,7 +43,6 @@ export function useServerSwipe(stage: RefObject<HTMLElement>, opts: { can: (dir:
         window.getSelection()?.removeAllRanges();
       }
       if (!s.dir) return false;
-      // за пальцем с сопротивлением; в обратную сторону почти не тянется
       const along = s.dir === -1 ? Math.max(0, dy) : Math.min(0, dy);
       s.dy = along * 0.55;
       set(s.panel, s.dy);
@@ -80,7 +79,7 @@ export function useServerSwipe(stage: RefObject<HTMLElement>, opts: { can: (dir:
       if (step(e.clientX, e.clientY)) e.preventDefault();
     };
     const pup = (e: PointerEvent) => s && s.mouse && finish(e.timeStamp);
-    // после перетаскивания мышью отпускание не открывает канал под курсором
+    // After a mouse drag, releasing must not open the channel under the cursor.
     const click = (e: MouseEvent) => {
       if (!swallow) return;
       e.preventDefault();

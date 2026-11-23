@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { useUser } from '../api';
 import { avatarGradient, initials, type Status } from '../model';
 
-/** Диаметр точки статуса из компонента Avatar в Figma: XS22/S28→8, M34→10, L38→11, XL48→13, 2XL80→22. */
 function dotStyle(size: number): CSSProperties {
   if (size === 72) return { width: 19.5, height: 19.5, borderWidth: 3, right: 0, bottom: 0 };
   const d = size <= 28 ? 8 : size <= 34 ? 10 : size <= 38 ? 11 : size <= 48 ? 13 : Math.round(size * 0.275);
@@ -20,10 +19,9 @@ export function Avatar({
   status?: Status;
   speaking?: boolean;
 }) {
-  // Загруженный аватар из профиля; без него — инициалы на градиенте
   const img = useUser(name)?.avatar;
-  // Точка статуса «перещёлкивается» только при смене статуса, не при первом показе
-  // (класс остаётся после первой смены; точка пересоздаётся по key только при новом статусе, так что повторные рендеры анимацию не запускают)
+  // The status dot pops only when the status changes, not on first show
+  // (the class stays after the first change; the dot is re-keyed only on a new status, so re-renders do not replay it).
   const prevStatus = useRef(status);
   const statusChanged = useRef(false);
   if (prevStatus.current !== status) {
@@ -47,13 +45,11 @@ export function Avatar({
   );
 }
 
-/** Фон профиля: загруженная картинка; без неё — пусто. */
 export function Banner({ name, ...rest }: { name: string } & React.HTMLAttributes<HTMLDivElement>) {
   const img = useUser(name)?.banner;
   return <div className={'banner' + (img ? ' has-img' : '')} style={img ? { backgroundImage: `url("${img}")` } : undefined} {...rest} />;
 }
 
-/** Средний цвет картинки (по уменьшенной копии); null — пока не посчитан или картинки нет. */
 const tintCache = new Map<string, string>();
 export function useImageTint(url?: string | null) {
   const [tint, setTint] = useState<string | null>(() => (url ? tintCache.get(url) ?? null : null));
@@ -70,7 +66,7 @@ export function useImageTint(url?: string | null) {
         c.width = c.height = 16;
         const g = c.getContext('2d', { willReadFrequently: true });
         if (!g) return;
-        // Средний цвет верхней части — она примыкает к заливке над фоном
+        // Average color of the top part, which borders the fill above the banner.
         g.drawImage(img, 0, 0, img.naturalWidth, img.naturalHeight * 0.5, 0, 0, 16, 16);
         const d = g.getImageData(0, 0, 16, 16).data;
         let r = 0, gr = 0, b = 0;
@@ -80,7 +76,7 @@ export function useImageTint(url?: string | null) {
         tintCache.set(url, v);
         if (alive) setTint(v);
       } catch {
-        /* чужой домен без CORS — останется градиент по умолчанию */
+        /* cross-origin image without CORS: the default gradient stays */
       }
     };
     img.src = url;
@@ -91,8 +87,6 @@ export function useImageTint(url?: string | null) {
   return tint;
 }
 
-/** Заливка над фоном профиля (под строкой состояния и виджетом звонка):
- *  у своей картинки — градиент из её среднего цвета, у фона по умолчанию — тот же градиент бренда. */
 export function BannerTop({ name }: { name: string }) {
   const img = useUser(name)?.banner;
   const tint = useImageTint(img);

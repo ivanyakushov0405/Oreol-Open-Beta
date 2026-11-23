@@ -1,8 +1,9 @@
 import { useSyncExternalStore } from 'react';
 
-/** Какая камера телефона снимает: фронтальная (user) или основная (environment).
- *  Общий маленький стор: кнопка на своей плитке переключает, useVoice перезапускает дорожку,
- *  плитка решает, зеркалить ли видео (основную камеру не зеркалят). */
+/**
+ * Which phone camera is active: front (user) or back (environment). Tiny shared store: the button on our tile
+ * switches it, useVoice restarts the track, the tile decides whether to mirror (the back camera is not mirrored).
+ */
 export type Facing = 'user' | 'environment';
 let facing: Facing = 'user';
 const subs = new Set<() => void>();
@@ -21,5 +22,4 @@ export function useFacing() {
     getFacing,
   );
 }
-/** Попросить useVoice сменить камеру. */
 export const requestFlip = () => window.dispatchEvent(new Event(FLIP_EVENT));

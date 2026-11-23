@@ -5,8 +5,8 @@ import { playSound } from '../../shared/audio/sounds';
 import { Icon } from '../../shared/icons';
 import { MIC_TEST_EVENT } from '../voice/useVoice';
 import { Toggle } from './Toggle';
+import { t } from '../../shared/i18n';
 
-/* ---------- Голос и звук: устройства, проверка микрофона, чувствительность, звуки ---------- */
 const MIC_CAPTURE = { autoGainControl: true, noiseSuppression: true, echoCancellation: true, channelCount: 1 };
 
 function useDevices() {
@@ -37,8 +37,8 @@ function DeviceSelect({
   devices: MediaDeviceInfo[];
 }) {
   const list = devices.filter((d) => d.kind === kind && d.deviceId && d.deviceId !== 'default' && d.deviceId !== 'communications');
-  const word = kind === 'audioinput' ? 'Микрофон' : kind === 'videoinput' ? 'Камера' : 'Динамики';
-  const opts = [{ id: '', label: 'По умолчанию (системное)' }, ...list.map((d, i) => ({ id: d.deviceId, label: d.label || `${word} ${i + 1}` }))];
+  const word = kind === 'audioinput' ? t('Микрофон') : kind === 'videoinput' ? t('Камера') : t('Динамики');
+  const opts = [{ id: '', label: t('По умолчанию (системное)') }, ...list.map((d, i) => ({ id: d.deviceId, label: d.label || `${word} ${i + 1}` }))];
   const cur = opts.find((o) => o.id === value) ?? opts[0];
   const btn = useRef<HTMLButtonElement>(null);
   const tap = useRef<{ x: number; y: number; moved: boolean } | null>(null);
@@ -53,12 +53,12 @@ function DeviceSelect({
   useEffect(() => {
     if (!menu) return;
     const close = () => setMenu(null);
-    // прокрутка самого списка его не закрывает — только прокрутка страницы под ним
+    // Scrolling the list itself does not close it, only scrolling the page behind it.
     const onScroll = (e: Event) => {
       if (e.target instanceof Element && e.target.closest('.select-menu')) return;
       close();
     };
-    // Escape закрывает только список, а не весь экран настроек (ловим раньше общего обработчика)
+    // Escape closes only the list, not the whole settings screen (caught before the global handler).
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       e.stopImmediatePropagation();
@@ -75,7 +75,7 @@ function DeviceSelect({
   }, [menu]);
   return (
     <div className="select">
-      {/* Свой список вместо системного <select>: системный рисуется ОС и не бывает стеклянным */}
+      {/* A custom list instead of the native select: the OS draws that one and it cannot be glass. */}
       <button
         ref={btn}
         type="button"
@@ -95,7 +95,7 @@ function DeviceSelect({
               className={'select-menu' + (menu.up ? ' up' : '')}
               role="listbox"
               style={{ left: menu.x, top: menu.y, width: menu.w }}
-              // палец, который листал список, а не нажимал, ничего не выбирает
+              // A finger that scrolled the list instead of tapping selects nothing.
               onPointerDown={(e) => (tap.current = { x: e.clientX, y: e.clientY, moved: false })}
               onPointerMove={(e) => {
                 const t = tap.current;
@@ -130,7 +130,6 @@ function DeviceSelect({
 
 const METER_MIN = -80;
 
-/** Ползунок с подписью и значением. */
 function Slider({
   label,
   value,
@@ -171,7 +170,6 @@ function Slider({
   );
 }
 
-/** Индикатор громкости. С порогом: выше — зелёный (голос пройдёт), ниже — серый. */
 function LevelMeter({ level, threshold, active }: { level: number; threshold: number | null; active: boolean }) {
   const toPct = (db: number) => Math.max(0, Math.min(100, ((db - METER_MIN) / -METER_MIN) * 100));
   const pct = toPct(level);
@@ -198,7 +196,7 @@ export function VoiceDevices() {
   prefsRef.current = prefs;
   const getPrefs = () => prefsRef.current;
 
-  // На время проверки микрофон в звонке выключается (см. MIC_TEST_EVENT в useVoice)
+  // The call microphone is muted during the test (see MIC_TEST_EVENT in useVoice).
   useEffect(() => {
     window.dispatchEvent(new CustomEvent(MIC_TEST_EVENT, { detail: testing }));
     return () => {
@@ -206,7 +204,6 @@ export function VoiceDevices() {
     };
   }, [testing]);
 
-  // Проверка: захватываем выбранный микрофон, показываем уровень и возвращаем звук в выбранные наушники.
   useEffect(() => {
     if (!testing) {
       setLevel(-100);
@@ -224,7 +221,7 @@ export function VoiceDevices() {
             audio: prefs.inputId ? { ...MIC_CAPTURE, deviceId: { exact: prefs.inputId } } : MIC_CAPTURE,
           });
         } catch (e) {
-          // Сохранённый микрофон отключён/сменил id (OverconstrainedError/NotFoundError) — берём микрофон по умолчанию
+          // The saved microphone is gone or changed id (OverconstrainedError/NotFoundError): fall back to the default one.
           const name = (e as DOMException)?.name;
           if (!prefs.inputId || (name !== 'OverconstrainedError' && name !== 'NotFoundError' && name !== 'NotReadableError')) throw e;
           stream = await navigator.mediaDevices.getUserMedia({ audio: MIC_CAPTURE });
@@ -234,10 +231,10 @@ export function VoiceDevices() {
           stream.getTracks().forEach((t) => t.stop());
           return;
         }
-        refresh(); // после разрешения браузер отдаёт названия устройств
+        refresh(); // Device labels are only available after permission is granted.
         setErr(null);
         ac = new AudioContext();
-        // Контекст, созданный после await, браузер может оставить «на паузе» — тогда индикатор стоит на нуле
+        // A context created after await may stay suspended, leaving the meter at zero.
         if (ac.state === 'suspended') await ac.resume().catch(() => undefined);
         const an = ac.createAnalyser();
         an.fftSize = 1024;
@@ -252,7 +249,7 @@ export function VoiceDevices() {
         let smooth = -100;
         const loop = () => {
           const db = readLevel(an, buf);
-          smooth = db > smooth ? db : smooth * 0.85 + db * 0.15; // быстро вверх, плавно вниз
+          smooth = db > smooth ? db : smooth * 0.85 + db * 0.15; // Fast attack, slow release.
           setLevel(smooth);
           raf = requestAnimationFrame(loop);
         };
@@ -269,12 +266,12 @@ export function VoiceDevices() {
           const name = (e as DOMException)?.name;
           setErr(
             name === 'NotAllowedError' || name === 'SecurityError'
-              ? 'Нет доступа к микрофону. Разрешите его в настройках браузера'
+              ? t('Нет доступа к микрофону. Разрешите его в настройках браузера')
               : name === 'NotFoundError'
-                ? 'Микрофон не найден. Подключите устройство ввода'
+                ? t('Микрофон не найден. Подключите устройство ввода')
                 : name === 'NotReadableError'
-                  ? 'Микрофон занят другим приложением'
-                  : 'Не удалось запустить проверку микрофона',
+                  ? t('Микрофон занят другим приложением')
+                  : t('Не удалось запустить проверку микрофона'),
           );
           setTesting(false);
         }
@@ -289,7 +286,6 @@ export function VoiceDevices() {
     };
   }, [testing, prefs.inputId, prefs.outputId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Громкости меняются на лету, без перезапуска проверки
   useEffect(() => {
     if (gainRef.current) gainRef.current.gain.value = prefs.inputVolume;
     if (audioRef.current) audioRef.current.volume = prefs.outputVolume;
@@ -301,20 +297,20 @@ export function VoiceDevices() {
       st.getTracks().forEach((t) => t.stop());
       refresh();
     } catch {
-      setErr('Нет доступа к микрофону. Разрешите его в настройках браузера');
+      setErr(t('Нет доступа к микрофону. Разрешите его в настройках браузера'));
     }
   };
 
   return (
     <>
       <div className="card">
-        <h3>Устройства</h3>
+        <h3>{t('Устройства')}</h3>
         <div className="device-grid">
           <label>
-            <span className="field-label">Устройство ввода</span>
+            <span className="field-label">{t('Устройство ввода')}</span>
             <DeviceSelect kind="audioinput" devices={devices} value={prefs.inputId} onChange={(id) => setAudioPrefs({ inputId: id })} />
             <Slider
-              label="Громкость ввода"
+              label={t('Громкость ввода')}
               value={Math.round(prefs.inputVolume * 100)}
               min={0}
               max={200}
@@ -323,16 +319,16 @@ export function VoiceDevices() {
             />
           </label>
           <label>
-            <span className="field-label">Устройство вывода</span>
+            <span className="field-label">{t('Устройство вывода')}</span>
             {canPickOutput ? (
               <DeviceSelect kind="audiooutput" devices={devices} value={prefs.outputId} onChange={(id) => setAudioPrefs({ outputId: id })} />
             ) : (
               <p className="hint" style={{ margin: '10px 0 0' }}>
-                Этот браузер не умеет выбирать динамики, звук идёт в системное устройство
+                {t('Этот браузер не умеет выбирать динамики, звук идёт в системное устройство')}
               </p>
             )}
             <Slider
-              label="Громкость вывода"
+              label={t('Громкость вывода')}
               value={Math.round(prefs.outputVolume * 100)}
               min={0}
               max={100}
@@ -343,9 +339,9 @@ export function VoiceDevices() {
         </div>
         {needLabels && (
           <p className="hint" style={{ margin: '12px 0 0' }}>
-            Браузер скрывает названия устройств.{' '}
+            {t('Браузер скрывает названия устройств.')}{' '}
             <button type="button" className="link-btn" onClick={askLabels}>
-              Разрешить доступ к микрофону
+              {t('Разрешить доступ к микрофону')}
             </button>
           </p>
         )}
@@ -354,14 +350,14 @@ export function VoiceDevices() {
       <div className="card">
         <div className="row-between">
           <div>
-            <h3>Проверка микрофона</h3>
+            <h3>{t('Проверка микрофона')}</h3>
             <p className="hint" style={{ margin: 0 }}>
-              {testing ? 'Говорите: вы слышите себя так, как вас слышат другие' : 'Скажите что-нибудь и послушайте себя в наушниках'}
+              {testing ? t('Говорите: вы слышите себя так, как вас слышат другие') : t('Скажите что-нибудь и послушайте себя в наушниках')}
             </p>
           </div>
           <button type="button" className={'btn ' + (testing ? 'btn-secondary' : 'btn-primary')} onClick={() => setTesting((t) => !t)}>
             <Icon name={testing ? 'mic-off' : 'mic'} size={18} />
-            {testing ? 'Остановить' : 'Проверить'}
+            {testing ? t('Остановить') : t('Проверить')}
           </button>
         </div>
         <LevelMeter level={level} threshold={null} active={testing} />
@@ -372,15 +368,15 @@ export function VoiceDevices() {
       <div className="card">
         <div className="row-between">
           <div>
-            <h3>Чувствительность ввода</h3>
+            <h3>{t('Чувствительность ввода')}</h3>
             <p className="hint" style={{ margin: 0 }}>
               {prefs.autoSensitivity
-                ? 'Определяется автоматически, фоновый шум подавляет браузер'
-                : 'Звук тише порога не передаётся. Зелёная полоса: голос проходит'}
+                ? t('Определяется автоматически, фоновый шум подавляет браузер')
+                : t('Звук тише порога не передаётся. Зелёная полоса: голос проходит')}
             </p>
           </div>
           <div className="inline-toggle">
-            <span>Автоматически</span>
+            <span>{t('Автоматически')}</span>
             <Toggle on={prefs.autoSensitivity} onChange={(v) => setAudioPrefs({ autoSensitivity: v })} />
           </div>
         </div>
@@ -395,16 +391,16 @@ export function VoiceDevices() {
             value={prefs.sensitivity}
             disabled={prefs.autoSensitivity}
             onChange={(e) => setAudioPrefs({ sensitivity: Number(e.target.value) })}
-            aria-label="Порог чувствительности"
+            aria-label={t('Порог чувствительности')}
           />
           <div className="sens-scale">
-            <span>Ловит тихий голос</span>
-            <b>{prefs.sensitivity} дБ</b>
-            <span>Только громкий голос</span>
+            <span>{t('Ловит тихий голос')}</span>
+            <b>{prefs.sensitivity}{t(' дБ')}</b>
+            <span>{t('Только громкий голос')}</span>
           </div>
           {!testing && !prefs.autoSensitivity && (
             <p className="hint" style={{ margin: '6px 0 0' }}>
-              Нажмите «Проверить» выше, чтобы видеть свой голос относительно порога
+              {t('Нажмите «Проверить» выше, чтобы видеть свой голос относительно порога')}
             </p>
           )}
         </div>
@@ -412,7 +408,6 @@ export function VoiceDevices() {
     </>
   );
 }
-
 
 export function CameraSettings() {
   const prefs = useAudioPrefs();
@@ -441,7 +436,7 @@ export function CameraSettings() {
       })
       .catch(() => {
         if (alive) {
-          setErr('Нет доступа к камере. Разрешите её в настройках браузера');
+          setErr(t('Нет доступа к камере. Разрешите её в настройках браузера'));
           setPreview(false);
         }
       });
@@ -456,19 +451,19 @@ export function CameraSettings() {
     <div className="card">
       <div className="row-between">
         <div>
-          <h3>Камера</h3>
+          <h3>{t('Камера')}</h3>
           <p className="hint" style={{ margin: 0 }}>
-            {cams.length === 0 ? 'Нажмите «Предпросмотр», чтобы браузер нашёл камеру' : 'Включается кнопкой камеры в голосовом канале'}
+            {cams.length === 0 ? t('Нажмите «Предпросмотр», чтобы браузер нашёл камеру') : t('Включается кнопкой камеры в голосовом канале')}
           </p>
         </div>
         <button type="button" className={'btn ' + (preview ? 'btn-secondary' : 'btn-primary')} onClick={() => setPreview((v) => !v)}>
           <Icon name={preview ? 'video-off' : 'video'} size={18} />
-          {preview ? 'Остановить' : 'Предпросмотр'}
+          {preview ? t('Остановить') : t('Предпросмотр')}
         </button>
       </div>
       <div className="device-grid one">
         <label>
-          <span className="field-label">Устройство</span>
+          <span className="field-label">{t('Устройство')}</span>
           <DeviceSelect kind="videoinput" devices={devices} value={prefs.videoId} onChange={(id) => setAudioPrefs({ videoId: id })} />
         </label>
       </div>
@@ -477,7 +472,7 @@ export function CameraSettings() {
         {!preview && (
           <span>
             <Icon name="video-off" size={28} />
-            Предпросмотр выключен
+            {t('Предпросмотр выключен')}
           </span>
         )}
       </div>
@@ -487,14 +482,14 @@ export function CameraSettings() {
 }
 
 const SOUND_LIST = [
-  ['join', 'Вход'],
-  ['leave', 'Выход'],
-  ['mic-on', 'Микрофон вкл.'],
-  ['mic-off', 'Микрофон выкл.'],
-  ['undeafen', 'Звук вкл.'],
-  ['deafen', 'Звук выкл.'],
-  ['share-on', 'Демонстрация'],
-  ['share-off', 'Конец демонстрации'],
+  ['join', t('Вход')],
+  ['leave', t('Выход')],
+  ['mic-on', t('Микрофон вкл.')],
+  ['mic-off', t('Микрофон выкл.')],
+  ['undeafen', t('Звук вкл.')],
+  ['deafen', t('Звук выкл.')],
+  ['share-on', t('Демонстрация')],
+  ['share-off', t('Конец демонстрации')],
 ] as const;
 
 export function SoundSettings() {
@@ -503,16 +498,16 @@ export function SoundSettings() {
     <div className="card">
       <div className="row-between">
         <div>
-          <h3>Звуки</h3>
+          <h3>{t('Звуки')}</h3>
           <p className="hint" style={{ margin: 0 }}>
-            Вход и выход из голосового, микрофон, наушники, демонстрация
+            {t('Вход и выход из голосового, микрофон, наушники, демонстрация')}
           </p>
         </div>
         <Toggle on={prefs.sounds} onChange={(v) => setAudioPrefs({ sounds: v })} />
       </div>
       <div className={'sub-settings' + (prefs.sounds ? '' : ' off')}>
         <div className="sound-volume">
-          <h4>Громкость звуков</h4>
+          <h4>{t('Громкость звуков')}</h4>
           <input
             type="range"
             className="range"
@@ -522,7 +517,7 @@ export function SoundSettings() {
             disabled={!prefs.sounds}
             onChange={(e) => setAudioPrefs({ soundVolume: Number(e.target.value) / 100 })}
             onPointerUp={() => playSound('join')}
-            aria-label="Громкость звуков"
+            aria-label={t('Громкость звуков')}
           />
         </div>
         <div className="sound-chips">

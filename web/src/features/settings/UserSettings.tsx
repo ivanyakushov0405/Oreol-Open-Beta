@@ -4,27 +4,32 @@ import { AccountEdit, AccountView } from './AccountSettings';
 import { Toggle } from './Toggle';
 import { CameraSettings, SoundSettings, VoiceDevices } from './VoiceSettings';
 import type { UserSection } from './nav';
+import { lang, setLang, t, type Lang } from '../../shared/i18n';
 
-const THEME_LABEL: Record<ThemePref, string> = { system: 'Как в системе', dark: 'Тёмная', light: 'Светлая' };
+// Each language is named in itself so it can be found from either one.
+const LANGS: { id: Lang; label: string }[] = [
+  { id: 'ru', label: 'Русский' },
+  { id: 'en', label: 'English' },
+];
+
+const THEME_LABEL: Record<ThemePref, string> = { system: t('Как в системе'), dark: t('Тёмная'), light: t('Светлая') };
 const THEME_PREVIEW: Record<ThemePref, string> = {
   dark: 'linear-gradient(135deg,#040a14,#0e2238 60%,#2f7bff)',
   light: 'linear-gradient(135deg,#ffffff,#eef4fb 60%,#9fc2ff)',
-  // половина тёмной, половина светлой
   system: 'linear-gradient(135deg,#040a14,#0e2238 49.5%,#eef4fb 50.5%,#9fc2ff)',
 };
 
-/** Смена темы: новая тема «выходит» из выбранной плашки — светлая разливается светом, тёмная — тьмой. */
 function switchTheme(app: AppState, pref: ThemePref, from: HTMLElement) {
   if (app.themePref === pref) return;
   const t = pref === 'system' ? systemTheme() : pref;
-  // тема на экране не меняется (например, «Как в системе» при тёмной системе и выбранной тёмной) — без анимации
+  // The visible theme does not change (e.g. "System" with a dark system and dark selected): no animation.
   if (app.theme === t) {
     app.setTheme(pref);
     return;
   }
   const doc = document as Document & { startViewTransition?: (cb: () => void) => { ready: Promise<void> } };
-  // Firefox рисует снимки «разлива» без насыщенности стекла (backdrop-filter): во время анимации всё тусклее,
-  // а в конце фон и панели «вспыхивают». Там тема меняется плавными переходами цветов, без снимков.
+  // Firefox renders the reveal snapshots without backdrop-filter saturation, so everything dims during the animation
+  // and flashes at the end. There the theme changes through plain color transitions.
   if (!doc.startViewTransition || /firefox/i.test(navigator.userAgent)) {
     app.setTheme(pref);
     return;
@@ -43,14 +48,14 @@ function switchTheme(app: AppState, pref: ThemePref, from: HTMLElement) {
     root.dataset.theme = t;
   };
   const vt = doc.startViewTransition(apply) as { ready: Promise<void>; finished?: Promise<void>; skipTransition?: () => void };
-  // Страховка: если браузер не дал кадр для перехода (вкладка в фоне), тема меняется сразу
+  // Fallback: if the browser never gives a frame for the transition (background tab), switch immediately.
   window.setTimeout(() => {
     if (applied) return;
     vt.skipTransition?.();
     apply();
     delete root.dataset.vt;
   }, 1200);
-  // Мягкий край: маска с радиальным градиентом, радиус анимируется (--vt-r зарегистрирован в CSS)
+  // Soft edge: a radial-gradient mask whose radius is animated (--vt-r is registered in CSS).
   const feather = Math.max(140, r * 0.28);
   root.style.setProperty('--vt-x', `${x}px`);
   root.style.setProperty('--vt-y', `${y}px`);
@@ -74,7 +79,7 @@ export function Soon({ title, text }: { title: string; text?: string }) {
     <div className="card">
       <h3>{title}</h3>
       <p className="hint" style={{ margin: 0 }}>
-        {text ?? 'Скоро будет'}
+        {text ?? t('Скоро будет')}
       </p>
     </div>
   );
@@ -103,18 +108,18 @@ export function UserSettingsBody({
         <div className="card kv">
           <div className="row-between">
             <div>
-              <h3>Микрофон</h3>
+              <h3>{t('Микрофон')}</h3>
               <p className="hint" style={{ margin: 0 }}>
-                {v.state === 'connected' ? 'Вы в «Лобби»' : v.micOn ? 'Включится при входе в голосовой канал' : 'Останется выключенным при входе в канал'}
+                {v.state === 'connected' ? t('Вы в «Лобби»') : v.micOn ? t('Включится при входе в голосовой канал') : t('Останется выключенным при входе в канал')}
               </p>
             </div>
             <Toggle on={v.micOn} onChange={() => v.toggleMic()} />
           </div>
           <div className="row-between">
             <div>
-              <h3>Звук</h3>
+              <h3>{t('Звук')}</h3>
               <p className="hint" style={{ margin: 0 }}>
-                Выключите, чтобы не слышать собеседников
+                {t('Выключите, чтобы не слышать собеседников')}
               </p>
             </div>
             <Toggle on={!v.deafened} onChange={() => v.toggleDeafen()} />
@@ -128,8 +133,19 @@ export function UserSettingsBody({
       return (
         <>
           <div className="card">
-            <h3>Тема</h3>
-            <p className="hint">Сохраняется на этом устройстве</p>
+            <h3>{t('Язык')}</h3>
+            <p className="hint">{t('Интерфейс перезагрузится на выбранном языке')}</p>
+            <div className="seg" role="radiogroup" aria-label={t('Язык')}>
+              {LANGS.map((l) => (
+                <button key={l.id} type="button" role="radio" aria-checked={lang === l.id} className={lang === l.id ? 'on' : ''} onClick={() => setLang(l.id)}>
+                  {l.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="card">
+            <h3>{t('Тема')}</h3>
+            <p className="hint">{t('Сохраняется на этом устройстве')}</p>
             <div className="theme-cards">
               {(['system', 'dark', 'light'] as const).map((t) => (
                 <button key={t} className={'theme-card' + (app.themePref === t ? ' on' : '')} onClick={(e) => switchTheme(app, t, e.currentTarget)}>
@@ -142,9 +158,9 @@ export function UserSettingsBody({
           <div className="card">
             <div className="row-between">
               <div>
-                <h3>Прозрачность интерфейса</h3>
+                <h3>{t('Прозрачность интерфейса')}</h3>
                 <p className="hint" style={{ margin: 0 }}>
-                  Стеклянные панели, сквозь которые виден фон
+                  {t('Стеклянные панели, сквозь которые виден фон')}
                 </p>
               </div>
               <Toggle on={app.glassUi} onChange={app.setGlassUi} />
@@ -152,18 +168,18 @@ export function UserSettingsBody({
             <div className={'sub-settings' + (app.glassUi ? '' : ' off')}>
               <div className="row-between">
                 <div>
-                  <h4>Прозрачный чат</h4>
+                  <h4>{t('Прозрачный чат')}</h4>
                   <p className="hint" style={{ margin: 0 }}>
-                    Фон текстового чата становится стеклянным
+                    {t('Фон текстового чата становится стеклянным')}
                   </p>
                 </div>
                 <Toggle on={app.glassChat} onChange={app.setGlassChat} disabled={!app.glassUi} />
               </div>
               <div className="row-between">
                 <div>
-                  <h4>Прозрачный войс</h4>
+                  <h4>{t('Прозрачный войс')}</h4>
                   <p className="hint" style={{ margin: 0 }}>
-                    Фон голосового канала становится стеклянным
+                    {t('Фон голосового канала становится стеклянным')}
                   </p>
                 </div>
                 <Toggle on={app.glassVoice} onChange={app.setGlassVoice} disabled={!app.glassUi} />
@@ -173,9 +189,9 @@ export function UserSettingsBody({
           <div className="card">
             <div className="row-between">
               <div>
-                <h3>Живой фон</h3>
+                <h3>{t('Живой фон')}</h3>
                 <p className="hint" style={{ margin: 0 }}>
-                  Кольцо и мягкие свечения за панелями
+                  {t('Кольцо и мягкие свечения за панелями')}
                 </p>
               </div>
               <Toggle on={app.liveBg} onChange={app.setLiveBg} />
@@ -183,9 +199,9 @@ export function UserSettingsBody({
             <div className={'sub-settings' + (app.liveBg ? '' : ' off')}>
               <div className="row-between">
                 <div>
-                  <h4>Свечения по краям</h4>
+                  <h4>{t('Свечения по краям')}</h4>
                   <p className="hint" style={{ margin: 0 }}>
-                    Цветные пятна света в углах экрана
+                    {t('Цветные пятна света в углах экрана')}
                   </p>
                 </div>
                 <Toggle on={app.bgGlows} onChange={app.setBgGlows} disabled={!app.liveBg} />
@@ -195,9 +211,9 @@ export function UserSettingsBody({
           <div className="card">
             <div className="row-between">
               <div>
-                <h3>Узор в чате</h3>
+                <h3>{t('Узор в чате')}</h3>
                 <p className="hint" style={{ margin: 0 }}>
-                  Фоновый рисунок за сообщениями
+                  {t('Фоновый рисунок за сообщениями')}
                 </p>
               </div>
               <Toggle on={app.chatPattern} onChange={app.setChatPattern} />
@@ -206,10 +222,10 @@ export function UserSettingsBody({
         </>
       );
     case 'privacy':
-      return <Soon title="Конфиденциальность" />;
+      return <Soon title={t('Конфиденциальность')} />;
     case 'notifications':
-      return <Soon title="Уведомления" />;
+      return <Soon title={t('Уведомления')} />;
     case 'blocked':
-      return <Soon title="Заблокированные" text="Здесь пока никого нет." />;
+      return <Soon title={t('Заблокированные')} text={t('Здесь пока никого нет.')} />;
   }
 }

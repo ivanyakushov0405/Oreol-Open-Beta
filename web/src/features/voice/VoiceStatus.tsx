@@ -1,23 +1,22 @@
 import { useEffect, useState } from 'react';
 import type { AppState } from '../../app/useAppState';
 import { Icon } from '../../shared/icons';
+import { t } from '../../shared/i18n';
 
-/* ---------- Статус голосового подключения ---------- */
 const QUALITY = {
-  good: { title: 'Подключено', icon: 'wifi' },
-  medium: { title: 'Связь нестабильна', icon: 'wifi' },
-  bad: { title: 'Плохое соединение', icon: 'wifi' },
+  good: { title: t('Подключено'), icon: 'wifi' },
+  medium: { title: t('Связь нестабильна'), icon: 'wifi' },
+  bad: { title: t('Плохое соединение'), icon: 'wifi' },
 } as const;
 
-/** Пинг выше этого — показываем его рядом со статусом. */
 export const HIGH_PING = 200;
 
-/** Цвет пинга — тот же, что у статуса: quality уже учитывает пинг (см. linkQuality в useVoice). */
+/** Ping uses the status color: quality already accounts for ping (see linkQuality in useVoice). */
 export function pingClass(_rtt: number | null, quality: 'good' | 'medium' | 'bad') {
   return `q-${quality}`;
 }
 
-export const QUALITY_TITLE = { good: 'Подключено', medium: 'Связь нестабильна', bad: 'Плохое соединение' } as const;
+export const QUALITY_TITLE = { good: t('Подключено'), medium: t('Связь нестабильна'), bad: t('Плохое соединение') } as const;
 
 export function useElapsed(from: number | null) {
   const [, tick] = useState(0);
@@ -33,14 +32,15 @@ export function useElapsed(from: number | null) {
   return s >= 3600 ? `${Math.floor(s / 3600)}:${mm}:${ss}` : `${mm}:${ss}`;
 }
 
-/** Таймер звонка своим компонентом: тикает раз в секунду только он сам.
- *  Раньше useElapsed стоял в корне Mobile/Desktop — и весь интерфейс перерисовывался каждую секунду звонка. */
+/**
+ * The call timer is its own component so only it ticks every second; useElapsed in the Mobile/Desktop root
+ * used to re-render the whole UI every second of a call.
+ */
 export function Elapsed({ from, prefix = '' }: { from: number | null; prefix?: string }) {
   const t = useElapsed(from);
   return t ? <>{prefix + t}</> : null;
 }
 
-/** Индикатор связи из макета: точка и три дуги. */
 export function SignalIcon({ size = 22 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 22 22" fill="none" aria-hidden="true">
@@ -59,29 +59,28 @@ export function VoiceStatus({ app, onOpen }: { app: AppState; onOpen: () => void
   const cls = v.state === 'connecting' ? 'q-medium' : `q-${v.quality}`;
   return (
     <div className="voice-status">
-      <span className={'signal ' + cls} tabIndex={0} aria-label={v.rtt != null ? `Пинг ${v.rtt} мс` : 'Пинг измеряется'}>
+      <span className={'signal ' + cls} tabIndex={0} aria-label={v.rtt != null ? t('Пинг {0} мс', { 0: v.rtt }) : t('Пинг измеряется')}>
         <SignalIcon />
         <span className="ping-tip" role="tooltip">
           {v.state === 'connecting' ? (
-            'Подключение…'
+            t('Подключение…')
           ) : (
             <>
-              Пинг: <b className={cls}>{v.rtt != null ? `${v.rtt} мс` : 'измеряется…'}</b>
+              {t('Пинг: ')}<b className={cls}>{v.rtt != null ? t('{0} мс', { 0: v.rtt }) : t('измеряется…')}</b>
             </>
           )}
         </span>
       </span>
       <button className="text" onClick={onOpen}>
         <span className={'title ' + cls}>
-          {q ? q.title : 'Подключение…'}
-          {/* Пинг обычно — подсказкой на значке; при плохой связи или большом пинге — сразу после статуса */}
-          {q && v.rtt != null && (v.quality === 'bad' || v.rtt >= HIGH_PING) && <b className={'vs-ping ' + pingClass(v.rtt, v.quality)}>{v.rtt} мс</b>}
+          {q ? q.title : t('Подключение…')}
+          {q && v.rtt != null && (v.quality === 'bad' || v.rtt >= HIGH_PING) && <b className={'vs-ping ' + pingClass(v.rtt, v.quality)}>{v.rtt}{t(' мс')}</b>}
         </span>
         <span className="sub">
-          {app.serverById(v.server)?.channels.find((c) => c.kind === 'voice')?.name ?? 'Голосовой'} / {app.serverById(v.server)?.name}
+          {app.serverById(v.server)?.channels.find((c) => c.kind === 'voice')?.name ?? t('Голосовой')} / {app.serverById(v.server)?.name}
         </span>
       </button>
-      <button className="disconnect" title="Отключиться" aria-label="Отключиться" onClick={v.leave}>
+      <button className="disconnect" title={t('Отключиться')} aria-label={t('Отключиться')} onClick={v.leave}>
         <Icon name="phone-off" size={20} />
       </button>
     </div>

@@ -1,10 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { api, ApiError } from '../../shared/api';
 import { Icon } from '../../shared/icons';
-import { handleOf, MENTION_ALL, MAX_PHOTO_MB, MAX_PHOTOS, MAX_VIDEO_MB, PHOTO_TYPES, VIDEO_TYPES, type Attachment } from '../../shared/model';
+import { fileSize, handleOf, MENTION_ALL, MAX_FILE_MB, MAX_PHOTO_MB, MAX_PHOTOS, MAX_VIDEO_MB, PHOTO_TYPES, VIDEO_TYPES, type Attachment } from '../../shared/model';
 import { Avatar } from '../../shared/ui/Avatar';
 import { DisplayName } from '../members/Nick';
 import { MENTION_EVENT } from './mentions';
+import { t } from '../../shared/i18n';
 
 export function Composer({
   placeholder,
@@ -19,29 +20,20 @@ export function Composer({
   onError,
   people = [],
 }: {
-  /** Кого можно упомянуть (юзернеймы участников сервера, без себя) — подсказки при вводе «@». */
   people?: string[];
   placeholder: string;
-  /** photos — id уже загруженных фото (по порядку выбора). */
   onSend: (text: string, photos: number[]) => boolean;
-  /** Можно ли прикрепить фото (при правке сообщения — нельзя). */
   allowPhotos?: boolean;
-  /** Ошибка загрузки фото — показать пользователю. */
   onError?: (text: string) => void;
   onTyping?: () => void;
   disabled?: boolean;
-  /** Плашка над полем: «Ответ …» / «Редактирование». */
   bar?: ReactNode;
-  /** Подставить текст и поставить курсор в поле (меняется key — срабатывает снова). */
   seed?: { key: number; text: string | null } | null;
-  /** Esc в поле — отменить ответ/правку. */
   onCancel?: () => void;
-  /** Текущий текст поля — чтобы черновик можно было вернуть после правки сообщения. */
   onDraft?: (text: string) => void;
 }) {
   const [text, setText] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
-  /** Позиция курсора — подсказки упоминаний смотрят на «@…» прямо перед ним. */
   const [caret, setCaret] = useState(0);
   const [pick, setPick] = useState(0);
   const [mentionOff, setMentionOff] = useState<string | null>(null);
@@ -58,7 +50,7 @@ export function Composer({
               return h.startsWith(query) || n.toLowerCase().startsWith(query) || (query.length > 0 && h.includes(query));
             })
             .slice(0, 6),
-          // @everyone / @here — в конце списка, чтобы случайно не позвать всех вместо человека
+          // @everyone / @here go last so nobody pings everyone instead of a person by accident.
           ...MENTION_ALL.filter((t) => t.slice(1).startsWith(query)),
         ];
   const sel = Math.min(pick, Math.max(0, hits.length - 1));
@@ -78,11 +70,10 @@ export function Composer({
     }
   };
   const fileRef = useRef<HTMLInputElement>(null);
-  /** Выбранные фото: загружаются сразу после выбора, в сообщение уходят их id. */
   const [photos, setPhotos] = useState<Pending[]>([]);
   const photosRef = useRef(photos);
   photosRef.current = photos;
-  // Закрыли чат — превью освобождаем, а неотправленные загрузки убираем с сервера
+  // Chat closed: release previews and delete unsent uploads from the server.
   useEffect(
     () => () => {
       photosRef.current.forEach((p) => {
@@ -98,28 +89,30 @@ export function Composer({
     const fresh: Pending[] = [];
     for (const file of files) {
       const video = VIDEO_TYPES.includes(file.type);
-      if (!video && !PHOTO_TYPES.includes(file.type)) {
-        onError?.(`«${file.name}»: можно прикрепить фото (JPG, PNG, WEBP, GIF) или видео (MP4, MOV, WEBM)`);
-        continue;
-      }
-      const limit = video ? MAX_VIDEO_MB : MAX_PHOTO_MB;
+      // anything that is not a supported photo or video goes as a document
+      const doc = !video && !PHOTO_TYPES.includes(file.type);
+      const limit = doc ? MAX_FILE_MB : video ? MAX_VIDEO_MB : MAX_PHOTO_MB;
       if (file.size > limit * 1024 * 1024) {
-        onError?.(`«${file.name}» больше ${limit} МБ`);
+        onError?.(t('«{0}» больше {1} МБ', { 0: file.name, 1: limit }));
         continue;
       }
       if (fresh.length >= room) {
-        onError?.(`В одном сообщении не больше ${MAX_PHOTOS} вложений`);
+        onError?.(t('В одном сообщении не больше {0} вложений', { 0: MAX_PHOTOS }));
         break;
       }
-      const preview = URL.createObjectURL(file);
-      fresh.push({ key: `${Date.now()}-${Math.random()}`, preview, video });
+      const preview = doc ? '' : URL.createObjectURL(file);
+      fresh.push({ key: `${Date.now()}-${Math.random()}`, preview, video, doc: doc ? { name: file.name, size: file.size } : undefined });
       const key = fresh[fresh.length - 1].key;
-      // у видео размер кадра узнаём сами: сервер его не разбирает, а он нужен для раскладки
-      (video ? videoSize(preview).then(([w, h]) => `/api/attachments?w=${w}&h=${h}`) : Promise.resolve('/api/attachments'))
+      // The browser reports video dimensions; the server uses them only if it cannot read the file header.
+      (doc
+        ? Promise.resolve(`/api/attachments?name=${encodeURIComponent(file.name)}`)
+        : video
+          ? videoSize(preview).then(([w, h]) => `/api/attachments?w=${w}&h=${h}`)
+          : Promise.resolve('/api/attachments'))
         .then((url) => api<Attachment>(url, { body: file }))
         .then(
         (att) => {
-          // фото успели убрать из поля, пока оно загружалось — удаляем и с сервера
+          // The photo was removed from the composer while uploading: delete it on the server too.
           if (!photosRef.current.some((p) => p.key === key)) {
             void api(`/api/attachments/${att.id}`, { method: 'DELETE' }).catch(() => undefined);
             return;
@@ -127,7 +120,7 @@ export function Composer({
           setPhotos((list) => list.map((p) => (p.key === key ? { ...p, att } : p)));
         },
         (e: unknown) => {
-          onError?.(e instanceof ApiError ? e.message : video ? 'Не удалось загрузить видео' : 'Не удалось загрузить фото');
+          onError?.(e instanceof ApiError ? e.message : doc ? t('Не удалось загрузить файл') : video ? t('Не удалось загрузить видео') : t('Не удалось загрузить фото'));
           setPhotos((list) => {
             const gone = list.find((p) => p.key === key);
             if (gone) URL.revokeObjectURL(gone.preview);
@@ -154,7 +147,7 @@ export function Composer({
   }, [text]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!seed) return;
-    // null — текст не трогаем (ответ на сообщение не стирает черновик), только ставим курсор в поле
+    // null keeps the text (replying does not erase the draft) and only focuses the field.
     if (seed.text !== null) setText(seed.text);
     const el = inputRef.current;
     if (el) {
@@ -172,7 +165,6 @@ export function Composer({
       setPhotos([]);
     }
   };
-  // «Упомянуть» из меню пользователя — вставляем его @юзернейм в конец текста
   useEffect(() => {
     const onMention = (e: Event) => {
       const tag = handleOf((e as CustomEvent<string>).detail) + ' ';
@@ -186,7 +178,7 @@ export function Composer({
     window.addEventListener(MENTION_EVENT, onMention);
     return () => window.removeEventListener(MENTION_EVENT, onMention);
   }, []);
-  // Лента сообщений уходит под поле ввода до самого низа: сообщаем её контейнеру высоту поля
+  // The message list runs under the composer, so it needs the composer height.
   const formRef = useRef<HTMLFormElement>(null);
   useLayoutEffect(() => {
     const el = formRef.current;
@@ -213,7 +205,7 @@ export function Composer({
       <button
         type="button"
         className="round"
-        title={allowPhotos ? 'Прикрепить фото или видео' : 'Вложения нельзя добавить при правке'}
+        title={allowPhotos ? t('Прикрепить фото, видео или файл') : t('Вложения нельзя добавить при правке')}
         disabled={disabled || !allowPhotos || photos.length >= MAX_PHOTOS}
         onClick={() => fileRef.current?.click()}
       >
@@ -222,7 +214,6 @@ export function Composer({
       <input
         ref={fileRef}
         type="file"
-        accept={[...PHOTO_TYPES, ...VIDEO_TYPES].join(',')}
         multiple
         hidden
         onChange={(e) => {
@@ -231,7 +222,7 @@ export function Composer({
         }}
       />
       {hits.length > 0 && (
-        <div className="mention-pop" role="listbox" aria-label="Кого упомянуть">
+        <div className="mention-pop" role="listbox" aria-label={t('Кого упомянуть')}>
           {hits.map((n, i) => (
             <button
               key={n}
@@ -239,7 +230,7 @@ export function Composer({
               role="option"
               aria-selected={i === sel}
               className={'mention-opt' + (i === sel ? ' on' : '')}
-              // не уводим фокус из поля — клавиатура на телефоне не прячется
+              // Keep focus in the field so the phone keyboard stays open.
               onPointerDown={(e) => e.preventDefault()}
               onClick={() => insertMention(n)}
             >
@@ -248,7 +239,7 @@ export function Composer({
                   <span className="mo-all">
                     <Icon name="users" size={16} />
                   </span>
-                  <span className="mo-name">{n === '@here' ? 'Все, кто в сети' : 'Все в чате'}</span>
+                  <span className="mo-name">{n === '@here' ? t('Все, кто в сети') : t('Все в чате')}</span>
                   <span className="mo-tag">{n}</span>
                 </>
               ) : (
@@ -269,11 +260,21 @@ export function Composer({
         {shownPhotos.length > 0 && (
           <div className="composer-photos">
             {shownPhotos.map((p) => (
-              <div className={'cp-item' + (p.att ? '' : ' loading')} key={p.key}>
-                {p.video ? <video src={p.preview} muted playsInline preload="metadata" /> : <img src={p.preview} alt="" />}
+              <div className={'cp-item' + (p.att ? '' : ' loading') + (p.doc ? ' cp-doc' : '')} key={p.key} title={p.doc?.name}>
+                {p.doc ? (
+                  <span className="cp-doc-body">
+                    <Icon name="file" size={20} />
+                    <span className="cp-doc-name">{p.doc.name}</span>
+                    <span className="cp-doc-size">{fileSize(p.doc.size)}</span>
+                  </span>
+                ) : p.video ? (
+                  <video src={p.preview} muted playsInline preload="metadata" />
+                ) : (
+                  <img src={p.preview} alt="" />
+                )}
                 {p.video && <span className="cp-video"><Icon name="play" size={12} /></span>}
-                {!p.att && <span className="cp-spin" aria-label="Загружается" />}
-                <button type="button" className="cp-remove" title="Убрать фото" onClick={() => removePhoto(p.key)}>
+                {!p.att && <span className="cp-spin" aria-label={t('Загружается')} />}
+                <button type="button" className="cp-remove" title={t('Убрать вложение')} onClick={() => removePhoto(p.key)}>
                   <Icon name="close" size={14} />
                 </button>
               </div>
@@ -309,14 +310,13 @@ export function Composer({
             }
           }}
           onPaste={(e) => {
-            // вставка картинки из буфера (скриншот) — прикрепляем как фото
             const files = Array.from(e.clipboardData.files).filter((f) => f.type.startsWith('image/'));
             if (files.length && allowPhotos) {
               e.preventDefault();
               addFiles(files);
             }
           }}
-          placeholder={shownPhotos.length ? 'Подпись' : placeholder}
+          placeholder={shownPhotos.length ? t('Подпись') : placeholder}
           disabled={disabled}
           maxLength={2000}
           onChange={(e) => {
@@ -329,9 +329,8 @@ export function Composer({
         <button
           type="button"
           className="icon-btn"
-          title="Смайлик"
+          title={t('Смайлик')}
           disabled={disabled}
-          // случайный смайлик: пустое поле — сразу отправляем, иначе дописываем к тексту
           onPointerDown={(e) => e.preventDefault()}
           onClick={() => {
             const e = EMOJIS[Math.floor(Math.random() * EMOJIS.length)];
@@ -344,7 +343,7 @@ export function Composer({
         <button
           type="submit"
           className={'send-btn' + (text.trim() || shownPhotos.length ? ' show' : '')}
-          title={uploading ? 'Фото ещё загружаются' : 'Отправить'}
+          title={uploading ? t('Фото ещё загружаются') : t('Отправить')}
           disabled={disabled || !canSend}
           tabIndex={canSend ? 0 : -1}
         >
@@ -355,19 +354,16 @@ export function Composer({
   );
 }
 
-/** Что отправляет кнопка смайлика (случайный из списка). */
 const EMOJIS = ['🙂', '🤡'];
 
 interface Pending {
   key: string;
-  /** Локальное превью (object URL), пока фото не загружено и после. */
   preview: string;
-  /** Загруженное фото; пока его нет — идёт загрузка. */
   att?: Attachment;
   video?: boolean;
+  doc?: { name: string; size: number };
 }
 
-/** Размер кадра видео [w, h]; не вышло прочитать — 16:9. */
 function videoSize(src: string): Promise<[number, number]> {
   return new Promise((done) => {
     const v = document.createElement('video');

@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { DisplayName } from '../members/Nick';
+import { t } from '../../shared/i18n';
 
-/** «Имя печатает…»: при нехватке места обрезается имя, а «печатает» и точки остаются видны. */
 export function TypingLine({ users, fallback }: { users: string[]; fallback: ReactNode }) {
   if (!users.length) return <>{fallback}</>;
   const shown = users.slice(0, 2);
@@ -15,7 +15,7 @@ export function TypingLine({ users, fallback }: { users: string[]; fallback: Rea
           </span>
         ))}
       </span>
-      <span className="typing-verb">{users.length === 1 ? 'печатает' : 'печатают'}</span>
+      <span className="typing-verb">{users.length === 1 ? t('печатает') : t('печатают')}</span>
       <span className="typing-dots">
         <i />
         <i />

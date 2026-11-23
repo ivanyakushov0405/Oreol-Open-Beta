@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Icon, type IconName } from '../../shared/icons';
+import { t } from '../../shared/i18n';
 
 export function Head({
   title,
@@ -11,29 +12,24 @@ export function Head({
   actionsHidden,
   swapKey,
   fromTitle,
+  onTitle,
 }: {
   title: string;
   sub?: React.ReactNode;
   onBack: () => void;
   avatar?: React.ReactNode;
-  /** Иконка канала слева в заголовке (Figma: «Chat header» → Title → Icon). */
   icon?: IconName;
-  /** Кнопки справа (Figma: группа «Actions» в шапке). */
   actions?: React.ReactNode;
-  /** Кнопки справа плавно спрятаны (например, кнопка чата, когда чат уже открыт). */
   actionsHidden?: boolean;
-  /** Смена «экрана» внутри шапки (войс ↔ чат Лобби): кнопки подпрыгивают, название растворяется и проявляется новое. */
   swapKey?: string;
-  /** Название экрана, с которого пришли (настройки → раздел): при открытии оно растворяется в новое. */
   fromTitle?: string;
+  /** Makes the title pill a button (chat info). */
+  onTitle?: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const last = useRef({ key: swapKey, title, icon });
-  // Уходящее название и иконка (подпись — время, пинг — не трогаем: она общая и живая)
   const [ghost, setGhost] = useState<{ title: string; icon?: IconName } | null>(fromTitle ? { title: fromTitle } : null);
-  /** Счётчик «подпрыгиваний»: при открытии экрана и при каждой смене swapKey. */
   const [bump, setBump] = useState(1);
-  /** Экран открыт из списка (до него шапки не было): кнопки «вырастают из ничего». */
   const [pop, setPop] = useState(!fromTitle);
   useEffect(() => {
     if (!pop) return;
@@ -52,15 +48,18 @@ export function Head({
     const id = window.setTimeout(() => setGhost(null), 320);
     return () => window.clearTimeout(id);
   }, [ghost]);
-  // Перезапуск анимации без пересоздания элементов: чередуем два одинаковых класса
+  // Restart the animation without recreating elements by alternating two identical classes.
   const bumpCls = pop || (bump === 1 && !fromTitle) ? '' : bump % 2 ? ' bump-a' : ' bump-b';
   const swapIn = bump > 1 || ghost ? ' sw-in' : '';
   return (
     <div className={'m-head' + (pop ? ' pop' : '')} ref={ref}>
-      <button className={'pill-btn glass' + bumpCls} onClick={onBack} title="Назад">
+      <button className={'pill-btn glass' + bumpCls} onClick={onBack} title={t('Назад')}>
         <Icon name="back" />
       </button>
-      <div className={'title-pill glass' + bumpCls}>
+      <div
+        className={'title-pill glass' + bumpCls + (onTitle ? ' tappable' : '')}
+        {...(onTitle && { role: 'button', tabIndex: 0, onClick: onTitle, onKeyDown: (e: React.KeyboardEvent) => e.key === 'Enter' && onTitle() })}
+      >
         {avatar}
         {(icon || ghost?.icon) && (
           <span className="ico-swap">
@@ -91,4 +90,3 @@ export function Head({
   );
 }
 
-/** Высота полосы под свёрнутой пилюлей (без отступа под строку состояния). */

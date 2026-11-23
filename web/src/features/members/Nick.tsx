@@ -2,7 +2,6 @@ import type { ReactNode } from 'react';
 import { useUser } from '../../shared/api';
 import { nameColor } from '../../shared/model';
 
-/** Отображаемое имя пользователя (или его юзернейм, если профиля нет). */
 export function useDisplayName(name: string) {
   return useUser(name)?.displayName || name;
 }

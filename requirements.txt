@@ -1,8 +1,9 @@
-livekit-api
-fastapi
-uvicorn
-websockets
-python-multipart
-pydantic
-boto3
-Pillow
+# Exact versions so an image build never pulls a surprise (or tampered) release
+livekit-api==2.0.0
+fastapi==0.163.1
+uvicorn==0.54.0
+websockets==17.4
+python-multipart==0.0.33
+pydantic==2.14.3
+boto3==1.44.9
+Pillow==13.0.0

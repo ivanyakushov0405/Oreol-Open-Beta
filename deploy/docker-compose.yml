@@ -1,7 +1,7 @@
-# Новая версия Ореола рядом со старой: new.halomvp.ru
-# Всё слушает только 127.0.0.1 (кроме медиа-портов LiveKit), наружу отдаёт системный nginx.
-# Порты специально НЕ совпадают со стандартными (8000 / 7880-7882), чтобы не задеть старый стек.
-# Уникальное имя проекта и контейнеров: старый стек (oreol-glass-mvp-*) не задевается
+# New Oreol version next to the old one: new.halomvp.ru
+# Everything listens on 127.0.0.1 (except LiveKit media ports); the system nginx faces the internet.
+# Ports intentionally differ from the defaults (8000 / 7880-7882) so the old stack is untouched.
+# Unique project and container names: the old stack (oreol-glass-mvp-*) is untouched
 name: oreol-new
 
 services:
@@ -17,9 +17,9 @@ services:
     environment:
       APP_PORT: "8100"
       DB_NAME: /data/chat.db
-      # Браузер подключается к LiveKit через nginx того же домена (location /rtc)
+      # The browser reaches LiveKit through nginx on the same domain (location /rtc)
       LK_SERVER_URL: wss://new.halomvp.ru
-      # Бэкенд ходит в LiveKit напрямую
+      # The backend talks to LiveKit directly
       LK_API_URL: http://127.0.0.1:7890
       VOICE_ROOM_NAME: oreol-new-lobby
     volumes:
@@ -27,7 +27,7 @@ services:
 
   livekit:
     container_name: oreol-new-livekit
-    image: livekit/livekit-server:latest
+    image: livekit/livekit-server:v1.13.11
     network_mode: host
     restart: unless-stopped
     command: --config /etc/livekit.yaml --node-ip ${PUBLIC_IP}

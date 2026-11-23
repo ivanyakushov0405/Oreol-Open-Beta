@@ -1,5 +1,7 @@
-/** Громкость отдельных собеседников (0…2, по умолчанию 1 = 100%) — как «громкость пользователя» в меню по ПКМ.
- *  Хранится на устройстве; умножается на общую громкость вывода. */
+/**
+ * Per-peer volume (0..2, default 1 = 100%), like "user volume" in the context menu. Stored on the device
+ * and multiplied by the output volume.
+ */
 const LS = 'oreol.peerVolume';
 let map: Record<string, number> = {};
 try {
@@ -22,7 +24,7 @@ export function setPeerVolume(name: string, v: number) {
   try {
     localStorage.setItem(LS, JSON.stringify(map));
   } catch {
-    /* хранилище недоступно — громкость действует до перезагрузки */
+    /* storage unavailable: the volume lasts until reload */
   }
   subs.forEach((f) => f());
 }

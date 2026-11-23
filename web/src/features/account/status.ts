@@ -1,4 +1,4 @@
 import type { Status } from '../../shared/model';
+import { t } from '../../shared/i18n';
 
-/** Подпись статуса для карточки участника. */
-export const STATUS_LABEL: Record<Status, string> = { online: 'В сети', idle: 'Не активен', dnd: 'Не беспокоить', offline: 'Не в сети' };
+export const STATUS_LABEL: Record<Status, string> = { online: t('В сети'), idle: t('Не активен'), dnd: t('Не беспокоить'), offline: t('Не в сети') };

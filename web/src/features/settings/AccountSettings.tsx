@@ -7,20 +7,18 @@ import { handleOf } from '../../shared/model';
 import { Avatar, Banner } from '../../shared/ui/Avatar';
 import { STATUS_ITEMS } from '../account/AccountMenu';
 import { pressIcon } from './SettingsScreen';
+import { t } from '../../shared/i18n';
 
-/* ---------- Учётная запись (Figma «Desktop · User settings») ---------- */
 function maskEmail(email: string) {
   const [user, domain] = email.split('@');
   return `${user?.[0] ?? ''}•••••@${domain ?? ''}`;
 }
 
-/** +79991234567 → +7 (999) 123-45-67; другие страны — +цифры. */
 function formatPhone(phone: string | null | undefined) {
   if (!phone) return '';
   return phoneInput(phone);
 }
 
-/** Маска при вводе: российские номера (+7 / 8) форматируются, остальные — +цифры. */
 function phoneInput(raw: string) {
   let d = raw.replace(/\D/g, '').slice(0, 15);
   if (!d) return '';
@@ -39,7 +37,7 @@ function errText(e: unknown, fallback: string) {
   return e instanceof Error && e.message ? e.message : fallback;
 }
 
-/** Диалог поверх настроек. Esc закрывает только его, а не весь экран настроек. */
+/** Dialog over settings: Escape closes only the dialog, not the whole settings screen. */
 function Dialog({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {
   return createPortal(
     <div
@@ -69,39 +67,39 @@ function PasswordDialog({ app, onClose }: { app: AppState; onClose: () => void }
   const [busy, setBusy] = useState(false);
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (next.length < 8) return setErrs({ password: 'Минимум 8 символов' });
-    if (next !== repeat) return setErrs({ repeat: 'Пароли не совпадают' });
+    if (next.length < 8) return setErrs({ password: t('Минимум 8 символов') });
+    if (next !== repeat) return setErrs({ repeat: t('Пароли не совпадают') });
     setBusy(true);
     setErrs({});
     try {
       await api('/api/account/password', { method: 'POST', body: { current, password: next } });
-      app.notify('Пароль изменён. Другие сессии завершены', 'success');
+      app.notify(t('Пароль изменён. Другие сессии завершены'), 'success');
       onClose();
     } catch (err) {
-      setErrs(err instanceof ApiError && Object.keys(err.fields).length ? err.fields : { _: errText(err, 'Не удалось сменить пароль') });
+      setErrs(err instanceof ApiError && Object.keys(err.fields).length ? err.fields : { _: errText(err, t('Не удалось сменить пароль')) });
     } finally {
       setBusy(false);
     }
   };
   return (
-    <Dialog title="Сменить пароль" onClose={onClose}>
+    <Dialog title={t('Сменить пароль')} onClose={onClose}>
       <form className="dialog-form" onSubmit={submit}>
-        <AccField label="Текущий пароль" error={errs.current}>
+        <AccField label={t('Текущий пароль')} error={errs.current}>
           <PasswordInput autoComplete="current-password" autoFocus value={current} onChange={setCurrent} />
         </AccField>
-        <AccField label="Новый пароль" error={errs.password}>
+        <AccField label={t('Новый пароль')} error={errs.password}>
           <PasswordInput value={next} onChange={setNext} />
         </AccField>
-        <AccField label="Повторите новый пароль" error={errs.repeat}>
+        <AccField label={t('Повторите новый пароль')} error={errs.repeat}>
           <PasswordInput value={repeat} onChange={setRepeat} />
         </AccField>
         {errs._ && <p className="field-hint error">{errs._}</p>}
         <div className="dialog-actions">
           <button type="button" className="btn btn-secondary" onClick={onClose}>
-            Отмена
+            {t('Отмена')}
           </button>
           <button type="submit" className="btn btn-primary" disabled={busy || !current || !next}>
-            {busy ? 'Сохраняем…' : 'Сменить пароль'}
+            {busy ? t('Сохраняем…') : t('Сменить пароль')}
           </button>
         </div>
       </form>
@@ -109,7 +107,6 @@ function PasswordDialog({ app, onClose }: { app: AppState; onClose: () => void }
   );
 }
 
-/** Поле пароля с «глазком»: показать / скрыть введённое. */
 function PasswordInput({
   value,
   onChange,
@@ -135,8 +132,8 @@ function PasswordInput({
       <button
         type="button"
         className="pw-eye"
-        title={show ? 'Скрыть пароль' : 'Показать пароль'}
-        aria-label={show ? 'Скрыть пароль' : 'Показать пароль'}
+        title={show ? t('Скрыть пароль') : t('Показать пароль')}
+        aria-label={show ? t('Скрыть пароль') : t('Показать пароль')}
         aria-pressed={show}
         onClick={(e) => {
           e.preventDefault();
@@ -161,26 +158,26 @@ function DeleteDialog({ app, onClose }: { app: AppState; onClose: () => void }) 
       await api('/api/account', { method: 'DELETE', body: { password } });
       app.logout();
     } catch (er) {
-      setErr(errText(er, 'Не удалось удалить аккаунт'));
+      setErr(errText(er, t('Не удалось удалить аккаунт')));
       setBusy(false);
     }
   };
   return (
-    <Dialog title="Удалить аккаунт?" onClose={onClose}>
+    <Dialog title={t('Удалить аккаунт?')} onClose={onClose}>
       <form className="dialog-form" onSubmit={submit}>
         <p className="hint" style={{ margin: 0 }}>
-          Аккаунт будет удалён без возможности восстановления. Для подтверждения введите пароль.
+          {t('Аккаунт будет удалён без возможности восстановления. Для подтверждения введите пароль.')}
         </p>
-        <AccField label="Пароль" error={err ?? undefined}>
+        <AccField label={t('Пароль')} error={err ?? undefined}>
           <PasswordInput autoComplete="new-password" autoFocus value={password} onChange={setPassword} />
         </AccField>
         <div className="dialog-actions">
           <button type="button" className="btn btn-secondary" onClick={onClose}>
-            Отмена
+            {t('Отмена')}
           </button>
           <button type="submit" className="btn btn-primary" disabled={busy || !password}>
             <Icon name="trash" size={16} />
-            {busy ? 'Удаляем…' : 'Удалить навсегда'}
+            {busy ? t('Удаляем…') : t('Удалить навсегда')}
           </button>
         </div>
       </form>
@@ -198,10 +195,9 @@ function AccField({ label, error, children }: { label: string; error?: string; c
   );
 }
 
-/** Выбор статуса: меняется сразу, без «Сохранить». */
 function StatusPicker({ app }: { app: AppState }) {
   return (
-    <div className="status-picker" role="radiogroup" aria-label="Статус">
+    <div className="status-picker" role="radiogroup" aria-label={t('Статус')}>
       {STATUS_ITEMS.map((s) => (
         <button
           key={s.id}
@@ -222,7 +218,6 @@ function StatusPicker({ app }: { app: AppState }) {
   );
 }
 
-/** Шапка: баннер, аватар со статусом, имя, @ник и кнопка действия. */
 function AccountHead({
   app,
   children,
@@ -239,14 +234,14 @@ function AccountHead({
   return (
     <div className="card profile-card account-head">
       {onBanner ? (
-        <button type="button" className="banner-edit" title="Сменить баннер" onClick={onBanner}>
+        <button type="button" className="banner-edit" title={t('Сменить баннер')} onClick={onBanner}>
           <Banner name={app.name} />
         </button>
       ) : (
         <Banner name={app.name} />
       )}
       {onAvatar ? (
-        <button type="button" className="avatar-edit" title="Сменить аватар" onClick={onAvatar}>
+        <button type="button" className="avatar-edit" title={t('Сменить аватар')} onClick={onAvatar}>
           <Avatar name={app.name} size={80} status={app.status} />
         </button>
       ) : (
@@ -262,7 +257,6 @@ function AccountHead({
   );
 }
 
-/** Аватар и баннер: загружаются и убираются сразу, без кнопки «Сохранить». */
 function useImages(app: AppState) {
   const [busy, setBusy] = useState<'avatar' | 'banner' | null>(null);
   const avatarInput = useRef<HTMLInputElement>(null);
@@ -273,7 +267,7 @@ function useImages(app: AppState) {
       const r = await api<{ user: Me }>(`/api/profile/${kind}`, file ? { method: 'PUT', body: file } : { method: 'DELETE' });
       app.updateMe(r.user);
     } catch (e) {
-      app.notify(errText(e, 'Не удалось обновить изображение'), 'error');
+      app.notify(errText(e, t('Не удалось обновить изображение')), 'error');
     } finally {
       setBusy(null);
     }
@@ -304,9 +298,6 @@ function useImages(app: AppState) {
   };
 }
 
-/* ---------- Учётная запись: данные профиля и данные аккаунта на одной странице ----------
-   Просмотр и редактирование устроены одинаково: те же карточки, те же поля в том же порядке, одна колонка,
-   между полями — линии. Кнопка «Редактировать» стоит там же, где в режиме редактирования «Отмена» и «Сохранить». */
 const MAX_BIO = 190;
 
 export function AccountView({ app, onEdit }: { app: AppState; onEdit: () => void }) {
@@ -320,16 +311,16 @@ export function AccountView({ app, onEdit }: { app: AppState; onEdit: () => void
         <StatusPicker app={app} />
         <div className="acc-list acc-head-list">
           <div className="acc-field">
-            <div className="overline">О себе</div>
-            <div className={'v' + (me.bio ? ' bio' : ' muted')}>{me.bio || 'Не заполнено'}</div>
+            <div className="overline">{t('О себе')}</div>
+            <div className={'v' + (me.bio ? ' bio' : ' muted')}>{me.bio || t('Не заполнено')}</div>
           </div>
         </div>
       </AccountHead>
       <div className="card acc-card">
-        <h3>Данные аккаунта</h3>
+        <h3>{t('Данные аккаунта')}</h3>
         <div className="acc-list">
           <div className="acc-field">
-            <div className="overline">Имя пользователя</div>
+            <div className="overline">{t('Имя пользователя')}</div>
             <div className="v">{handleOf(me.username)}</div>
           </div>
           <div className="acc-row">
@@ -338,40 +329,40 @@ export function AccountView({ app, onEdit }: { app: AppState; onEdit: () => void
               <div className="v">{showEmail ? me.email : maskEmail(me.email)}</div>
             </div>
             <button type="button" className="btn btn-secondary btn-xs" onClick={() => setShowEmail((x) => !x)}>
-              {showEmail ? 'Скрыть' : 'Показать'}
+              {showEmail ? t('Скрыть') : t('Показать')}
             </button>
           </div>
           <div className="acc-field">
-            <div className="overline">Телефон</div>
-            <div className="v">{formatPhone(me.phone) || 'Не добавлен'}</div>
+            <div className="overline">{t('Телефон')}</div>
+            <div className="v">{formatPhone(me.phone) || t('Не добавлен')}</div>
           </div>
         </div>
       </div>
       <div className="acc-actions-end">
         <button type="button" className="btn btn-primary acc-edit-btn" onClick={onEdit}>
           <Icon name="pencil" size={16} />
-          Редактировать
+          {t('Редактировать')}
         </button>
       </div>
       <div className="card account-security">
-        <h3>Пароль и безопасность</h3>
+        <h3>{t('Пароль и безопасность')}</h3>
         <div className="acc-actions">
           <button type="button" className="btn btn-primary" onClick={() => setPw(true)}>
-            Сменить пароль
+            {t('Сменить пароль')}
           </button>
-          <button type="button" className="btn btn-secondary" onClick={() => app.notify('Двухфакторная аутентификация скоро будет')}>
-            Включить 2FA
+          <button type="button" className="btn btn-secondary" onClick={() => app.notify(t('Двухфакторная аутентификация скоро будет'))}>
+            {t('Включить 2FA')}
           </button>
         </div>
       </div>
       <div className="card danger-card">
         <div className="grow">
-          <b>Удаление аккаунта</b>
-          <p>Аккаунт и все данные будут удалены без возможности восстановления.</p>
+          <b>{t('Удаление аккаунта')}</b>
+          <p>{t('Аккаунт и все данные будут удалены без возможности восстановления.')}</p>
         </div>
         <button type="button" className="btn btn-danger-solid" onClick={() => setDel(true)}>
           <Icon name="trash" size={16} />
-          Удалить аккаунт
+          {t('Удалить аккаунт')}
         </button>
       </div>
       {pw && <PasswordDialog app={app} onClose={() => setPw(false)} />}
@@ -380,7 +371,6 @@ export function AccountView({ app, onEdit }: { app: AppState; onEdit: () => void
   );
 }
 
-/* ---------- Редактирование учётной записи (Figma «Desktop · User settings · Редактирование профиля») ---------- */
 export function AccountEdit({ app, onDone }: { app: AppState; onDone: () => void }) {
   const me = app.me;
   const initial = { username: me.username, email: me.email, phone: formatPhone(me.phone), displayName: me.displayName, bio: me.bio };
@@ -410,10 +400,10 @@ export function AccountEdit({ app, onDone }: { app: AppState; onDone: () => void
         const r = await api<{ user: Me }>('/api/profile', { method: 'PATCH', body: { bio: form.bio.trim() } });
         app.updateMe(r.user);
       }
-      app.notify('Изменения сохранены', 'success');
+      app.notify(t('Изменения сохранены'), 'success');
       onDone();
     } catch (e) {
-      setErrs(e instanceof ApiError && Object.keys(e.fields).length ? e.fields : { _: errText(e, 'Не удалось сохранить') });
+      setErrs(e instanceof ApiError && Object.keys(e.fields).length ? e.fields : { _: errText(e, t('Не удалось сохранить')) });
     } finally {
       setSaving(false);
     }
@@ -430,38 +420,38 @@ export function AccountEdit({ app, onDone }: { app: AppState; onDone: () => void
         <StatusPicker app={app} />
         <div className="acc-photo-actions">
           <button type="button" className="btn btn-secondary btn-xs" disabled={img.busy !== null} onClick={() => img.pick('avatar')}>
-            {img.busy === 'avatar' ? 'Загрузка…' : me.avatar ? 'Сменить аватар' : 'Загрузить аватар'}
+            {img.busy === 'avatar' ? t('Загрузка…') : me.avatar ? t('Сменить аватар') : t('Загрузить аватар')}
           </button>
           <button type="button" className="btn btn-secondary btn-xs" disabled={img.busy !== null} onClick={() => img.pick('banner')}>
-            {img.busy === 'banner' ? 'Загрузка…' : me.banner ? 'Сменить баннер' : 'Загрузить баннер'}
+            {img.busy === 'banner' ? t('Загрузка…') : me.banner ? t('Сменить баннер') : t('Загрузить баннер')}
           </button>
           {me.avatar && (
             <button type="button" className="btn btn-secondary btn-xs" disabled={img.busy !== null} onClick={() => img.remove('avatar')}>
-              Убрать аватар
+              {t('Убрать аватар')}
             </button>
           )}
           {me.banner && (
             <button type="button" className="btn btn-secondary btn-xs" disabled={img.busy !== null} onClick={() => img.remove('banner')}>
-              Убрать баннер
+              {t('Убрать баннер')}
             </button>
           )}
         </div>
       </AccountHead>
 
       <form className="card acc-card" onSubmit={submit}>
-        <h3>Данные профиля</h3>
+        <h3>{t('Данные профиля')}</h3>
         <div className="acc-list">
-          <AccField label="Отображаемое имя" error={errs.displayName}>
+          <AccField label={t('Отображаемое имя')} error={errs.displayName}>
             <input className="input" value={form.displayName} maxLength={32} onChange={set('displayName')} />
           </AccField>
           <label className="acc-input">
-            <span className="field-label">О себе</span>
+            <span className="field-label">{t('О себе')}</span>
             <textarea
               className="input textarea"
               rows={3}
               value={form.bio}
               maxLength={MAX_BIO}
-              placeholder="Пара слов о себе для карточки участника"
+              placeholder={t('Пара слов о себе для карточки участника')}
               onChange={set('bio')}
             />
             <span className="field-hint">
@@ -473,9 +463,9 @@ export function AccountEdit({ app, onDone }: { app: AppState; onDone: () => void
       </form>
 
       <form className="card acc-card" onSubmit={submit}>
-        <h3>Данные аккаунта</h3>
+        <h3>{t('Данные аккаунта')}</h3>
         <div className="acc-list">
-          <AccField label="Имя пользователя" error={errs.username}>
+          <AccField label={t('Имя пользователя')} error={errs.username}>
             <span className="input-at">
               <span className="at" aria-hidden="true">@</span>
               <input className="input" value={form.username} maxLength={32} autoComplete="username" onChange={(e) => setForm((f) => ({ ...f, username: e.target.value.replace(/^@+/, '') }))} />
@@ -484,7 +474,7 @@ export function AccountEdit({ app, onDone }: { app: AppState; onDone: () => void
           <AccField label="Email" error={errs.email}>
             <input className="input" type="email" value={form.email} autoComplete="email" onChange={set('email')} />
           </AccField>
-          <AccField label="Телефон" error={errs.phone}>
+          <AccField label={t('Телефон')} error={errs.phone}>
             <input className="input" type="tel" value={form.phone} placeholder="+7 (___) ___-__-__" autoComplete="tel" onChange={set('phone')} />
           </AccField>
         </div>
@@ -494,10 +484,10 @@ export function AccountEdit({ app, onDone }: { app: AppState; onDone: () => void
 
       <div className="acc-actions-end">
         <button type="button" className="btn btn-secondary" onClick={onDone}>
-          Отмена
+          {t('Отмена')}
         </button>
         <button type="button" className="btn btn-primary" disabled={!dirty || saving} onClick={() => void save()}>
-          {saving ? 'Сохраняем…' : 'Сохранить'}
+          {saving ? t('Сохраняем…') : t('Сохранить')}
         </button>
       </div>
     </>

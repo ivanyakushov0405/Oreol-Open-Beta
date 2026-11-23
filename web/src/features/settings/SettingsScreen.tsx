@@ -1,5 +1,6 @@
 import { Fragment, useRef, type ReactNode } from 'react';
 import { ChatsIcon, Icon, SlidersIcon, type IconName } from '../../shared/icons';
+import { t } from '../../shared/i18n';
 
 export function pressIcon(el: HTMLElement) {
   el.removeAttribute('data-press');
@@ -7,14 +8,13 @@ export function pressIcon(el: HTMLElement) {
   el.setAttribute('data-press', '');
   const token = String(Date.now() + Math.random());
   el.dataset.pressId = token;
-  // самая длинная анимация иконки — 1 с (микрофон), потом снимаем атрибут
+  // The longest icon animation is 1 s (microphone), then the attribute is removed.
   window.setTimeout(() => {
     if (el.dataset.pressId !== token) return;
     el.removeAttribute('data-press');
   }, 1100);
 }
 
-/** Разделы, между которыми переход — это «просмотр ↔ редактирование», а не смена вкладки. */
 const SWAP_GROUP: string[] = ['account', 'profile', 'account-edit'];
 
 export function SettingsScreen<T extends string>({
@@ -31,19 +31,17 @@ export function SettingsScreen<T extends string>({
 }: {
   title: string;
   overline: string;
-  /** Окно уходит — играет анимация закрытия. */
   closing?: boolean;
   nav: { id: T; label: string; icon: IconName; group?: string }[];
   section: T;
-  /** Подсвеченный пункт навигации, если раздел — подстраница. */
   active?: T;
   onSection: (s: T) => void;
   onClose: () => void;
   footer?: ReactNode;
   children: ReactNode;
 }) {
-  // Переключение «просмотр ↔ редактирование» учётной записи — своя анимация (проявление из размытия);
-  // переход между вкладками — обычная. Помним, откуда пришли, пока раздел не сменится снова.
+  // Account view/edit switching has its own animation (fade out of blur); tab changes use the normal one.
+  // Remember where we came from until the section changes again.
   const last = useRef(section);
   const swap = useRef(false);
   if (last.current !== section) {
@@ -78,17 +76,15 @@ export function SettingsScreen<T extends string>({
         {footer}
       </nav>
       <main className={'settings-body glass' + (swap.current ? ' swap' : '')}>
-        {/* Шапка из Figma: заголовок H1 + кнопка закрытия 32×32 r10 с подписью ESC */}
         <div className="settings-head">
           <h1>{title}</h1>
           <div className="settings-close">
-            <button type="button" className="settings-x" onClick={onClose} title="Закрыть (Esc)" aria-label="Закрыть">
+            <button type="button" className="settings-x" onClick={onClose} title={t('Закрыть (Esc)')} aria-label={t('Закрыть')}>
               <Icon name="close" size={20} />
             </button>
             <span>ESC</span>
           </div>
         </div>
-        {/* ключ по разделу — при смене раздела содержимое заново проявляется (анимация set-sec-in) */}
         <Fragment key={section}>{children}</Fragment>
       </main>
     </div>

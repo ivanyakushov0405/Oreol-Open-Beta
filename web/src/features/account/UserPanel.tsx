@@ -5,8 +5,8 @@ import { handleOf } from '../../shared/model';
 import { Avatar } from '../../shared/ui/Avatar';
 import { useMicLevel } from '../voice/micLevel';
 import { AccountMenu } from './AccountMenu';
+import { t } from '../../shared/i18n';
 
-/* ---------- Панель пользователя ---------- */
 export function UserPanel({
   app,
   onSettings,
@@ -16,13 +16,11 @@ export function UserPanel({
   app: AppState;
   onSettings: () => void;
   onProfile?: () => void;
-  /** Открыт сервер, в войсе которого мы сидим, — нас уже видно (и подсвечивает) в списке каналов, кольца на аватарке не нужно. */
   onStage?: boolean;
 }) {
   const v = app.voice;
   const [menu, setMenu] = useState(false);
-  // В звонке иконка микрофона заполняется цианом по уровню голоса, а пока говоришь — кольцо вокруг аватарки.
-  // Если открыт сервер, в войсе которого сидим, кольца нет: нас уже подсвечивает список каналов.
+  // No ring when the open server is the one whose voice we are in: the channel list already highlights us.
   const micLive = v.micOn && v.state === 'connected';
   const panel = useRef<HTMLDivElement>(null);
   useMicLevel(panel, micLive, v.micTrack);
@@ -46,7 +44,7 @@ export function UserPanel({
       <button
         className={'who' + (menu ? ' on' : '')}
         onClick={() => setMenu((m) => !m)}
-        title="Статус и аккаунт"
+        title={t('Статус и аккаунт')}
         aria-haspopup="menu"
         aria-expanded={menu}
       >
@@ -55,7 +53,7 @@ export function UserPanel({
       </button>
       <button
         className={'icon-btn mic-lvl' + (!v.micOn ? ' danger' : '')}
-        title={v.micOn ? 'Выключить микрофон' : 'Включить микрофон'}
+        title={v.micOn ? t('Выключить микрофон') : t('Включить микрофон')}
         onClick={() => void v.toggleMic()}
       >
         <StrikeIcon name="mic" off={!v.micOn} />
@@ -63,12 +61,12 @@ export function UserPanel({
       </button>
       <button
         className={'icon-btn' + (v.deafened ? ' danger' : '')}
-        title={v.deafened ? 'Включить звук' : 'Выключить звук'}
+        title={v.deafened ? t('Включить звук') : t('Выключить звук')}
         onClick={v.toggleDeafen}
       >
         <StrikeIcon name="headphones" off={v.deafened} />
       </button>
-      <button className="icon-btn" title="Настройки" onClick={onSettings}>
+      <button className="icon-btn" title={t('Настройки')} onClick={onSettings}>
         <Icon name="settings" />
       </button>
     </div>

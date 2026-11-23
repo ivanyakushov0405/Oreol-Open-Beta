@@ -1,7 +1,9 @@
 import { getAudioPrefs } from './audioPrefs';
 
-/** Звуки интерфейса синтезируются на лету (WebAudio) — без файлов.
- *  Мягкие «стеклянные» тоны: синус + тихий обертон, быстрая атака, плавное затухание. */
+/**
+ * UI sounds are synthesized on the fly with WebAudio, no files: soft glassy tones (sine plus a quiet overtone,
+ * fast attack, smooth decay).
+ */
 export type SoundName = 'join' | 'leave' | 'peer-join' | 'peer-leave' | 'mic-on' | 'mic-off' | 'deafen' | 'undeafen' | 'share-on' | 'share-off' | 'message' | 'mention';
 
 type Note = { f: number; at: number; dur: number; gain?: number };
@@ -9,22 +11,16 @@ type Note = { f: number; at: number; dur: number; gain?: number };
 const C5 = 523.25, D5 = 587.33, E5 = 659.25, G5 = 783.99, A5 = 880, C6 = 1046.5, E4 = 329.63, A4 = 440, G4 = 392, B4 = 493.88;
 
 const SOUNDS: Record<SoundName, Note[]> = {
-  // Вход в войс — восходящая терция с октавой, выход — то же вниз
   join: [{ f: C5, at: 0, dur: 0.18 }, { f: E5, at: 0.09, dur: 0.2 }, { f: G5, at: 0.18, dur: 0.32 }],
   leave: [{ f: G5, at: 0, dur: 0.18 }, { f: E5, at: 0.09, dur: 0.2 }, { f: C5, at: 0.18, dur: 0.32 }],
-  // Кто-то зашёл / вышел — короче и тише
   'peer-join': [{ f: E5, at: 0, dur: 0.14, gain: 0.6 }, { f: A5, at: 0.08, dur: 0.24, gain: 0.6 }],
   'peer-leave': [{ f: A5, at: 0, dur: 0.14, gain: 0.6 }, { f: E5, at: 0.08, dur: 0.24, gain: 0.6 }],
-  // Микрофон: вверх — включён, вниз — выключен
   'mic-on': [{ f: A4, at: 0, dur: 0.09 }, { f: E5, at: 0.06, dur: 0.16 }],
   'mic-off': [{ f: E5, at: 0, dur: 0.09 }, { f: A4, at: 0.06, dur: 0.16 }],
-  // Наушники: ниже и мягче, чем микрофон
   deafen: [{ f: B4, at: 0, dur: 0.1 }, { f: G4, at: 0.07, dur: 0.12 }, { f: E4, at: 0.14, dur: 0.22 }],
   undeafen: [{ f: E4, at: 0, dur: 0.1 }, { f: G4, at: 0.07, dur: 0.12 }, { f: B4, at: 0.14, dur: 0.22 }],
-  // Демонстрация: светлое арпеджио
   'share-on': [{ f: D5, at: 0, dur: 0.12 }, { f: G5, at: 0.07, dur: 0.12 }, { f: C6, at: 0.14, dur: 0.3 }],
   'share-off': [{ f: C6, at: 0, dur: 0.12 }, { f: G5, at: 0.07, dur: 0.12 }, { f: D5, at: 0.14, dur: 0.3 }],
-  // Новое сообщение — короткий мягкий «дзынь»; упоминание — то же, но с третьей, верхней нотой
   message: [{ f: G5, at: 0, dur: 0.12, gain: 0.55 }, { f: C6, at: 0.07, dur: 0.26, gain: 0.5 }],
   mention: [{ f: E5, at: 0, dur: 0.1, gain: 0.6 }, { f: G5, at: 0.06, dur: 0.12, gain: 0.6 }, { f: C6, at: 0.12, dur: 0.3, gain: 0.55 }],
 };
@@ -32,9 +28,11 @@ const SOUNDS: Record<SoundName, Note[]> = {
 let ctx: AudioContext | null = null;
 let sink = '';
 
-/** iOS после сворачивания, звонка или блокировки переводит контекст в «suspended»/«interrupted», и включить его
- *  обратно можно только внутри касания — поэтому будим его на каждом жесте и при возвращении на вкладку.
- *  Закрытый (или так и не проснувшийся) контекст пересоздаём: раньше звуки пропадали до перезагрузки. */
+/**
+ * After backgrounding, a call or a lock iOS moves the context to "suspended"/"interrupted", and it can only be resumed
+ * inside a touch, so it is woken on every gesture and when the tab becomes visible. A closed context (or one that
+ * never woke up) is recreated; sounds used to stay silent until reload.
+ */
 function wake(recreate = false) {
   if (!ctx) return;
   if (ctx.state === 'closed' || (recreate && ctx.state !== 'running')) {
@@ -49,7 +47,7 @@ if (typeof window !== 'undefined') {
   let stuck = 0;
   const onGesture = () => {
     if (!ctx || ctx.state === 'running') return void (stuck = 0);
-    // два жеста подряд не помогли — контекст «завис», создаём новый (следующий звук его и откроет)
+    // Two gestures in a row did not help: the context is stuck, create a new one (the next sound opens it).
     wake(++stuck > 2);
   };
   for (const ev of ['pointerdown', 'touchend', 'keydown']) window.addEventListener(ev, onGesture, { capture: true, passive: true });
@@ -60,7 +58,6 @@ if (typeof window !== 'undefined') {
 function context() {
   if (!ctx || ctx.state === 'closed') ctx = new AudioContext();
   if (ctx.state !== 'running') void ctx.resume().catch(() => undefined);
-  // Звуки идут в выбранное устройство вывода (где поддерживается)
   const want = getAudioPrefs().outputId;
   const c = ctx as AudioContext & { setSinkId?: (id: string) => Promise<void> };
   if (want !== sink && c.setSinkId) {
@@ -91,7 +88,6 @@ export function playSound(name: SoundName, force = false) {
       o.type = 'sine';
       o.frequency.value = n.f;
       o.connect(g);
-      // тихий обертон октавой выше — «стеклянный» призвук
       const o2 = ac.createOscillator();
       const g2 = ac.createGain();
       o2.type = 'triangle';
@@ -105,6 +101,6 @@ export function playSound(name: SoundName, force = false) {
     }
     window.setTimeout(() => master.disconnect(), 1500);
   } catch {
-    /* WebAudio недоступен */
+    /* WebAudio unavailable */
   }
 }

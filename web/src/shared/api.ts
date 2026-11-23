@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import type { Status } from './model';
+import { serverText, t } from './i18n';
 
-/** Публичный профиль пользователя (как его видят другие). */
 export interface PublicUser {
   username: string;
   displayName: string;
@@ -11,41 +11,49 @@ export interface PublicUser {
   createdAt: string | null;
 }
 
-/** Свой профиль — плюс email. */
 export interface Me extends PublicUser {
   id: number;
   email: string;
   phone: string | null;
-  /** Выбранный статус; offline — «невидимый». */
   status: Status;
 }
 
-/** Участник сервера: профиль, дата вступления и видимый статус. */
 export interface Member extends PublicUser {
   joinedAt: string | null;
   status: Status;
 }
 
-const LS_TOKEN = 'oreol.token';
+// The session token lives in an HttpOnly cookie; localStorage only keeps a "signed in" hint for the theme script.
+const LS_AUTH = 'oreol.auth';
+const LS_LEGACY_TOKEN = 'oreol.token';
 
-export function getToken(): string | null {
+export function hasSession(): boolean {
   try {
-    return localStorage.getItem(LS_TOKEN);
+    return localStorage.getItem(LS_AUTH) === '1' || !!localStorage.getItem(LS_LEGACY_TOKEN);
+  } catch {
+    return false;
+  }
+}
+
+export function setSession(on: boolean) {
+  try {
+    if (on) localStorage.setItem(LS_AUTH, '1');
+    else localStorage.removeItem(LS_AUTH);
+    localStorage.removeItem(LS_LEGACY_TOKEN);
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+/** Token saved by builds before the cookie switch; sent once so the server can move it into the cookie. */
+function legacyToken(): string | null {
+  try {
+    return localStorage.getItem(LS_LEGACY_TOKEN);
   } catch {
     return null;
   }
 }
 
-export function setToken(token: string | null) {
-  try {
-    if (token) localStorage.setItem(LS_TOKEN, token);
-    else localStorage.removeItem(LS_TOKEN);
-  } catch {
-    /* хранилище недоступно */
-  }
-}
-
-/** Ошибка API: текст для человека и ошибки по полям формы. */
 export class ApiError extends Error {
   status: number;
   fields: Record<string, string>;
@@ -56,14 +64,13 @@ export class ApiError extends Error {
   }
 }
 
-/** Запрос к API с токеном сессии. Тело-объект уходит как JSON, Blob/File — как есть (загрузка картинок). */
-/** Событие окна: токен больше не принимается сервером (сессия завершена или аккаунт удалён). */
+/** Window event: the server no longer accepts the session (signed out elsewhere or account deleted). */
 export const SESSION_EXPIRED = 'oreol:session-expired';
 
 export async function api<T = unknown>(path: string, opts: { method?: string; body?: unknown } = {}): Promise<T> {
   const headers: Record<string, string> = {};
-  const token = getToken();
-  if (token) headers.Authorization = `Bearer ${token}`;
+  const legacy = legacyToken();
+  if (legacy) headers.Authorization = `Bearer ${legacy}`;
   let body: BodyInit | undefined;
   if (opts.body instanceof Blob) {
     body = opts.body;
@@ -76,15 +83,17 @@ export async function api<T = unknown>(path: string, opts: { method?: string; bo
   try {
     res = await fetch(path, { method: opts.method ?? (body ? 'POST' : 'GET'), headers, body });
   } catch {
-    throw new ApiError('Нет связи с сервером', 0);
+    throw new ApiError(t('Нет связи с сервером'), 0);
   }
   const data = await res.json().catch(() => ({}));
-  if (res.status === 401 && token) window.dispatchEvent(new Event(SESSION_EXPIRED));
-  if (!res.ok) throw new ApiError(data.error || `Ошибка ${res.status}`, res.status, data.fields || {});
+  if (res.status === 401 && hasSession()) window.dispatchEvent(new Event(SESSION_EXPIRED));
+  if (!res.ok) {
+    const fields: Record<string, string> = {};
+    for (const [k, v] of Object.entries((data.fields as Record<string, string>) || {})) fields[k] = serverText(String(v));
+    throw new ApiError(data.error ? serverText(data.error) : t('Ошибка {0}', { 0: res.status }), res.status, fields);
+  }
   return data as T;
 }
-
-/* ---------- Справочник профилей: аватары, фоны и отображаемые имена всех пользователей ---------- */
 
 let users: Record<string, PublicUser> = {};
 const listeners = new Set<() => void>();
@@ -99,14 +108,12 @@ export function subscribeUsers(l: () => void) {
 
 const key = (name: string) => name.toLowerCase();
 
-/** Обновить свой профиль в справочнике (после сохранения настроек). */
 export function putUser(u: PublicUser) {
   users = { ...users, [key(u.username)]: u };
   emit();
 }
 
 let loading: Promise<void> | null = null;
-/** Загрузить всех пользователей (их немного — «для своих»). */
 export function refreshUsers() {
   loading ??= api<{ users: PublicUser[] }>('/api/users')
     .then((r) => {
@@ -127,7 +134,8 @@ export function clearUsers() {
   emit();
 }
 
-/** Профиль по имени пользователя (или undefined, если такого аккаунта нет). */
+export const displayNameOf = (name: string) => users[key(name)]?.displayName || name;
+
 export function useUser(name: string): PublicUser | undefined {
   return useSyncExternalStore(subscribeUsers, () => users[key(name)]);
 }
@@ -136,7 +144,6 @@ export function useUsers() {
   return useSyncExternalStore(subscribeUsers, () => users);
 }
 
-/** Пользователь по @упоминанию (по юзернейму или его @-форме). */
 export function userByTag(tag: string, handle: (name: string) => string): PublicUser | undefined {
   const t = tag.toLowerCase();
   return Object.values(users).find((u) => '@' + key(u.username) === t || handle(u.username) === t);

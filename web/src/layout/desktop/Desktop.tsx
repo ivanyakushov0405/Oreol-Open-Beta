@@ -4,6 +4,8 @@ import type { AppState } from '../../app/useAppState';
 import { UserPanel } from '../../features/account/UserPanel';
 import { STATUS_LABEL } from '../../features/account/status';
 import { ChatBody, PinnedButton } from '../../features/chat/ChatBody';
+import { ChatInfo } from '../../features/chat/ChatInfo';
+import { setMuted, useMuted } from '../../features/notifications/mute';
 import { TypingLine } from '../../features/chat/TypingLine';
 import { chatUnread, UnreadBadge } from '../../features/chat/unread';
 import { MemberCard } from '../../features/members/MemberCard';
@@ -20,13 +22,18 @@ import { VoiceStage } from '../../features/voice/VoiceStage';
 import { Elapsed, VoiceStatus } from '../../features/voice/VoiceStatus';
 import { Icon } from '../../shared/icons';
 import { handleOf, type Channel, type ServerId } from '../../shared/model';
+import { plural, t } from '../../shared/i18n';
 
 type Overlay = { kind: 'user'; section: UserSection } | { kind: 'server'; section: ServerSection } | null;
 
-function plural(n: number, one: string, few: string, many: string) {
-  const m10 = n % 10, m100 = n % 100;
-  const w = m10 === 1 && m100 !== 11 ? one : m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14) ? few : many;
-  return `${n} ${w}`;
+function TitleButton({ open, disabled, onClick, children }: { open: boolean; disabled?: boolean; onClick: () => void; children: React.ReactNode }) {
+  if (disabled) return <div>{children}</div>;
+  return (
+    <button type="button" className="main-head-title" aria-haspopup="dialog" aria-expanded={open} onClick={onClick}>
+      <div>{children}</div>
+      <Icon name="chevron-down" size={16} className="chev" />
+    </button>
+  );
 }
 
 export function Desktop({ app }: { app: AppState }) {
@@ -35,8 +42,11 @@ export function Desktop({ app }: { app: AppState }) {
   const channel = app.server.channels.find((c) => c.id === channelId) ?? app.server.channels[0];
   const [showMembers, setShowMembers] = useState(true);
   const [voiceChat, setVoiceChat] = useState(false);
+  /** Chat info dropdown: under the main title, or (side) under the voice channel's side chat title. */
+  const [info, setInfo] = useState<{ side: boolean; search?: boolean } | null>(null);
+  const muted = useMuted(channel?.room);
+  useEffect(() => setInfo(null), [channel?.room, app.server.id, voiceChat]);
   const [overlay, setOverlay] = useState<Overlay>(null);
-  /** Закрытие настроек: сначала анимация ухода окна, потом основной экран (он проявляется — класс from-settings). */
   const [closing, setClosing] = useState(false);
   const closingRef = useRef(false);
   const [fromSettings, setFromSettings] = useState(false);
@@ -52,7 +62,6 @@ export function Desktop({ app }: { app: AppState }) {
       window.setTimeout(() => setFromSettings(false), 320);
     }, 150);
   };
-  // «Редактировать профиль» из окна полного профиля
   useEffect(() => {
     const edit = () => setOverlay({ kind: 'user', section: 'account-edit' });
     window.addEventListener(EDIT_PROFILE_EVENT, edit);
@@ -60,7 +69,7 @@ export function Desktop({ app }: { app: AppState }) {
   }, []);
   const [card, setCard] = useState<{ name: string; x: number; y: number } | null>(null);
 
-  /** Время в голосовом — хук стоит до любых return, иначе React падает при открытии настроек. */
+  /** Voice elapsed time: the hook must run before any return, otherwise React crashes when settings open. */
   useEffect(() => {
     if (!overlay) return;
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && closeOverlay();
@@ -68,7 +77,6 @@ export function Desktop({ app }: { app: AppState }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [overlay]);
 
-  // Адрес ↔ состояние: сервер, канал, чат войса, настройки
   const sid = app.server.id;
   const path =
     overlay?.kind === 'user'
@@ -104,7 +112,7 @@ export function Desktop({ app }: { app: AppState }) {
     return (
       <SettingsScreen
         title={userSectionTitle(overlay.section)}
-        overline="Настройки пользователя"
+        overline={t('Настройки пользователя')}
         nav={USER_NAV}
         section={overlay.section}
         active={userNavOf(overlay.section)}
@@ -114,7 +122,7 @@ export function Desktop({ app }: { app: AppState }) {
         footer={
           <button className="nav-item danger" onClick={app.logout}>
             <Icon name="logout" size={18} />
-            Выйти
+            {t('Выйти')}
           </button>
         }
       >
@@ -138,13 +146,13 @@ export function Desktop({ app }: { app: AppState }) {
             data-ico="trash"
             onClick={(e) => {
               pressIcon(e.currentTarget);
-              app.notify('Удаление сервера недоступно в демо');
+              app.notify(t('Удаление сервера недоступно в демо'));
             }}
           >
             <span className="si">
               <Icon name="trash" size={18} />
             </span>
-            Удалить сервер
+            {t('Удалить сервер')}
           </button>
         }
       >
@@ -154,7 +162,6 @@ export function Desktop({ app }: { app: AppState }) {
   }
 
   const openSettings = () => setOverlay({ kind: 'user', section: 'account' });
-  // Клик по голосовому каналу сразу подключает к нему.
   const openChannel = (c: Channel) => {
     setChannelId(c.id);
     if (c.kind === 'voice') app.joinVoice();
@@ -163,7 +170,7 @@ export function Desktop({ app }: { app: AppState }) {
   const chat = isVoice ? app.lobby : app.general;
   const online = app.membersOnline;
   const cardMember = card ? app.members.find((m) => m.username === card.name) : undefined;
-  const voiceName = app.voiceChannel?.name ?? 'Голосовой';
+  const voiceName = app.voiceChannel?.name ?? t('Голосовой');
 
   const openCard = (name: string) => (e: React.MouseEvent) => {
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -175,7 +182,7 @@ export function Desktop({ app }: { app: AppState }) {
       <Rail app={app} home={home} onHome={() => setHome(true)} onServer={(id: ServerId) => {
           setHome(false);
           app.setServerId(id);
-          // На сервер заходим в первый текстовый канал (general); если сидим в его войсе — сразу в войс
+          // Opening a server goes to its first text channel, or straight to voice if we are in its voice channel.
           const srv = app.serverById(id);
           const inHisVoice = app.voice.state !== 'idle' && app.voice.server === id;
           const ch = srv?.channels.find((c) => (inHisVoice ? c.kind === 'voice' : c.kind !== 'voice'));
@@ -186,17 +193,17 @@ export function Desktop({ app }: { app: AppState }) {
       <aside className="sidebar glass">
         {home ? (
           <>
-            <div className="sidebar-head">Личные сообщения</div>
+            <div className="sidebar-head">{t('Личные сообщения')}</div>
             <div className="sidebar-scroll">
               <div className="empty-state" style={{ marginTop: 40, fontSize: 13 }}>
-                <b>Пока пусто</b>
-                Личные сообщения скоро будут
+                <b>{t('Пока пусто')}</b>
+                {t('Личные сообщения скоро будут')}
               </div>
             </div>
           </>
         ) : (
           <>
-            <button className="sidebar-head" onClick={() => setOverlay({ kind: 'server', section: 'overview' })} title="Настройки сервера">
+            <button className="sidebar-head" onClick={() => setOverlay({ kind: 'server', section: 'overview' })} title={t('Настройки сервера')}>
               <span>{app.server.name}</span>
               <Icon name="chevron-down" size={18} />
             </button>
@@ -220,13 +227,13 @@ export function Desktop({ app }: { app: AppState }) {
         <main className="main glass">
           <div className="main-head">
             <Icon name="chats" />
-            <div className="title">Личные сообщения</div>
+            <div className="title">{t('Личные сообщения')}</div>
           </div>
           <div className="chat">
             <div className="chat-scroll">
               <div className="empty-state">
-                <b>Здесь будут ваши диалоги</b>
-                Пока доступны только чаты серверов.
+                <b>{t('Здесь будут ваши диалоги')}</b>
+                {t('Пока доступны только чаты серверов.')}
               </div>
             </div>
           </div>
@@ -235,44 +242,52 @@ export function Desktop({ app }: { app: AppState }) {
         <main className={'main glass' + (isVoice ? ' main-voice' : '')}>
           <div className="main-head">
             <Icon name={isVoice ? 'voice' : 'chats'} />
-            <div>
+            <TitleButton open={info?.side === false} disabled={isVoice} onClick={() => setInfo(info ? null : { side: false })}>
               <div className="title">{channel.name}</div>
               <div className="sub">
                 {isVoice ? (
                   app.inVoiceHere && app.voice.state === 'connected' ? (
                     <>
                       <i className={`live-dot q-${app.voice.quality}`} />
-                      {`Подключено · ${app.voice.peers.length} в канале`}
+                      {t('Подключено · {0} в канале', { 0: app.voice.peers.length })}
                       <Elapsed from={app.inVoiceHere ? app.voice.startedAt : null} prefix=" · " />
                     </>
                   ) : app.inVoiceHere && app.voice.state === 'connecting' ? (
-                    'Подключение…'
+                    t('Подключение…')
                   ) : (
-                    'Голосовой канал'
+                    t('Голосовой канал')
                   )
                 ) : (
-                  <TypingLine users={chat.typingUsers.filter((u) => u !== app.name)} fallback={app.membersReady ? `${online.length} в сети` : ' '} />
+                  <TypingLine users={chat.typingUsers.filter((u) => u !== app.name)} fallback={app.membersReady ? t('{0} в сети', { 0: online.length }) : ' '} />
                 )}
               </div>
-            </div>
+            </TitleButton>
             {isVoice ? (
               <div className="actions">
                 <button type="button" className={'btn-chip' + (voiceChat ? ' on' : '')} onClick={() => setVoiceChat((v) => !v)}>
                   <Icon name="chats" size={16} />
-                  Чат канала
+                  {t('Чат канала')}
                   {!voiceChat && <UnreadBadge n={chatUnread(app, app.lobby)} />}
                 </button>
               </div>
             ) : (
             <div className="actions">
               <PinnedButton chat={chat} />
-              <button className="icon-btn" title="Уведомления" onClick={() => app.notify('Настройка уведомлений недоступна в демо')}>
-                <Icon name="bell" />
+              <button
+                className={'icon-btn' + (muted ? ' active' : '')}
+                title={muted ? t('Включить уведомления') : t('Выключить уведомления')}
+                aria-pressed={muted}
+                onClick={() => {
+                  setMuted(channel.room, !muted);
+                  app.notify(muted ? t('Уведомления включены') : t('Уведомления выключены, кроме упоминаний'), 'success');
+                }}
+              >
+                <Icon name={muted ? 'bell-off' : 'bell'} />
               </button>
-              <button className="icon-btn" title="Поиск" onClick={() => app.notify('Поиск скоро будет')}>
+              <button className={'icon-btn' + (info?.search ? ' active' : '')} title={t('Поиск')} onClick={() => setInfo(info?.search ? null : { side: false, search: true })}>
                 <Icon name="search" />
               </button>
-              <button className={'icon-btn' + (showMembers ? ' active' : '')} title="Участники" onClick={() => setShowMembers((s) => !s)}>
+              <button className={'icon-btn' + (showMembers ? ' active' : '')} title={t('Участники')} onClick={() => setShowMembers((s) => !s)}>
                 <Icon name="users" />
               </button>
             </div>
@@ -285,6 +300,9 @@ export function Desktop({ app }: { app: AppState }) {
           ) : (
             <ChatBody app={app} chat={chat} channel={channel} />
           )}
+          {info && !info.side && !isVoice && (
+            <ChatInfo key={channel.room + (info.search ? ':s' : '')} app={app} chat={chat} channel={channel} startSearch={info.search} onClose={() => setInfo(null)} />
+          )}
         </main>
       )}
 
@@ -292,45 +310,46 @@ export function Desktop({ app }: { app: AppState }) {
         <aside className="side-chat glass">
           <div className="main-head">
             <Icon name="chats" />
-            <div>
-              <div className="title">Чат · {voiceName}</div>
+            <TitleButton open={!!info?.side} onClick={() => setInfo(info ? null : { side: true })}>
+              <div className="title">{t('Чат · ')}{voiceName}</div>
               <div className="sub">
-                <TypingLine users={app.lobby.typingUsers.filter((u) => u !== app.name)} fallback="Видят участники голосового" />
+                <TypingLine users={app.lobby.typingUsers.filter((u) => u !== app.name)} fallback={t('Видят участники голосового')} />
               </div>
-            </div>
+            </TitleButton>
             <div className="actions">
               <PinnedButton chat={app.lobby} />
-              <button className="icon-btn" title="Закрыть чат" onClick={() => setVoiceChat(false)}>
+              <button className="icon-btn" title={t('Закрыть чат')} onClick={() => setVoiceChat(false)}>
                 <Icon name="close" />
               </button>
             </div>
           </div>
           <ChatBody app={app} chat={app.lobby} channel={channel} compact />
+          {info?.side && <ChatInfo key={channel.room} app={app} chat={app.lobby} channel={channel} onClose={() => setInfo(null)} />}
         </aside>
       )}
 
       {!home && !isVoice && showMembers && (
         <aside className="members glass">
           <div className="members-head">
-            <b>Участники</b>
+            <b>{t('Участники')}</b>
             <span>
               {app.server.name}
               {app.membersReady && ` · ${plural(app.members.length, 'участник', 'участника', 'участников')}`}
             </span>
           </div>
           <div className="sidebar-scroll">
-            {online.length > 0 && <div className="section-title overline">В сети: {online.length}</div>}
+            {online.length > 0 && <div className="section-title overline">{t('В сети: ')}{online.length}</div>}
             {online.map((m) => (
               <MemberRow
                 key={m.username}
                 name={m.username}
                 me={m.username === app.name}
                 status={m.status}
-                sub={app.voiceUsers.some((v) => v.identity === m.username) ? `В голосовом · ${voiceName}` : handleOf(m.username)}
+                sub={app.voiceUsers.some((v) => v.identity === m.username) ? t('В голосовом · {0}', { 0: voiceName }) : handleOf(m.username)}
                 onClick={openCard(m.username)}
               />
             ))}
-            {app.membersOffline.length > 0 && <div className="section-title overline">Не в сети: {app.membersOffline.length}</div>}
+            {app.membersOffline.length > 0 && <div className="section-title overline">{t('Не в сети: ')}{app.membersOffline.length}</div>}
             {app.membersOffline.map((m) => (
               <MemberRow
                 key={m.username}
@@ -351,7 +370,7 @@ export function Desktop({ app }: { app: AppState }) {
           me={card.name === app.name}
           at={{ x: card.x, y: card.y }}
           status={app.statusOf(card.name)}
-          activity={app.voiceUsers.some((v) => v.identity === card.name) ? `В голосовом · ${voiceName}` : STATUS_LABEL[app.statusOf(card.name)]}
+          activity={app.voiceUsers.some((v) => v.identity === card.name) ? t('В голосовом · {0}', { 0: voiceName }) : STATUS_LABEL[app.statusOf(card.name)]}
           serverName={app.server.name}
           since={cardMember?.joinedAt ? new Date(cardMember.joinedAt) : new Date()}
           onClose={() => setCard(null)}

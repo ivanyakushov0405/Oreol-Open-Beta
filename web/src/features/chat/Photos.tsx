@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Icon } from '../../shared/icons';
-import type { Attachment } from '../../shared/model';
+import { fileSize, type Attachment } from '../../shared/model';
+import { t } from '../../shared/i18n';
 
-/* ---------- Раскладка коллажа ----------
- * Фото идут строками; в строке все одной высоты, а ширины — по пропорциям, так что строка
- * ровно заполняет ширину коллажа. Перебираем все способы разбить фото на строки (их ≤ 2⁹ для 10 фото)
- * и берём тот, где высоты строк ближе к «удобной», а весь коллаж не слишком вытянут по высоте.
- * Крайние пропорции поджимаем — такие фото в коллаже обрезаются (object-fit: cover). */
+/*
+  Collage layout: photos go in rows of equal height with widths by aspect ratio, so each row fills the width.
+  All ways to break photos into rows are tried (at most 2^9 for 10 photos), picking the one whose row heights
+  are closest to the preferred one without making the collage too tall. Extreme ratios are clamped and cropped.
+*/
 const MIN_AR = 0.5;
 const MAX_AR = 2.4;
 const clampAr = (a: Attachment) => Math.min(MAX_AR, Math.max(MIN_AR, a.w / Math.max(1, a.h)));
@@ -16,12 +17,11 @@ export function collageRows(ratios: number[]): number[][] {
   const n = ratios.length;
   if (n <= 1) return n ? [[0]] : [];
   const maxPerRow = n <= 4 ? n : 4;
-  const target = n <= 2 ? 0.62 : 0.42; // удобная высота строки — доля ширины коллажа
-  const maxTotal = n <= 4 ? 1.25 : 1.45; // коллаж не выше, чем ~1.3 ширины
+  const target = n <= 2 ? 0.62 : 0.42;
+  const maxTotal = n <= 4 ? 1.25 : 1.45;
   let best: number[][] = [];
   let bestCost = Infinity;
   for (let mask = 0; mask < 1 << (n - 1); mask++) {
-    // бит i — разрыв строки после фото i
     const rows: number[][] = [[0]];
     for (let i = 1; i < n; i++) {
       if (mask & (1 << (i - 1))) rows.push([i]);
@@ -34,8 +34,8 @@ export function collageRows(ratios: number[]): number[][] {
       const h = 1 / r.reduce((s, i) => s + ratios[i], 0);
       total += h;
       cost += Math.log(h / target) ** 2;
-      if (h < 0.2) cost += 4; // слишком узкая полоска
-      // Сверху крупнее: строка с меньшим числом фото раньше — чуть выгоднее
+      if (h < 0.2) cost += 4;
+      // Bigger on top: a row with fewer photos earlier is slightly preferred.
       if (idx > 0 && r.length < rows[idx - 1].length) cost += 0.05;
     });
     if (total > maxTotal) cost += (total - maxTotal) * 8;
@@ -49,16 +49,39 @@ export function collageRows(ratios: number[]): number[][] {
 
 const singleAr = (a: Attachment) => Math.min(2.5, Math.max(0.4, a.w / Math.max(1, a.h)));
 
-/** Ширина блока фото, px: облачко сообщения подстраивается под неё (подпись переносится по ширине фото).
- * Одно фото — не выше 380px и не шире 400px (и не шире самого фото, но не уже 200px), коллаж — 400px.
- * На узком экране облачко сжимается, а фото — вместе с ним. */
+/** Documents in a message: name, size and a download link. */
+export function FileList({ files, selecting }: { files: Attachment[]; selecting: boolean }) {
+  return (
+    <div className="msg-files">
+      {files.map((f) => (
+        <a
+          key={f.id}
+          className="msg-file"
+          href={f.url}
+          download={f.name || true}
+          draggable={false}
+          onClick={(e) => (selecting ? e.preventDefault() : e.stopPropagation())}
+        >
+          <span className="mf-icon">
+            <Icon name="file" size={20} />
+          </span>
+          <span className="mf-body">
+            <span className="mf-name">{f.name || t('Файл')}</span>
+            <span className="mf-size">{fileSize(f.size)}</span>
+          </span>
+          <Icon name="download" size={18} className="mf-dl" />
+        </a>
+      ))}
+    </div>
+  );
+}
+
 export function photosWidth(photos: Attachment[]) {
   if (photos.length !== 1) return 400;
   const a = photos[0];
   return Math.max(200, Math.min(400, Math.round(380 * singleAr(a)), a.w));
 }
 
-/** Фото в сообщении: одно — по своим пропорциям, несколько — коллажем. */
 export function PhotoGrid({ photos, onOpen }: { photos: Attachment[]; onOpen?: (index: number) => void }) {
   if (!photos.length) return null;
   const tile = (a: Attachment, i: number, style: React.CSSProperties) => (
@@ -67,9 +90,8 @@ export function PhotoGrid({ photos, onOpen }: { photos: Attachment[]; onOpen?: (
       key={a.id}
       style={style}
       className={'ph-tile' + (a.video ? ' is-video' : '')}
-      aria-label={(a.video ? 'Видео' : 'Фото') + (photos.length > 1 ? ` ${i + 1} из ${photos.length}` : '')}
+      aria-label={(a.video ? t('Видео') : t('Фото')) + (photos.length > 1 ? t(' {0} из {1}', { 0: i + 1, 1: photos.length }) : '')}
       onClick={(e) => {
-        // в режиме выделения нажатие отмечает сообщение — событие уходит дальше
         if (!onOpen) return;
         e.stopPropagation();
         onOpen(i);
@@ -77,7 +99,7 @@ export function PhotoGrid({ photos, onOpen }: { photos: Attachment[]; onOpen?: (
     >
       {a.video ? (
         <>
-          {/* #t — чтобы Safari показал первый кадр, а не чёрный прямоугольник */}
+          {/* #t makes Safari show the first frame instead of a black box. */}
           <video src={a.url + '#t=0.1'} muted playsInline preload="metadata" tabIndex={-1} />
           <span className="ph-play">
             <Icon name="play" size={22} />
@@ -105,17 +127,16 @@ export function PhotoGrid({ photos, onOpen }: { photos: Attachment[]; onOpen?: (
   );
 }
 
-/** Просмотр фото на весь экран. Листание: свайп (пальцем или мышью — фото едет за ним, соседнее выезжает
- * следом), стрелки на экране и клавиатуре. Закрыть: свайп вниз/вверх, Esc, тап по фону, крестик. */
-/** Телефон или планшет (палец, без наведения): там у фото только «Сохранить». */
 export const touchDevice = () => matchMedia('(hover: none) and (pointer: coarse)').matches;
 const fileName = (url: string, type: string) => {
   const base = decodeURIComponent(url.split('?')[0].split('/').pop() || 'photo');
   const ext = type.split('/')[1]?.replace('jpeg', 'jpg') || 'jpg';
   return /\.[a-z0-9]{2,5}$/i.test(base) ? base : `${base}.${ext}`;
 };
-/** Фото, уже скачанные заранее: «Поделиться» на телефоне работает только сразу по нажатию —
- *  если сначала ждать загрузку, Safari считает, что жест пользователя закончился, и окно не открывает. */
+/**
+ * Photos fetched in advance: share on phones only works right on the tap; awaiting a download first makes Safari
+ * consider the user gesture over and the sheet does not open.
+ */
 const ready = new Map<string, Blob>();
 export function prefetchPhoto(url: string) {
   if (ready.has(url)) return;
@@ -126,7 +147,7 @@ async function photoBlob(url: string) {
   if (!r.ok) throw new Error('fetch');
   return r.blob();
 }
-/** В буфер обмена браузер берёт только PNG — остальное перерисовываем. */
+/** Browsers only accept PNG in the clipboard; everything else is redrawn. */
 async function toPng(blob: Blob): Promise<Blob> {
   if (blob.type === 'image/png') return blob;
   const bmp = await createImageBitmap(blob);
@@ -149,8 +170,6 @@ type SavePicker = (o: { suggestedName: string; types?: { description: string; ac
   createWritable: () => Promise<{ write: (b: Blob) => Promise<void>; close: () => Promise<void> }>;
 }>;
 
-/** Копировать / сохранить фото. Телефон: «Сохранить» открывает системное меню «Поделиться» (там «Сохранить изображение»
- *  кладёт фото в галерею), без него — обычное скачивание. Компьютер: «Сохранить как…» — окно выбора места, где оно есть. */
 export async function savePhoto(url: string, asDialog: boolean): Promise<'ok' | 'cancel' | 'fail'> {
   try {
     const blob = ready.get(url) ?? (await photoBlob(url));
@@ -171,7 +190,7 @@ export async function savePhoto(url: string, asDialog: boolean): Promise<'ok' | 
     const picker = (window as Window & { showSaveFilePicker?: SavePicker }).showSaveFilePicker;
     if (asDialog && picker) {
       try {
-        const h = await picker({ suggestedName: name, types: [{ description: blob.type.startsWith('video/') ? 'Видео' : 'Изображение', accept: { [blob.type || 'image/jpeg']: ['.' + name.split('.').pop()] } }] });
+        const h = await picker({ suggestedName: name, types: [{ description: blob.type.startsWith('video/') ? t('Видео') : t('Изображение'), accept: { [blob.type || 'image/jpeg']: ['.' + name.split('.').pop()] } }] });
         const w = await h.createWritable();
         await w.write(blob);
         await w.close();
@@ -188,7 +207,7 @@ export async function savePhoto(url: string, asDialog: boolean): Promise<'ok' | 
 }
 export async function copyPhoto(url: string) {
   try {
-    // промис в ClipboardItem — так Safari не теряет «жест пользователя», пока фото грузится
+    // A promise inside ClipboardItem keeps Safari's user gesture alive while the photo loads.
     await navigator.clipboard.write([new ClipboardItem({ 'image/png': photoBlob(url).then(toPng) })]);
     return true;
   } catch {
@@ -199,7 +218,6 @@ export async function copyPhoto(url: string) {
 export function PhotoViewer({ photos, start, onClose }: { photos: Attachment[]; start: number; onClose: () => void }) {
   const [i, setI] = useState(start);
   const n = photos.length;
-  /** Меню «…» (компьютер) и короткая подсказка о результате. */
   const [more, setMore] = useState(false);
   const [note, setNote] = useState<{ text: string; ok: boolean } | null>(null);
   const noteTimer = useRef(0);
@@ -216,9 +234,7 @@ export function PhotoViewer({ photos, start, onClose }: { photos: Attachment[]; 
   const root = useRef<HTMLDivElement>(null);
   const track = useRef<HTMLDivElement>(null);
   const drag = useRef<{ id: number; x: number; y: number; t: number; axis: 'x' | 'y' | null; dx: number; dy: number } | null>(null);
-  /** Идёт анимация листания — новые жесты и кнопки ждут её конца. */
   const busy = useRef(false);
-  /** После перетаскивания отпускание не считается тапом по фону. */
   const swallowClick = useRef(false);
 
   const setTrack = (x: number, y: number, ms = 0) => {
@@ -226,14 +242,12 @@ export function PhotoViewer({ photos, start, onClose }: { photos: Attachment[]; 
     if (!el) return;
     el.style.transition = ms ? `transform ${ms}ms cubic-bezier(.2, .8, .2, 1)` : 'none';
     el.style.transform = x || y ? `translate3d(${x}px, ${y}px, 0)` : '';
-    // при свайпе вниз фон светлеет — видно, что просмотр сейчас закроется
     const r = root.current;
     if (!r) return;
     r.style.setProperty('--phv-dim', String(1 - Math.min(0.6, Math.abs(y) / 500)));
     if (ms) r.style.setProperty('--phv-dim-ms', `${ms}ms`);
     else r.style.removeProperty('--phv-dim-ms');
   };
-  /** Доехать до соседнего фото (d = ±1) с того места, где лента сейчас, и подменить текущее. */
   const finishSlide = (d: number, ms: number) => {
     const w = root.current?.clientWidth ?? window.innerWidth;
     busy.current = true;
@@ -265,7 +279,7 @@ export function PhotoViewer({ photos, start, onClose }: { photos: Attachment[]; 
     e.stopPropagation();
     if (busy.current || drag.current || (e.pointerType === 'mouse' && e.button !== 0)) return;
     if ((e.target as HTMLElement).closest('button, a')) return;
-    // по видео палец управляет плеером (перемотка, громкость) — листаем только за его пределами
+    // On a video the finger controls the player (seek, volume); swiping only works outside it.
     if ((e.target as HTMLElement).closest('video') && e.pointerType === 'mouse') return;
     drag.current = { id: e.pointerId, x: e.clientX, y: e.clientY, t: e.timeStamp, axis: null, dx: 0, dy: 0 };
   };
@@ -280,11 +294,10 @@ export function PhotoViewer({ photos, start, onClose }: { photos: Attachment[]; 
       try {
         root.current?.setPointerCapture(e.pointerId);
       } catch {
-        /* указатель уже отпущен */
+        /* ignore */
       }
     }
     if (s.axis === 'x') {
-      // одно фото — только слегка поддаётся пальцу
       s.dx = n > 1 ? dx : dx * 0.25;
       setTrack(s.dx, 0);
     } else {
@@ -313,7 +326,6 @@ export function PhotoViewer({ photos, start, onClose }: { photos: Attachment[]; 
   };
 
   const a = photos[i];
-  // Лента из трёх слотов: предыдущее, текущее, следующее
   const slots = n > 1 ? [-1, 0, 1] : [0];
   return createPortal(
     <div
@@ -321,10 +333,9 @@ export function PhotoViewer({ photos, start, onClose }: { photos: Attachment[]; 
       className="ph-viewer"
       role="dialog"
       aria-modal="true"
-      aria-label="Просмотр вложений"
+      aria-label={t('Просмотр вложений')}
       onClick={(e) => {
         if (swallowClick.current) return;
-        // тап по фону закрывает, по самому фото и кнопкам — нет
         if (more) return setMore(false);
         if (!(e.target as HTMLElement).closest('.phv-img, .phv-top, .phv-nav, .phv-menu')) onClose();
       }}
@@ -334,27 +345,27 @@ export function PhotoViewer({ photos, start, onClose }: { photos: Attachment[]; 
       onPointerCancel={(e) => onPointerEnd(e, true)}
     >
       <div className="phv-top">
-        <span className="phv-count">{n > 1 ? `${i + 1} из ${n}` : ''}</span>
+        <span className="phv-count">{n > 1 ? t('{0} из {1}', { 0: i + 1, 1: n }) : ''}</span>
         {touch ? (
           <button
             type="button"
             className="icon-btn"
-            title="Сохранить"
-            onClick={() => void savePhoto(a.url, false).then((r) => r === 'fail' && say('Не удалось сохранить', false))}
+            title={t('Сохранить')}
+            onClick={() => void savePhoto(a.url, false).then((r) => r === 'fail' && say(t('Не удалось сохранить'), false))}
           >
             <Icon name="download" />
           </button>
         ) : (
           <>
-            <a className="icon-btn" href={a.url} target="_blank" rel="noreferrer" title="Открыть оригинал">
+            <a className="icon-btn" href={a.url} target="_blank" rel="noreferrer" title={t('Открыть оригинал')}>
               <Icon name="expand" />
             </a>
-            <button type="button" className={'icon-btn' + (more ? ' active' : '')} title="Ещё" aria-expanded={more} onClick={() => setMore((v) => !v)}>
+            <button type="button" className={'icon-btn' + (more ? ' active' : '')} title={t('Ещё')} aria-expanded={more} onClick={() => setMore((v) => !v)}>
               <Icon name="more" />
             </button>
           </>
         )}
-        <button type="button" className="icon-btn" title="Закрыть" onClick={onClose}>
+        <button type="button" className="icon-btn" title={t('Закрыть')} onClick={onClose}>
           <Icon name="close" />
         </button>
       </div>
@@ -366,11 +377,11 @@ export function PhotoViewer({ photos, start, onClose }: { photos: Attachment[]; 
             className="msg-menu-item"
             onClick={() => {
               setMore(false);
-              void copyPhoto(a.url).then((ok) => say(ok ? 'Изображение скопировано' : 'Не удалось скопировать', ok));
+              void copyPhoto(a.url).then((ok) => say(ok ? t('Изображение скопировано') : t('Не удалось скопировать'), ok));
             }}
           >
             <Icon name="copy" size={18} />
-            <span>Копировать изображение</span>
+            <span>{t('Копировать изображение')}</span>
           </button>}
           <button
             type="button"
@@ -378,11 +389,11 @@ export function PhotoViewer({ photos, start, onClose }: { photos: Attachment[]; 
             className="msg-menu-item"
             onClick={() => {
               setMore(false);
-              void savePhoto(a.url, true).then((r) => r === 'fail' && say('Не удалось сохранить', false));
+              void savePhoto(a.url, true).then((r) => r === 'fail' && say(t('Не удалось сохранить'), false));
             }}
           >
             <Icon name="download" size={18} />
-            <span>Сохранить как…</span>
+            <span>{t('Сохранить как…')}</span>
           </button>
         </div>
       )}
@@ -407,10 +418,10 @@ export function PhotoViewer({ photos, start, onClose }: { photos: Attachment[]; 
       </div>
       {n > 1 && (
         <>
-          <button type="button" className="phv-nav prev" title="Предыдущее" onClick={() => slide(-1)}>
+          <button type="button" className="phv-nav prev" title={t('Предыдущее')} onClick={() => slide(-1)}>
             <Icon name="chevron-right" className="flip" size={28} />
           </button>
-          <button type="button" className="phv-nav next" title="Следующее" onClick={() => slide(1)}>
+          <button type="button" className="phv-nav next" title={t('Следующее')} onClick={() => slide(1)}>
             <Icon name="chevron-right" size={28} />
           </button>
         </>

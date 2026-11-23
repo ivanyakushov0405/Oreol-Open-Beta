@@ -14,7 +14,7 @@ export function useSettled(flag: boolean) {
   return settled;
 }
 
-/** Затемнение под таб-панелью (::after у .m-stage) — с дыркой под самой панелью: стекло панели им не темнеет. */
+/** Shade under the tab bar (::after on .m-stage) with a hole under the bar itself, so the bar's glass is not darkened. */
 export function useTabShadeClip(stage: React.RefObject<HTMLDivElement>) {
   useLayoutEffect(() => {
     const el = stage.current;
@@ -56,8 +56,10 @@ export function useTabShadeClip(stage: React.RefObject<HTMLDivElement>) {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 }
 
-/** Подсветка вкладки — упругий «пузырь»: едет к выбранной вкладке на пружине, тянется по ходу движения,
- *  набухает при нажатии, его можно зажать и перетащить пальцем — отпустишь, и он встанет на ближайшую вкладку. */
+/**
+ * Tab highlight is a springy bubble: it moves to the selected tab on a spring, stretches along the motion,
+ * swells on press, and can be grabbed and dragged; released, it snaps to the nearest tab.
+ */
 export function useJellyTabs(
   nav: React.RefObject<HTMLElement>,
   glider: React.RefObject<HTMLElement>,
@@ -77,12 +79,10 @@ export function useJellyTabs(
     const k = Math.max(-1, Math.min(1, s.v / 2600));
     const sx = 1 + Math.abs(k) * 0.32 + s.p * 0.1;
     const sy = 1 - Math.abs(k) * 0.2 + s.p * 0.06;
-    // пузырь (вместе с растяжением) никогда не выходит за края панели
     const w = width();
     const ext = (w * (sx - 1)) / 2;
     const x = Math.min(w * (count - 1) - ext, Math.max(ext, s.x));
     g.style.transform = `translateX(${x}px) scale(${sx}, ${sy})`;
-    // пока тащим — подсвечиваем вкладку, над которой сейчас пузырь
     const tabs = nav.current?.querySelectorAll<HTMLElement>(':scope > .tab');
     if (tabs) {
       const peek = s.drag && w ? Math.max(0, Math.min(count - 1, Math.round(x / w))) : -1;
@@ -99,7 +99,6 @@ export function useJellyTabs(
     const w = width();
     const max = w * (count - 1);
     if (s.drag) {
-      // за пальцем — с лёгкой пружинкой, но не дальше крайних вкладок
       const want = s.finger - s.grab - w / 2;
       s.target = Math.max(0, Math.min(max, want));
     }
@@ -127,8 +126,8 @@ export function useJellyTabs(
     if (!st.current.raf) st.current.raf = requestAnimationFrame(tick);
   };
 
-  // Таб-панель пропадает, пока открыт экран поверх, и появляется заново после «Назад»:
-  // новый пузырь сразу ставим на текущую вкладку (иначе стоял на первой), обработчики вешаем на новую панель
+  // The tab bar disappears while a screen is open on top and comes back after Back:
+  // put the new bubble on the current tab right away and attach handlers to the new bar.
   const [navEl, setNavEl] = useState<HTMLElement | null>(null);
   const lastGlider = useRef<HTMLElement | null>(null);
   useLayoutEffect(() => {
@@ -143,7 +142,6 @@ export function useJellyTabs(
     paint();
   });
 
-  // вкладка сменилась (касанием, перетаскиванием или из кода) — пузырь едет к ней
   useLayoutEffect(() => {
     const s = st.current;
     s.target = index * width();
@@ -174,7 +172,7 @@ export function useJellyTabs(
       s.moved = false;
       s.finger = local(e);
       const w = width();
-      // зажали сам пузырь — держим его за то место, где взяли; иначе пузырь подъедет под палец
+      // Grabbing the bubble itself keeps the grab point; otherwise the bubble moves under the finger.
       const onBubble = s.finger >= s.x && s.finger <= s.x + w;
       s.grab = onBubble ? s.finger - (s.x + w / 2) : 0;
       s.pTarget = onBubble ? 1 : 0.45;
@@ -191,7 +189,7 @@ export function useJellyTabs(
         try {
           el.setPointerCapture(e.pointerId);
         } catch {
-          /* указатель уже отпущен */
+          /* ignore */
         }
       }
       if (s.drag) kick();
@@ -204,9 +202,9 @@ export function useJellyTabs(
         s.drag = false;
         delete el.dataset.drag;
         paint();
-        s.eat = true; // клик после перетаскивания не должен выбрать вкладку под пальцем
+        s.eat = true; // The click after a drag must not select the tab under the finger.
         const w = width();
-        // куда «бросили» пузырь: положение под пальцем плюс немного по инерции
+        // Drop position: under the finger plus a little inertia.
         const flick = s.finger - s.grab - w / 2 + s.v * 0.08;
         const i = Math.max(0, Math.min(count - 1, Math.round(flick / w)));
         s.target = i * w;

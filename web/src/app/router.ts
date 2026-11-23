@@ -1,19 +1,16 @@
 import { useEffect, useRef } from 'react';
 
-// Маршруты интерфейса на History API (без сторонних библиотек).
-// Источник правды — состояние экранов; адрес строится из него и, наоборот, при «Назад»/«Вперёд»
-// и при открытии ссылки состояние восстанавливается из адреса.
-//
-//   /                                   — главная (последний сервер)
-//   /chats                              — личные сообщения (десктоп) / вкладка «Чаты» (мобильный)
-//   /you                                — вкладка «Вы» (мобильный)
-//   /servers/:sid                       — сервер
-//   /servers/:sid/:cid                  — канал (текстовый или голосовой)
-//   /servers/:sid/:cid/chat             — чат голосового канала
-//   /servers/:sid/members               — участники (мобильный)
-//   /servers/:sid/settings[/:section]   — настройки сервера
-//   /settings[/:section]                — настройки пользователя
-
+// History API routing without third-party libraries. Screen state is the source of truth and the URL is derived
+// from it; on Back/Forward and on opening a link the state is restored from the URL.
+// /                                   home (last server)
+// /chats                              direct messages (desktop), Chats tab (mobile)
+// /you                                You tab (mobile)
+// /servers/:sid                       server
+// /servers/:sid/:cid                  channel (text or voice)
+// /servers/:sid/:cid/chat             voice channel chat
+// /servers/:sid/members               members (mobile)
+// /servers/:sid/settings[/:section]   server settings
+// /settings[/:section]                user settings
 
 export type Route =
   | { name: 'home' }
@@ -51,23 +48,24 @@ export const paths = {
   serverSettings: (sid: string, section?: string | null) => `/servers/${enc(sid)}/settings${section ? `/${enc(section)}` : ''}`,
 };
 
-/** Переход «вверх»: закрыли вложенный экран (канал → сервер) или настройки/участников поверх. */
+/** Moving "up": a nested screen closed (channel to server) or settings/members on top were closed. */
 const OVERLAY = /(^|\/)(settings|members)(\/|$)/;
 function isUp(from: string, to: string) {
   return from.startsWith(to + '/') || (OVERLAY.test(from) && !OVERLAY.test(to));
 }
 
-/** Ждём popstate от собственного history.back() — пока он не пришёл, адрес не трогаем. */
+/** Waiting for the popstate caused by our own history.back(); the URL is left alone until it arrives. */
 let backPending = false;
-/** Следующая смена адреса — возврат туда, откуда пришли (например, из войса, открытого поверх настроек или чата):
- *  откатываем историю, а не добавляем запись. Иначе у новой записи «предыдущей» остаётся войс, и следующий
- *  переход в войс принимался за «Назад» — закрывал экран под ним. */
+/**
+ * The next URL change returns to where we came from (e.g. voice opened over settings or chat): go back in history
+ * rather than push, otherwise the next jump into voice is taken for Back and closes the screen under it.
+ */
 let returnNext = false;
 export function markReturn() {
   returnNext = true;
   forwardNext = false;
 }
-/** Следующая смена адреса — переход вперёд (открыли экран поверх), даже если адрес совпал с «предыдущим». */
+/** The next URL change is a forward move (a screen opened on top), even if the URL matches the previous entry. */
 let forwardNext = false;
 export function markForward() {
   forwardNext = true;
@@ -75,12 +73,11 @@ export function markForward() {
 }
 
 /**
- * Связывает адрес со состоянием экранов.
- * - path — адрес, который соответствует текущему состоянию;
- * - apply — привести состояние к адресу (при загрузке, «Назад»/«Вперёд»);
- * - hold — не трогать адрес (идёт анимация закрытия экрана — состояние ещё старое).
- * Закрытие экрана внутри приложения возвращает по истории назад, если предыдущая запись — как раз туда;
- * так кнопка «Назад» браузера/телефона и кнопка «Назад» в шапке ведут себя одинаково.
+ * Binds the URL to screen state.
+ * path: URL for the current state; apply: bring state to a URL (load, Back/Forward);
+ * hold: leave the URL alone while a closing animation runs.
+ * Closing a screen goes back in history when the previous entry is exactly its parent,
+ * so the browser Back button and the in-app Back button behave the same.
  */
 export function useUrlSync(path: string, apply: (path: string) => void, hold = false) {
   const applyRef = useRef(apply);
@@ -95,7 +92,7 @@ export function useUrlSync(path: string, apply: (path: string) => void, hold = f
       applyRef.current(location.pathname);
     };
     window.addEventListener('popstate', onPop);
-    // Первый заход: состояние — из адреса; если адрес не разобрался (чужой сервер и т. п.) — поправляем его
+    // First load: state comes from the URL; an unresolvable URL (someone else's server etc.) is corrected.
     applyRef.current(location.pathname);
     const id = window.setTimeout(() => {
       ready.current = true;
@@ -114,8 +111,8 @@ export function useUrlSync(path: string, apply: (path: string) => void, hold = f
     const fwd = forwardNext;
     returnNext = forwardNext = false;
     if (cur === path) return;
-    // Назад по истории — только когда экран закрывается («вверх») и предыдущая запись как раз туда;
-    // переход вперёд к тому же адресу — новая запись, иначе «Назад» потом уводит мимо
+    // Go back in history only when a screen closes upward and the previous entry is exactly its parent;
+    // a forward move to the same URL is a new entry, otherwise Back later skips past it.
     if (!fwd && history.state?.prev === path && (ret || isUp(cur, path))) {
       backPending = true;
       history.back();

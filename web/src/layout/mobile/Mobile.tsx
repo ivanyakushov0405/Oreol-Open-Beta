@@ -4,6 +4,8 @@ import type { AppState } from '../../app/useAppState';
 import { STATUS_ITEMS } from '../../features/account/AccountMenu';
 import { STATUS_LABEL } from '../../features/account/status';
 import { ChatBody, PinnedButton } from '../../features/chat/ChatBody';
+import { ChatInfo } from '../../features/chat/ChatInfo';
+import { setMuted, useMuted } from '../../features/notifications/mute';
 import { TypingLine } from '../../features/chat/TypingLine';
 import { MENTION_EVENT } from '../../features/chat/mentions';
 import { chatUnread, UnreadBadge } from '../../features/chat/unread';
@@ -26,29 +28,30 @@ import { Head } from './MobileHead';
 import { useServerSwipe } from './serverSwipe';
 import { useStageSwipes } from './swipes';
 import { useJellyTabs, useSettled, useTabShadeClip } from './tabs';
+import { t } from '../../shared/i18n';
 
 type Tab = 'servers' | 'chats' | 'you';
 
-/** Длительность выезда экрана (чат, войс, участники, настройки) — совпадает с анимацией в CSS. */
+/** Screen slide duration (chat, voice, members, settings); matches the CSS animation. */
 const SLIDE_MS = 220;
-/** Выезд экрана справа налево — медленнее, чем уезд обратно. */
 export const SLIDE_IN_MS = 340;
 
 const TABS: { id: Tab; label: string; icon: IconName }[] = [
-  { id: 'servers', label: 'Серверы', icon: 'servers' },
-  { id: 'chats', label: 'Чаты', icon: 'oreol' },
-  { id: 'you', label: 'Вы', icon: 'users' },
+  { id: 'servers', label: t('Серверы'), icon: 'servers' },
+  { id: 'chats', label: t('Чаты'), icon: 'oreol' },
+  { id: 'you', label: t('Вы'), icon: 'users' },
 ];
 
-/** Функции текстового канала в меню «Ещё» (как кнопки в шапке канала на десктопе). */
-const CHAT_MENU: { icon: IconName; label: string; soon?: string }[] = [
-  { icon: 'pin', label: 'Закреплённые' },
-  { icon: 'bell', label: 'Уведомления', soon: 'Настройка уведомлений скоро будет' },
-  { icon: 'copy', label: 'Копировать название' },
+const CHAT_MENU: { icon: IconName; label: string }[] = [
+  { icon: 'pin', label: t('Закреплённые') },
+  { icon: 'bell', label: t('Уведомления') },
+  { icon: 'copy', label: t('Копировать название') },
 ];
 
-/** Пока hold — содержимое не перерисовывается (React берёт прошлый результат).
- *  Экраны под войсом другого сервера, открытым из виджета, так и показывают свой сервер, хотя приложение уже на сервере войса. */
+/**
+ * While hold is set the content does not re-render (React reuses the last result). Screens under another
+ * server's voice opened from the widget keep showing their own server although the app is already on the voice one.
+ */
 const Hold = memo(
   function Hold({ children }: { hold: boolean; children: ReactNode }) {
     return <>{children}</>;
@@ -56,7 +59,6 @@ const Hold = memo(
   (_prev, next) => next.hold,
 );
 
-/** Телефон лёг набок (см. data-land в main.tsx). */
 const LAND_QUERY = '(pointer: coarse) and (orientation: landscape) and (max-height: 520px)';
 function useLandscape() {
   const [on, setOn] = useState(() => matchMedia(LAND_QUERY).matches);
@@ -69,7 +71,7 @@ function useLandscape() {
   return on;
 }
 
-/** true, только если on держится дольше ms (короткие переподключения не мелькают). */
+/** true only if on holds longer than ms, so short reconnects do not flicker. */
 function useLagged(on: boolean, ms: number) {
   const [v, setV] = useState(false);
   useEffect(() => {
@@ -84,15 +86,14 @@ export function Mobile({ app }: { app: AppState }) {
   const stageRef = useRef<HTMLDivElement>(null);
   useTabShadeClip(stageRef);
   const [tab, setTab] = useState<Tab>('servers');
-  // Во время свайпа назад нижний экран снова рисуем — он проявляется под уезжающим верхним
+  // During the back swipe the lower screen renders again and appears under the sliding upper one.
   const [peek, setPeek] = useState(false);
-  // «Прыжок» иконки — только при нажатии на вкладку, а не когда таб-панель появляется снова (выход из войса/чата)
+  // The icon bounce plays only on tab taps, not when the tab bar reappears (leaving voice or chat).
   const [hop, setHop] = useState<Tab | null>(null);
   const hopTimer = useRef(0);
   const tabInTimer = useRef(0);
   const pickTab = (t: Tab) => {
     if (t !== tab) {
-      // новая вкладка мягко проявляется из размытия (без въезда сбоку)
       const st = stageRef.current;
       if (st) {
         st.dataset.tabIn = '';
@@ -120,28 +121,26 @@ export function Mobile({ app }: { app: AppState }) {
   const [open, setOpen] = useState<Channel | null>(null);
   const [voiceChat, setVoiceChat] = useState(false);
   const [settings, setSettings] = useState<UserSection | null>(null);
-  // «Редактировать профиль» из окна полного профиля
   useEffect(() => {
     const edit = () => setSettings('account-edit');
     window.addEventListener(EDIT_PROFILE_EVENT, edit);
     return () => window.removeEventListener(EDIT_PROFILE_EVENT, edit);
   }, []);
   const [members, setMembers] = useState(false);
-  /** Меню «Ещё» в шапке текстового канала. */
   const [chatMenu, setChatMenu] = useState(false);
+  const [chatInfo, setChatInfo] = useState<{ search: boolean } | null>(null);
   const [settingsHome, setSettingsHome] = useState(false);
-  /** Настройки сервера: список разделов и открытый раздел. */
   const [serverHome, setServerHome] = useState(false);
   const [serverSection, setServerSection] = useState<ServerSection | null>(null);
   const [card, setCard] = useState<string | null>(null);
-  // Смена сервера во вкладке «Серверы»: анимируем название, кнопку участников и каналы (не при первом показе вкладки)
   const lastSrv = useRef(app.server.id);
-  /** Когда сменили сервер. Класс анимации держится недолго: иначе он «залипал» и каналы анимировались заново,
-   *  каждый раз когда список появлялся снова (после «Назад» из чата, войса, настроек). */
+  /**
+   * When the server changed. The animation class is short-lived, otherwise it stuck and the channels re-animated
+   * every time the list appeared again (Back from chat, voice, settings).
+   */
   const srvSwitchAt = useRef(0);
-  /** Сервер сменился из-за виджета (открыли войс другого сервера или вернулись из него) — без анимации смены. */
+  /** The server changed because of the widget (opened another server's voice or came back): no switch animation. */
   const srvQuiet = useRef(false);
-  /** Сервер сменился на вкладке «Серверы» не из-за виджета — панель каналов уезжает, новая въезжает. */
   const wantSlide = useRef(false);
   if (lastSrv.current !== app.server.id) {
     lastSrv.current = app.server.id;
@@ -150,17 +149,16 @@ export function Mobile({ app }: { app: AppState }) {
     srvQuiet.current = false;
   }
   const srvSwitch = tab === 'servers' && Date.now() - srvSwitchAt.current < 700;
-  /** Куда сменился сервер: 1 — на следующий (ниже в списке), -1 — на предыдущий. Панель каналов въезжает с той стороны. */
   const srvDir = useRef<1 | -1>(1);
   const prevSrv = useRef(app.server.id);
-  /** Панель каналов прошлого сервера (снимок DOM) — уезжает поверх, пока на её место въезжает новая. */
+  /** Snapshot of the previous server's channel panel that slides away on top while the new one slides in. */
   const stackRef = useRef<HTMLDivElement>(null);
   const outgoing = useRef<{ node: HTMLElement; dir: 1 | -1 } | null>(null);
   if (prevSrv.current !== app.server.id) {
     const ids = app.servers.map((x) => x.id);
     srvDir.current = ids.indexOf(app.server.id) >= ids.indexOf(prevSrv.current) ? 1 : -1;
     prevSrv.current = app.server.id;
-    // во время отрисовки в DOM ещё старая панель — снимаем копию (с тем сдвигом, где её отпустил палец)
+    // During render the DOM still holds the old panel: copy it (with the offset where the finger released it).
     const old = wantSlide.current ? stackRef.current?.querySelector<HTMLElement>(':scope > .sidebar') : null;
     if (old) outgoing.current = { node: old.cloneNode(true) as HTMLElement, dir: srvDir.current };
     wantSlide.current = false;
@@ -179,8 +177,8 @@ export function Mobile({ app }: { app: AppState }) {
     out.node.querySelectorAll('[key], [id]').forEach((n) => n.removeAttribute('id'));
     stack.appendChild(out.node);
     cur.style.transition = cur.style.transform = cur.style.opacity = '';
-    // Старая панель коротко уходит и растворяется, новая выплывает с той же стороны, куда вёл палец.
-    // Полёт на всю высоту панели был рваным: стекло двух панелей пересчитывало размытие на каждом кадре.
+    // The old panel briefly moves away and fades, the new one floats in from the side the finger moved to.
+    // A full-height flight was choppy: the glass of both panels recomputed its blur every frame.
     const ease = 'cubic-bezier(.25, .8, .3, 1)';
     const ms = 420;
     const away = out.dir === 1 ? 'translateY(-90px)' : 'translateY(90px)';
@@ -201,7 +199,6 @@ export function Mobile({ app }: { app: AppState }) {
       if (next) app.setServerId(next.id as ServerId);
     },
   });
-  // Профиль из чата, упоминаний и т.п. открывается той же шторкой, что и из списка участников
   useEffect(() => {
     setProfileOpener((name) => setCard(name));
     const close = () => setCard(null);
@@ -212,7 +209,6 @@ export function Mobile({ app }: { app: AppState }) {
     };
   }, []);
   const online = app.membersOnline;
-  /** Какой экран сейчас уезжает вправо (по «Назад»). */
   const [leaving, setLeaving] = useState<string | null>(null);
   const leaveTimer = useRef<number | undefined>(undefined);
   const close = (key: string, done: () => void) => {
@@ -225,45 +221,50 @@ export function Mobile({ app }: { app: AppState }) {
     }, SLIDE_MS);
   };
   useEffect(() => () => window.clearTimeout(leaveTimer.current), []);
-  // Нижний экран прячем только когда верхний полностью выехал — иначе под ним во время анимации пусто
-  // Экраны настроек тоже «верхние»: у них прозрачный фон (виден тор), поэтому нижний экран под ними гаснет
+  // Hide the lower screen only once the upper one has fully slid in, otherwise it is empty underneath during the animation.
+  // Settings screens count as upper screens too: their background is transparent (the torus shows), so the screen below fades.
   const settingsOpen = [settingsHome, serverHome, !!settings, !!serverSection].filter(Boolean).length;
   const top = !!open || members || settingsOpen > 0;
   const settled = useSettled(top);
-  /** Войс открыт из виджета поверх текущих экранов (чата, участников, настроек): они остаются под ним как есть. */
+  /** Voice opened from the widget over the current screens (chat, members, settings): they stay under it as they are. */
   const overVoice = useRef(false);
-  // уезжает сам верхний экран (а не вложенный, например чат Лобби внутри войса или раздел настроек)
+  // Only the top screen itself slides away (not a nested one such as the lobby chat inside voice or a settings section).
   const leavingTop =
     leaving === 'chat' ||
     (leaving === 'voice' && !overVoice.current) ||
     leaving === 'members' ||
     (settingsOpen === 1 && (leaving === 'home' || leaving === 'shome' || leaving === 'ssec' || leaving === 'settings'));
   const covered = top && settled && !leavingTop && !peek;
-  /** Экраны, открытые из адреса при загрузке страницы: стоят на месте, а не выезжают (класс держится, пока экран открыт). */
   const quiet = useRef(new Set<string>());
   const firstApply = useRef(true);
   const slide = (key: string) => (leaving === key ? ' m-slide out' : ' m-slide' + (quiet.current.has(key) ? ' m-quiet' : ''));
-  /** Нижний экран: пока верхний выезжает — плавно гаснет, пока уезжает — плавно проявляется
-   *  (иначе сквозь прозрачный фон видно, как он резко пропадает). */
+  // Chat or voice open: dim the torus. body:has(...) used to do this, but that rule made the browser restyle the whole
+  // page on every node insertion and chat history loading stuttered on phones.
+  useLayoutEffect(() => {
+    const on = !!document.querySelector('.m-full-chat:not(.out), .m-full-voice:not(.out)');
+    if (document.body.classList.contains('m-chat-open') !== on) document.body.classList.toggle('m-chat-open', on);
+  });
+  useEffect(() => () => document.body.classList.remove('m-chat-open'), []);
+  /**
+   * Lower screen: fades out while the upper one slides in and fades in while it slides out
+   * (otherwise it visibly vanishes through the transparent background).
+   */
   const under = (hidden: boolean, back: boolean) => ' m-under' + (hidden ? ' dim' : '') + (back ? ' back' : '');
   const underMain = under(top && !leavingTop, top && leavingTop);
-  // Чат Лобби поверх сцены войса: сцену убираем только когда чат полностью выехал
+  // Lobby chat over the voice stage: remove the stage only after the chat has fully slid in.
   const vchatSettled = useSettled(voiceChat);
   const showStage = !voiceChat || !vchatSettled || leaving === 'vchat';
-  /** Шапка переключается сразу по нажатию (и при открытии, и при «Назад»), не дожидаясь конца выезда. */
+  /** The header switches on tap (both opening and Back) without waiting for the slide to end. */
   const vchatShown = voiceChat && leaving !== 'vchat';
 
-  // Голосовой канал текущего сервера (у сервера, где мы в голосе, — свой)
   const voiceCh = (app.serverById(app.voice.server) ?? app.server).channels.find((c) => c.kind === 'voice') ?? app.voiceChannel;
-  const voiceName = voiceCh?.name ?? 'Голосовой';
+  const voiceName = voiceCh?.name ?? t('Голосовой');
   const cardMember = card ? app.members.find((m) => m.username === card) : undefined;
 
-  /** Виджет звонка свёрнут в пилюлю. */
   const [callMinPref, setCallMin] = useState(false);
-  // набок экран низкий: виджет звонка всегда свёрнут в пилюлю (развёрнутый занимал полэкрана), по ней — в войс
+  // In landscape the screen is short: the call widget is always a pill (expanded it took half the screen).
   const land = useLandscape();
   const callMin = callMinPref || land;
-  /** Меню «…» виджета: под кнопкой. */
   const [callMenu, setCallMenu] = useState<{ top: number; right: number } | null>(null);
   const inCall = app.voice.state !== 'idle';
   useEffect(() => {
@@ -272,9 +273,11 @@ export function Mobile({ app }: { app: AppState }) {
       setCallMenu(null);
     }
   }, [inCall]);
-  /** Открыт экран войса, в котором мы сейчас, — виджет уезжает вверх. Пока экран войса уезжает, виджет ещё спрятан:
-   *  сначала закрывается экран, потом отдельным плавным движением сверху выезжает виджет (вместе они «спорили» — ступеньки). */
-  // виджет начинает выезжать, когда экран войса уже почти уехал (а не после полной остановки — так он запаздывал)
+  /**
+   * The voice screen we are in is open, so the widget slides up. While that screen slides away the widget stays hidden:
+   * first the screen closes, then the widget slides down separately (together they fought and stuttered).
+   */
+  // The widget starts sliding when the voice screen is almost gone, not after it stops (that felt late).
   const [voiceGoing, setVoiceGoing] = useState(false);
   useEffect(() => {
     if (leaving !== 'voice') return void setVoiceGoing(false);
@@ -283,15 +286,18 @@ export function Mobile({ app }: { app: AppState }) {
   }, [leaving]);
   const onOwnVoice = !!open && open.kind === 'voice' && app.inVoiceHere && !voiceGoing;
   const [callSize, setCallSize] = useState<{ h: number | null; drag: number | null }>({ h: null, drag: null });
-  /** Сколько места сверху занимает виджет: развёрнутый — свою высоту, свёрнутый — полосу под пилюлей
-   *  (во «Вы» пилюля лежит прямо на баннере), на экране своего войса — ничего. */
+  /**
+   * Space taken by the widget at the top: its height when expanded, the strip under the pill when collapsed
+   * (on the You tab the pill sits on the banner), nothing on our own voice screen.
+   */
   const pillSpace = tab === 'you' ? 0 : PILL_SPACE;
-  /** Во «Вы» сцена под пилюлей не сдвигается (профиль не дёргается, когда закрываются настройки) —
-   *  отступ под пилюлю берут только экраны, открытые поверх. */
+  /**
+   * On the You tab the stage does not move under the pill (the profile must not jump when settings close);
+   * only screens opened on top get the pill offset.
+   */
   const pillOver = inCall && callMin && !onOwnVoice && tab === 'you' && top;
   const callH = callSize.h ?? 0;
-  /** Высоту анимируем только когда сам виджет сворачивается/разворачивается/уезжает —
-   *  при смене вкладки экраны встают на место сразу, без подстраивания. */
+  /** Animate the height only when the widget itself collapses, expands or leaves; on tab changes screens settle instantly. */
   const [callAnim, setCallAnim] = useState(false);
   const animKey = `${inCall}:${callMin}:${onOwnVoice}`;
   const lastAnimKey = useRef(animKey);
@@ -303,17 +309,15 @@ export function Mobile({ app }: { app: AppState }) {
     return () => window.clearTimeout(id);
   }, [animKey]);
   const callSpace = !inCall || onOwnVoice ? 0 : callSize.drag != null ? Math.max(pillSpace, callH + callSize.drag) : callMin ? pillSpace : callH;
-  /** Из виджета — в свой голосовой канал: всё, что открыто поверх, закрываем. */
-  /** Куда вернуться, когда закроют войс (или его чат), открытый из виджета: тот же экран, что был под ним. */
   const ret = useRef<null | (() => void)>(null);
-  /** Из виджета открыли сразу чат войса — «Назад» из чата ведёт туда, откуда пришли, а не в сам войс. */
   const retChat = useRef(false);
-  /** Текстовый чат, поверх которого открыли войс из виджета: лежит под войсом и виден, пока войс уезжает. */
   const [below, setBelow] = useState<Channel | null>(null);
-  /** Чат под войсом другого сервера: пока открыт войс, приложение на сервере войса и чат того сервера
-   *  пустеет и грузится заново. Под войсом и после «Назад», пока история не пришла, показываем снимок. */
+  /**
+   * Chat under another server's voice: while voice is open the app is on the voice server and that chat empties
+   * and reloads. Under voice and after Back, until history arrives, a snapshot is shown.
+   */
   const frozen = useRef<{ chat: AppState['general']; room: string; sub: string } | null>(null);
-  /** После возврата присутствие («N в сети») сервера приходит заново и число скачет — держим прежнюю подпись ещё чуть-чуть. */
+  /** After returning, the server's presence count arrives again and jumps; keep the old label a little longer. */
   const [heldSub, setHeldSub] = useState<string | null>(null);
   const heldTimer = useRef<number | undefined>(undefined);
   const holdSub = (v: string) => {
@@ -334,14 +338,11 @@ export function Mobile({ app }: { app: AppState }) {
       setBelow(null);
     }
   }, [open]);
-  /** here — нажали на название в виджете: «Назад» вернёт в то же окно. Иначе («Вернуться в войс») — на экран сервера. */
-  /** Сервер, на который вернуться из войса, открытого из виджета. */
   const retSid = useRef<string | null>(null);
-  /** Экраны под войсом заморожены (см. Hold): войс другого сервера. */
   const holdUnder = useRef(false);
-  /** Уезжающий войс заморожен: сервер уже вернули, а он должен уехать таким, каким был. */
+  /** The leaving voice screen is frozen: the server is already switched back, but it must slide away as it was. */
   const holdVoice = useRef(false);
-  /** «Назад» из войса, открытого из виджета: сервер возвращаем сразу, чтобы экраны под войсом успели загрузиться, пока он уезжает. */
+  /** Back from voice opened from the widget: switch the server back at once so screens below load while it slides away. */
   const backFromVoice = () => {
     const back = ret.current;
     if (!back || leaving) return;
@@ -359,14 +360,14 @@ export function Mobile({ app }: { app: AppState }) {
       setBelow(null);
       setTab('servers');
     } else if (!onVoice) {
-      // Войс встаёт поверх того, что открыто: под ним ничего не закрывается и не открывается заново
+      // Voice goes on top of whatever is open: nothing below closes or reopens.
       retChat.current = withChat;
       const was = { open, sid: app.serverId };
       const keep = { chat: !!open, members, home: settingsHome, settings: !!settings, shome: serverHome, ssec: !!serverSection };
       setBelow(open && open.kind === 'text' ? open : null);
       frozen.current =
         open && open.kind === 'text' && app.voice.server && app.voice.server !== app.serverId
-          ? { chat: app.general, room: open.room, sub: app.membersReady ? `${online.length} в сети` : ' ' }
+          ? { chat: app.general, room: open.room, sub: app.membersReady ? t('{0} в сети', { 0: online.length }) : ' ' }
           : null;
       overVoice.current = !!open || members || settingsHome || !!settings || serverHome || !!serverSection;
       retSid.current = was.sid;
@@ -377,7 +378,6 @@ export function Mobile({ app }: { app: AppState }) {
           app.setServerId(was.sid as ServerId);
         }
         markReturn();
-        // экраны под войсом встают на место без въезда
         for (const [k, on] of Object.entries(keep)) if (on) quiet.current.add(k);
         setOpen(was.open);
         setVoiceChat(false);
@@ -392,7 +392,6 @@ export function Mobile({ app }: { app: AppState }) {
       if (voiceCh) setOpen(voiceCh);
       return;
     } else if (!withChat) {
-      // уже в войсе (например, в его чате) — просто к сцене войса
       retChat.current = false;
     }
     if (app.voice.server) app.setServerId(app.voice.server as ServerId);
@@ -406,20 +405,18 @@ export function Mobile({ app }: { app: AppState }) {
     if (voiceCh) setOpen(voiceCh);
   };
 
-  /** Текстовый чат на экране: открытый или лежащий под войсом (см. below). */
   const chatCh = open?.kind === 'text' ? open : open?.kind === 'voice' && below ? below : null;
-  // снимок больше не нужен: чат закрыт или его история снова загружена
   if (frozen.current && (!chatCh || (open?.kind === 'text' && app.general.room === frozen.current.room))) {
     if (chatCh) holdSub(frozen.current.sub);
     frozen.current = null;
   }
   const chat = frozen.current?.chat ?? app.general;
-  // нет связи с чатом — колесо в шапке вместо подписи; лента остаётся (последняя загруженная)
+  const chatMuted = useMuted(chatCh?.room);
+  useEffect(() => setChatInfo(null), [chatCh?.room, open]);
   const chatOffline = useLagged(!!chatCh && !chat.connected && !frozen.current, 700);
-  /** Экраны под войсом, открытым из виджета: спрятаны, пока войс на месте. */
   const belowVoice = open?.kind === 'voice' && overVoice.current ? ' m-below' : '';
 
-  // Адрес ↔ экраны. Порядок важен: чем выше экран, тем позже он задаёт адрес
+  // URL and screens. Order matters: higher screens set the URL later.
   const sid = app.server.id;
   let path = tab === 'chats' ? paths.chats() : tab === 'you' ? paths.you() : paths.server(sid);
   if (members) path = paths.members(sid);
@@ -429,7 +426,6 @@ export function Mobile({ app }: { app: AppState }) {
   if (settingsHome) path = paths.settings();
   if (settings) path = paths.settings(settings);
   if (open && open.kind === 'voice' && overVoice.current) path = paths.channel(sid, open.id, voiceChat);
-  /** «Назад»/«Вперёд» браузера или телефона и открытие по ссылке: верхний закрывающийся экран уезжает с анимацией. */
   const applyRoute = (p: string) => {
     const r = parseRoute(p);
     const srv = r.name === 'server' ? app.serverById(r.sid) : undefined;
@@ -468,8 +464,8 @@ export function Mobile({ app }: { app: AppState }) {
       setSettings(want.settings);
       setChatMenu(false);
     };
-    // Войс, открытый из виджета поверх других экранов, закрыли «Назад» браузера или телефона —
-    // возвращаемся так же, как кнопкой: экраны под ним остаются на месте, а не открываются заново
+    // Voice opened from the widget was closed with the browser or phone Back:
+    // return the same way as the button does, screens below stay in place instead of reopening.
     if (open && open.kind === 'voice' && ret.current && want.open?.id !== open.id) {
       backFromVoice();
       return;
@@ -486,10 +482,9 @@ export function Mobile({ app }: { app: AppState }) {
     else apply();
   };
   useUrlSync(path, applyRoute, leaving != null);
-  // Экран закрыли любым путём — в следующий раз он снова выезжает
   const quietReady = useRef(false);
   useEffect(() => {
-    // Первый проход идёт в том же коммите, что и разбор адреса, — состояние ещё пустое, его пропускаем
+    // The first pass runs in the same commit as URL parsing while state is still empty; skip it.
     if (!quietReady.current) {
       quietReady.current = true;
       return;
@@ -509,7 +504,6 @@ export function Mobile({ app }: { app: AppState }) {
       className={'m-app' + (app.glassChat ? ' glass-chat' : '') + (app.glassVoice ? ' glass-voice' : '') + (pillOver ? ' pill-over' : '') + (callSize.drag != null ? ' call-drag' : (callAnim || lastAnimKey.current !== animKey) && !onOwnVoice ? ' call-anim' : '')}
       style={{ '--call-h': `${callSpace}px`, '--call-h-to': `${callSpace}px` } as React.CSSProperties}
     >
-      {/* Виджет звонка — над всеми вкладками и экранами (как плашка идущего звонка на телефоне) */}
       <MobileCall
         app={app}
         gone={onOwnVoice}
@@ -518,7 +512,7 @@ export function Mobile({ app }: { app: AppState }) {
         onOpen={() => openVoice()}
         onOpenHere={() => openVoice(false, true)}
         onMeasure={(h, drag) => setCallSize((s) => (s.h === h && s.drag === drag ? s : { h, drag }))}
-        // подсветка микрофона в виджете — везде, кроме списка каналов того сервера, где сидим (там светится сам список)
+        // Microphone highlight in the widget everywhere except the channel list of our voice server (the list itself glows there).
         liveMic={covered || tab !== 'servers' || app.serverId !== app.voice.server}
         onMore={(btn) => {
           const r = btn.getBoundingClientRect();
@@ -532,15 +526,15 @@ export function Mobile({ app }: { app: AppState }) {
           <div className="m-menu glass m-call-menu" role="menu" style={{ top: callMenu.top, right: callMenu.right }}>
             <button role="menuitem" className={'m-menu-item' + (app.voice.screenOn ? ' share-on' : '')} onClick={() => { setCallMenu(null); void app.voice.toggleScreen(); }}>
               <Icon name={app.voice.screenOn ? 'screen-share-stop' : 'screen-share'} />
-              <span>{app.voice.screenOn ? 'Остановить демонстрацию' : 'Демонстрация экрана'}</span>
+              <span>{app.voice.screenOn ? t('Остановить демонстрацию') : t('Демонстрация экрана')}</span>
             </button>
             <button role="menuitem" className="m-menu-item" onClick={() => { setCallMenu(null); openVoice(true); }}>
               <Icon name="chats" />
-              <span>Чат канала</span>
+              <span>{t('Чат канала')}</span>
             </button>
             <button role="menuitem" className="m-menu-item" onClick={() => { setCallMenu(null); setSettings('voice'); }}>
               <Icon name="settings" />
-              <span>Голос и звук</span>
+              <span>{t('Голос и звук')}</span>
             </button>
           </div>
         </>
@@ -549,18 +543,18 @@ export function Mobile({ app }: { app: AppState }) {
       {!covered && tab === 'servers' && (
         <div className={'m-servers' + underMain}>
           <Hold hold={holdUnder.current}>
-          <h2 className="m-tab-title">Серверы</h2>
+          <h2 className="m-tab-title">{t('Серверы')}</h2>
           <div className="m-servers-row">
           <Rail app={app} home={false} noHome onHome={() => setTab('chats')} onServer={(id: ServerId) => app.setServerId(id)} />
           <div className="srv-stack" ref={stackRef}>
           <aside className={'sidebar glass' + (srvSwitch ? ' srv-switch' : '')} data-srv-dir={srvDir.current === 1 ? 'next' : 'prev'}>
             <div key={app.server.id} className="srv-body">
             <div className="sidebar-head">
-              <button className="grow srv-name" title="Настройки сервера" onClick={() => setServerHome(true)}>
+              <button className="grow srv-name" title={t('Настройки сервера')} onClick={() => setServerHome(true)}>
                 <span key={app.server.id}>{app.server.name}</span>
                 <Icon name="chevron-down" size={18} />
               </button>
-              <button className="icon-btn srv-members" title="Участники" aria-label="Участники" onClick={() => setMembers(true)}>
+              <button className="icon-btn srv-members" title={t('Участники')} aria-label={t('Участники')} onClick={() => setMembers(true)}>
                 <Icon key={app.server.id} name="users" />
               </button>
             </div>
@@ -586,10 +580,10 @@ export function Mobile({ app }: { app: AppState }) {
 
       {!covered && tab === 'chats' && (
         <div className={'m-section' + underMain}>
-          <h2>Чаты</h2>
+          <h2>{t('Чаты')}</h2>
           <div className="empty-state" style={{ marginTop: 32, fontSize: 13 }}>
-            <b>Личных сообщений пока нет</b>
-            Здесь будут ваши диалоги и групповые чаты. Чаты серверов находятся во вкладке «Серверы».
+            <b>{t('Личных сообщений пока нет')}</b>
+            {t('Здесь будут ваши диалоги и групповые чаты. Чаты серверов находятся во вкладке «Серверы».')}
           </div>
         </div>
       )}
@@ -602,7 +596,7 @@ export function Mobile({ app }: { app: AppState }) {
           <div className="name">{app.me.displayName}</div>
           <div className="handle">{handleOf(app.name)}</div>
           <div className="m-list glass">
-            <div className="overline">Статус</div>
+            <div className="overline">{t('Статус')}</div>
             {STATUS_ITEMS.map((st) => (
               <button
                 key={st.id}
@@ -617,28 +611,27 @@ export function Mobile({ app }: { app: AppState }) {
               </button>
             ))}
           </div>
-          {/* Профиль (Figma «Mobile · You»): статус, профиль; настройки — отдельным экраном */}
           <div className="m-list glass">
             <button className="m-item" onClick={() => setSettings('account-edit')}>
               <Icon name="pencil" />
-              <span className="grow">Редактировать профиль</span>
+              <span className="grow">{t('Редактировать профиль')}</span>
               <Icon name="chevron-right" size={18} />
             </button>
             <button className="m-item" onClick={() => setSettings('appearance')}>
               <Icon name="appearance" />
-              <span className="grow">Внешний вид</span>
+              <span className="grow">{t('Внешний вид')}</span>
               <Icon name="chevron-right" size={18} />
             </button>
             <button className="m-item" onClick={() => setSettingsHome(true)}>
               <Icon name="settings" />
-              <span className="grow">Настройки</span>
+              <span className="grow">{t('Настройки')}</span>
               <Icon name="chevron-right" size={18} />
             </button>
           </div>
           <div className="m-list glass">
             <button className="m-item danger" onClick={app.logout}>
               <Icon name="logout" />
-              <span className="grow">Выйти</span>
+              <span className="grow">{t('Выйти')}</span>
             </button>
           </div>
         </div>
@@ -646,7 +639,6 @@ export function Mobile({ app }: { app: AppState }) {
 
       {!covered && (
       <nav ref={navRef} className={'tabbar glass' + underMain}>
-        {/* Подсветка активной вкладки — одна на всю панель, упругий пузырь (см. useJellyTabs) */}
         <span ref={gliderRef} className="tab-glider" aria-hidden="true" />
         {TABS.map((t) => (
           <button key={t.id} className={'tab' + (tab === t.id ? ' on' : '') + (hop === t.id ? ' hop' : '')} onClick={() => pickTab(t.id)}>
@@ -669,13 +661,14 @@ export function Mobile({ app }: { app: AppState }) {
           <Head
             title={chatCh.name}
             icon="chats"
+            onTitle={() => setChatInfo({ search: false })}
             onBack={() => close('chat', () => setOpen(null))}
             actions={
               <>
-                <button className="icon-btn" title="Поиск" aria-label="Поиск" onClick={() => app.notify('Поиск по каналу скоро будет')}>
+                <button className="icon-btn" title={t('Поиск')} aria-label={t('Поиск')} onClick={() => setChatInfo({ search: true })}>
                   <Icon name="search" />
                 </button>
-                <button className={'icon-btn' + (chatMenu ? ' active' : '')} title="Ещё" aria-label="Ещё" aria-expanded={chatMenu} onClick={() => setChatMenu((v) => !v)}>
+                <button className={'icon-btn' + (chatMenu ? ' active' : '')} title={t('Ещё')} aria-label={t('Ещё')} aria-expanded={chatMenu} onClick={() => setChatMenu((v) => !v)}>
                   <Icon name="more" />
                 </button>
               </>
@@ -684,14 +677,17 @@ export function Mobile({ app }: { app: AppState }) {
               chatOffline ? (
                 <span className="m-connecting">
                   <i className="conn-spin" />
-                  Подключение…
+                  {t('Подключение…')}
                 </span>
               ) : (
-                <TypingLine users={chat.typingUsers.filter((u) => u !== app.name)} fallback={frozen.current?.sub ?? heldSub ?? (app.membersReady ? `${online.length} в сети` : ' ')} />
+                <TypingLine users={chat.typingUsers.filter((u) => u !== app.name)} fallback={frozen.current?.sub ?? heldSub ?? (app.membersReady ? t('{0} в сети', { 0: online.length }) : ' ')} />
               )
             }
           />
           <ChatBody app={app} chat={chat} channel={chatCh} compact />
+          {chatInfo && chatCh === open && (
+            <ChatInfo key={chatCh.room} app={app} chat={chat} channel={chatCh} full startSearch={chatInfo.search} onClose={() => setChatInfo(null)} />
+          )}
           {chatMenu && (
             <>
               <div className="popover-backdrop m-menu-backdrop" onClick={() => setChatMenu(false)} />
@@ -703,18 +699,21 @@ export function Mobile({ app }: { app: AppState }) {
                     className="m-menu-item"
                     onClick={() => {
                       setChatMenu(false);
-                      if (it.label === 'Закреплённые') chat.setView('pinned');
-                      else if (it.label === 'Копировать название') {
+                      if (it.label === t('Закреплённые')) chat.setView('pinned');
+                      else if (it.icon === 'bell') {
+                        setMuted(chatCh.room, !chatMuted);
+                        app.notify(chatMuted ? t('Уведомления включены') : t('Уведомления выключены, кроме упоминаний'), 'success');
+                      } else if (it.label === t('Копировать название')) {
                         void navigator.clipboard?.writeText(`#${chatCh.name}`).then(
-                          () => app.notify('Название канала скопировано', 'success'),
-                          () => app.notify('Не удалось скопировать', 'error'),
+                          () => app.notify(t('Название канала скопировано'), 'success'),
+                          () => app.notify(t('Не удалось скопировать'), 'error'),
                         );
-                      } else app.notify(it.soon!);
+                      }
                     }}
                   >
-                    <Icon name={it.icon} />
-                    <span>{it.label}</span>
-                    {it.label === 'Закреплённые' && chat.pinned.length > 0 && <span className="m-menu-count">{chat.pinned.length}</span>}
+                    <Icon name={it.icon === 'bell' && chatMuted ? 'bell-off' : it.icon} />
+                    <span>{it.icon === 'bell' && chatMuted ? t('Включить уведомления') : it.icon === 'bell' ? t('Выключить уведомления') : it.label}</span>
+                    {it.label === t('Закреплённые') && chat.pinned.length > 0 && <span className="m-menu-count">{chat.pinned.length}</span>}
                   </button>
                 ))}
               </div>
@@ -729,7 +728,7 @@ export function Mobile({ app }: { app: AppState }) {
           <Hold hold={holdVoice.current}>
           <Head
             swapKey={vchatShown ? 'chat' : 'voice'}
-            title={vchatShown ? `Чат · ${open.name}` : open.name}
+            title={vchatShown ? t('Чат · {0}', { 0: open.name }) : open.name}
             icon={vchatShown ? 'chats' : 'voice'}
             onBack={() => {
               const back = ret.current;
@@ -740,35 +739,33 @@ export function Mobile({ app }: { app: AppState }) {
             sub={
               app.inVoiceHere && app.voice.state === 'connected' ? (
                 <>
-                  {/* Точка — тот же статус связи, что и значок Wi‑Fi в панели «Подключено» */}
-                  {/* Узкий экран: «Подключено» уже сказано точкой — когда пинг известен, слово не пишем, иначе хвост строки
-                      (таймер) обрезался шапкой */}
+                  {/* Narrow screen: the dot already says "Connected", so the word is dropped once ping is known, otherwise the end of the line (the timer) was clipped by the header. */}
                   <i className={`live-dot q-${app.voice.quality}`} />
-                  {app.voice.rtt != null ? `${app.voice.rtt} мс` : 'Подключено'}
-                  {` · ${app.voice.peers.length} в канале`}
+                  {app.voice.rtt != null ? t('{0} мс', { 0: app.voice.rtt }) : t('Подключено')}
+                  {t(' · {0} в канале', { 0: app.voice.peers.length })}
                   <Elapsed from={app.voice.startedAt} prefix=" · " />
                 </>
               ) : app.inVoiceHere && app.voice.state === 'connecting' ? (
                 <>
                   <i className="live-dot q-medium" />
-                  Подключение…
+                  {t('Подключение…')}
                 </>
               ) : (
-                'Голосовой канал'
+                t('Голосовой канал')
               )
             }
             actions={
               vchatShown ? (
                 <PinnedButton chat={app.lobby} />
               ) : (
-                <button className="icon-btn has-badge" title="Чат канала" aria-label="Чат канала" onClick={(e) => { e.currentTarget.blur(); setVoiceChat(true); }}>
+                <button className="icon-btn has-badge" title={t('Чат канала')} aria-label={t('Чат канала')} onClick={(e) => { e.currentTarget.blur(); setVoiceChat(true); }}>
                   <Icon name="chats" />
                   <UnreadBadge n={chatUnread(app, app.lobby)} className="corner" />
                 </button>
               )
             }
           />
-          {/* Сцена не пересоздаётся под чатом: иначе аватарки мигают/резко пропадают за стеклом */}
+          {/* The stage is not recreated under the chat, otherwise avatars flicker or vanish behind the glass. */}
           <div className={'m-voice' + (showStage ? '' : ' covered')} aria-hidden={showStage ? undefined : true}>
             <VoiceStage app={app} mobile />
           </div>
@@ -784,20 +781,20 @@ export function Mobile({ app }: { app: AppState }) {
       {members && (
         <div className={'m-full m-members' + belowVoice + slide('members')}>
           <Hold hold={holdUnder.current}>
-          <Head title="Участники" sub={app.membersReady ? `${app.server.name} · ${online.length} в сети` : app.server.name} onBack={() => close('members', () => setMembers(false))} />
+          <Head title={t('Участники')} sub={app.membersReady ? t('{0} · {1} в сети', { 0: app.server.name, 1: online.length }) : app.server.name} onBack={() => close('members', () => setMembers(false))} />
           <div className="m-members-list glass">
-            <div className="section-title overline">В сети: {online.length}</div>
+            <div className="section-title overline">{t('В сети: ')}{online.length}</div>
             {online.map((m) => (
               <MemberRow
                 key={m.username}
                 name={m.username}
                 me={m.username === app.name}
                 status={m.status}
-                sub={app.voiceUsers.some((v) => v.identity === m.username) ? `В голосовом · ${voiceName}` : handleOf(m.username)}
+                sub={app.voiceUsers.some((v) => v.identity === m.username) ? t('В голосовом · {0}', { 0: voiceName }) : handleOf(m.username)}
                 onClick={() => openProfile(m.username)}
               />
             ))}
-            {app.membersOffline.length > 0 && <div className="section-title overline">Не в сети: {app.membersOffline.length}</div>}
+            {app.membersOffline.length > 0 && <div className="section-title overline">{t('Не в сети: ')}{app.membersOffline.length}</div>}
             {app.membersOffline.map((m) => (
               <MemberRow
                 key={m.username}
@@ -818,12 +815,12 @@ export function Mobile({ app }: { app: AppState }) {
           key={card}
           sheet
           serverIcon={{ short: app.server.short, gradient: app.server.gradient }}
-          onCall={() => app.notify('Личные звонки скоро будут')}
+          onCall={() => app.notify(t('Личные звонки скоро будут'))}
           name={card}
           me={card === app.name}
           at={{ x: 0, y: 0 }}
           status={app.statusOf(card)}
-          activity={app.voiceUsers.some((v) => v.identity === card) ? `В голосовом · ${voiceName}` : STATUS_LABEL[app.statusOf(card)]}
+          activity={app.voiceUsers.some((v) => v.identity === card) ? t('В голосовом · {0}', { 0: voiceName }) : STATUS_LABEL[app.statusOf(card)]}
           serverName={app.server.name}
           since={cardMember?.joinedAt ? new Date(cardMember.joinedAt) : new Date()}
           onClose={() => setCard(null)}
@@ -839,7 +836,7 @@ export function Mobile({ app }: { app: AppState }) {
 
       {settingsHome && (
         <div className={'m-settings' + belowVoice + slide('home')}>
-          <Head title="Настройки" onBack={() => close('home', () => setSettingsHome(false))} />
+          <Head title={t('Настройки')} onBack={() => close('home', () => setSettingsHome(false))} />
           <div className="m-settings-home">
             <div className="m-list glass m-account-row">
               <Avatar name={app.name} size={56} status={app.status} />
@@ -848,7 +845,7 @@ export function Mobile({ app }: { app: AppState }) {
                 <span>{handleOf(app.name)}</span>
               </span>
             </div>
-            <div className="overline m-group-title">Настройки пользователя</div>
+            <div className="overline m-group-title">{t('Настройки пользователя')}</div>
             <div className="m-list glass">
               {USER_NAV.slice(0, USER_NAV.findIndex((x) => x.group)).map((n) => (
                 <button key={n.id} className="m-item" onClick={() => setSettings(n.id)}>
@@ -858,7 +855,7 @@ export function Mobile({ app }: { app: AppState }) {
                 </button>
               ))}
             </div>
-            <div className="overline m-group-title">Приложение</div>
+            <div className="overline m-group-title">{t('Приложение')}</div>
             <div className="m-list glass">
               {USER_NAV.slice(USER_NAV.findIndex((x) => x.group)).map((n) => (
                 <button key={n.id} className="m-item" onClick={() => setSettings(n.id)}>
@@ -871,7 +868,7 @@ export function Mobile({ app }: { app: AppState }) {
             <div className="m-list glass">
               <button className="m-item danger" onClick={app.logout}>
                 <Icon name="logout" />
-                <span className="grow">Выйти</span>
+                <span className="grow">{t('Выйти')}</span>
               </button>
             </div>
           </div>
@@ -881,7 +878,7 @@ export function Mobile({ app }: { app: AppState }) {
       {serverHome && (
         <div className={'m-settings' + belowVoice + slide('shome')}>
           <Hold hold={holdUnder.current}>
-          <Head title="Настройки сервера" onBack={() => close('shome', () => setServerHome(false))} />
+          <Head title={t('Настройки сервера')} onBack={() => close('shome', () => setServerHome(false))} />
           <div className="m-settings-home">
             <div className="m-list glass">
               {SERVER_NAV.filter((n) => !n.group && n.id !== 'moderation').map((n) => (
@@ -900,7 +897,7 @@ export function Mobile({ app }: { app: AppState }) {
                 </button>
               ))}
             </div>
-            <div className="overline m-group-title">Модерация</div>
+            <div className="overline m-group-title">{t('Модерация')}</div>
             <div className="m-list glass">
               {SERVER_NAV.filter((n) => n.group || n.id === 'moderation').map((n) => (
                 <button
@@ -926,7 +923,7 @@ export function Mobile({ app }: { app: AppState }) {
       {serverSection && (
         <div className={'m-settings' + belowVoice + slide('ssec')}>
           <Hold hold={holdUnder.current}>
-          <Head title={SERVER_NAV.find((n) => n.id === serverSection)?.label ?? 'Сервер'} fromTitle="Настройки сервера" onBack={() => close('ssec', () => setServerSection(null))} />
+          <Head title={SERVER_NAV.find((n) => n.id === serverSection)?.label ?? t('Сервер')} fromTitle={t('Настройки сервера')} onBack={() => close('ssec', () => setServerSection(null))} />
           <div className="settings-body" style={{ overflowY: 'auto' }}>
             <ServerSettingsBody app={app} section={serverSection} />
           </div>
@@ -936,7 +933,7 @@ export function Mobile({ app }: { app: AppState }) {
 
       {settings && (
         <div className={'m-settings' + belowVoice + slide('settings')}>
-          <Head title={userSectionTitle(settings)} fromTitle={settingsHome ? 'Настройки' : undefined} onBack={() => close('settings', () => setSettings(null))} />
+          <Head title={userSectionTitle(settings)} fromTitle={settingsHome ? t('Настройки') : undefined} onBack={() => close('settings', () => setSettings(null))} />
           <div className="settings-body" style={{ overflowY: 'auto' }}>
             <UserSettingsBody app={app} section={settings} onSection={setSettings} />
           </div>

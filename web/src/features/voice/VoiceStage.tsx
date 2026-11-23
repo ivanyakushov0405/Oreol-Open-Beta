@@ -10,8 +10,8 @@ import { requestFlip, useFacing } from './camFacing';
 import { IS_MOBILE_DEVICE } from './useVoice';
 import { animClass, usePeerAnim, type Anim } from './peerAnim';
 import type { VoicePeer } from './useVoice';
+import { plural, t } from '../../shared/i18n';
 
-/* ---------- Голосовой канал (макет «Desktop · Voice channel») ---------- */
 export function PeerFlags({ p, order }: { p: VoicePeer; order: 'tile' | 'row' }) {
   const media = (
     <>
@@ -25,8 +25,6 @@ export function PeerFlags({ p, order }: { p: VoicePeer; order: 'tile' | 'row' })
       {p.micMuted && <Icon name="mic-off" size={16} className="off" />}
     </>
   );
-  // В строке канала слева направо: видео → демонстрация → наушники → микрофон.
-  // На плитке — наоборот (иконки идут от имени): микрофон → наушники → видео.
   if (order === 'tile') {
     return (
       <>
@@ -44,7 +42,10 @@ export function PeerFlags({ p, order }: { p: VoicePeer; order: 'tile' | 'row' })
   );
 }
 
-/** Видео (демонстрация или вебка) на весь экран: стандартный fullscreen, а на iPhone (где его у обычных элементов нет) — видеоплеер системы. */
+/**
+ * Fullscreen video (screen share or camera): standard fullscreen, or the system video player on iPhone,
+ * which has no fullscreen for regular elements.
+ */
 function openFullscreen(tile: HTMLElement) {
   const video = tile.querySelector('video') as (HTMLVideoElement & { webkitEnterFullscreen?: () => void }) | null;
   if (!video) return;
@@ -60,7 +61,6 @@ function Tile({ p, kind, wide, span, avatar = 80, anim }: { p: VoicePeer; kind: 
   const track = kind === 'screen' ? p.screen : p.camera;
   const hasFlags = kind === 'screen' || p.micMuted || p.deafened || Boolean(p.camera);
   const facing = useFacing();
-  // своя камера на телефоне: кнопка «фронтальная ⇄ основная»
   const canFlip = IS_MOBILE_DEVICE && p.isLocal && kind === 'cam' && Boolean(track);
   const label = (
     <>
@@ -76,7 +76,6 @@ function Tile({ p, kind, wide, span, avatar = 80, anim }: { p: VoicePeer; kind: 
     <div
       className={'tile' + (p.speaking && kind === 'cam' ? ' speaking' : '') + (track ? '' : ' novideo') + (wide ? ' wide' : '') + (span ? ' span' : '') + animClass(anim)}
       {...userMenuProps(p.identity)}
-      // видео (демонстрация и вебка) — на весь экран; плитка без видео и подпись с ником — профиль участника
       onClick={(e) => (track ? openFullscreen(e.currentTarget) : openProfile(p.identity))}
     >
       {track ? (
@@ -87,7 +86,7 @@ function Tile({ p, kind, wide, span, avatar = 80, anim }: { p: VoicePeer; kind: 
             <button
               type="button"
               className="tile-flip"
-              title="Сменить камеру"
+              title={t('Сменить камеру')}
               onClick={(e) => {
                 e.stopPropagation();
                 requestFlip();
@@ -118,46 +117,43 @@ function Tile({ p, kind, wide, span, avatar = 80, anim }: { p: VoicePeer; kind: 
   );
 }
 
-/** Нижняя панель: в макете — камера, демонстрация и отбой (микрофон и звук — в панели пользователя).
- *  На телефоне панели пользователя нет, поэтому там добавляем микрофон и звук. */
 export function VoiceControls({ app, full }: { app: AppState; full?: boolean }) {
   const v = app.voice;
   return (
     <div className="controls">
       {full && (
         <>
-          <button className={'ctrl' + (v.micOn ? '' : ' off')} title={v.micOn ? 'Выключить микрофон' : 'Включить микрофон'} onClick={v.toggleMic}>
+          <button className={'ctrl' + (v.micOn ? '' : ' off')} title={v.micOn ? t('Выключить микрофон') : t('Включить микрофон')} onClick={v.toggleMic}>
             <StrikeIcon name="mic" off={!v.micOn} size={30} />
           </button>
-          <button className={'ctrl' + (v.deafened ? ' off' : '')} title={v.deafened ? 'Включить звук' : 'Выключить звук'} onClick={v.toggleDeafen}>
+          <button className={'ctrl' + (v.deafened ? ' off' : '')} title={v.deafened ? t('Включить звук') : t('Выключить звук')} onClick={v.toggleDeafen}>
             <StrikeIcon name="headphones" off={v.deafened} size={30} />
           </button>
         </>
       )}
-      <button className={'ctrl' + (v.cameraOn ? ' on' : '')} title={v.cameraOn ? 'Выключить камеру' : 'Включить камеру'} onClick={v.toggleCamera}>
+      <button className={'ctrl' + (v.cameraOn ? ' on' : '')} title={v.cameraOn ? t('Выключить камеру') : t('Включить камеру')} onClick={v.toggleCamera}>
         <Icon name={v.cameraOn ? 'video' : 'video-off'} size={30} />
       </button>
       <button
         className={'ctrl' + (v.screenOn ? ' share-on' : '')}
-        title={v.screenOn ? 'Остановить демонстрацию' : 'Демонстрация экрана'}
+        title={v.screenOn ? t('Остановить демонстрацию') : t('Демонстрация экрана')}
         onClick={v.toggleScreen}
       >
-        {/* Во время демонстрации — своя иконка из Figma (Icon/screen-share-stop, зелёная) */}
         <Icon name={v.screenOn ? 'screen-share-stop' : 'screen-share'} size={30} />
       </button>
-      <button className="ctrl leave" title="Отключиться" onClick={v.leave}>
+      <button className="ctrl leave" title={t('Отключиться')} onClick={v.leave}>
         <Icon name="phone-off" size={30} />
       </button>
     </div>
   );
 }
 
-/** Подбирает размер плиток под площадь сцены и число участников (пропорции макета 210:196, зазор 16). */
 const TILE_RATIO = 210 / 196;
 const TILE_GAP = 16;
-/** Последний рассчитанный размер плиток в рамках одного подключения: при переходе между каналами
- *  сцена монтируется заново — берём размер отсюда, чтобы плитки не «вырастали» каждый раз.
- *  Анимация роста остаётся только при первом показе после подключения. */
+/**
+ * Last computed tile size within one connection: the stage remounts when switching channels, so reuse it instead
+ * of growing the tiles every time. The grow animation only plays on the first show after connecting.
+ */
 let tileCache: { session: number; count: number; w: number; h: number } | null = null;
 
 function useTileSize(count: number, enabled: boolean, session: number | null) {
@@ -195,25 +191,19 @@ function useTileSize(count: number, enabled: boolean, session: number | null) {
   return { ref, size };
 }
 
-function plural(n: number, one: string, few: string, many: string) {
-  const a = n % 10, b = n % 100;
-  return a === 1 && b !== 11 ? one : a >= 2 && a <= 4 && (b < 12 || b > 14) ? few : many;
-}
-
 export function VoiceStage({ app, mobile }: { app: AppState; mobile?: boolean }) {
   const v = app.voice;
   const here = app.inVoiceHere;
   const screens = v.peers.filter((p) => p.screen);
-  // Пока подключаемся к этому каналу — уже итоговый вид (плитки тех, кто в канале, и кнопки), без промежуточной
-  // карточки «Подключаемся…»: иначе посреди выезда экрана содержимое резко менялось и плитки появлялись заново
+  // While connecting to this channel show the final layout right away (tiles and buttons) instead of a "Connecting"
+  // card, otherwise the content changed abruptly mid-slide and the tiles appeared again.
   const joining = here && v.state === 'connecting';
   const live = here && (v.state === 'connected' || joining);
   const livePeers = joining ? app.voiceUsers : v.peers;
-  /** Не в канале, но в нём кто-то есть — показываем их плитки (без видео) и панель «Подключиться». */
   const preview = live ? [] : app.voiceUsers;
   const count = live ? livePeers.length + screens.length : preview.length;
   const { ref, size } = useTileSize(count, !mobile && (live || preview.length > 0), v.startedAt);
-  // Ключ не зависит от подключения: те, кто уже был на плитках, при входе в канал не появляются заново
+  // The key does not depend on the connection, so people already shown do not reappear when we join.
   const peerTiles = usePeerAnim(live ? livePeers : preview, (p) => p.identity, `${app.server.id}:${app.voiceSource}`, 1500);
   const screenTiles = usePeerAnim(live ? screens : [], (p) => p.identity, app.server.id);
   if (!live && preview.length > 0) {
@@ -236,13 +226,13 @@ export function VoiceStage({ app, mobile }: { app: AppState; mobile?: boolean })
           <div className="join-bar glass">
             <span className="jb-text">
               {connecting
-                ? 'Подключаемся…'
-                : v.error ?? (other ? `Вы в голосовом канале «${other}»` : `${preview.length} ${plural(preview.length, 'участник', 'участника', 'участников')} в Лобби`)}
+                ? t('Подключаемся…')
+                : v.error ?? (other ? t('Вы в голосовом канале «{0}»', { 0: other }) : t('{0} в Лобби', { 0: plural(preview.length, 'участник', 'участника', 'участников') }))}
             </span>
             {!connecting && (
               <button className="btn btn-primary" onClick={app.joinVoice}>
                 <Icon name="voice" size={18} />
-                {v.error ? 'Повторить' : other ? 'Перейти сюда' : 'Подключиться'}
+                {v.error ? t('Повторить') : other ? t('Перейти сюда') : t('Подключиться')}
               </button>
             )}
           </div>
@@ -257,15 +247,15 @@ export function VoiceStage({ app, mobile }: { app: AppState; mobile?: boolean })
         <div className={'big' + (here && v.state === 'connecting' ? ' pulse' : '')}>
           <Icon name="voice" size={32} />
         </div>
-        <h3>Лобби</h3>
+        <h3>{t('Лобби')}</h3>
         {here && v.state === 'connecting' ? (
-          <p>Подключаемся к голосовому каналу…</p>
+          <p>{t('Подключаемся к голосовому каналу…')}</p>
         ) : (
           <>
-            <p>{v.error ?? (other ? `Вы в голосовом канале сервера «${other}»` : 'Вы не в голосовом канале')}</p>
+            <p>{v.error ?? (other ? t('Вы в голосовом канале сервера «{0}»', { 0: other }) : t('Вы не в голосовом канале'))}</p>
             <button className="btn btn-primary" onClick={app.joinVoice} style={{ height: 44, padding: '0 24px' }}>
               <Icon name="voice" size={18} />
-              {v.error ? 'Повторить' : other ? 'Перейти сюда' : 'Подключиться'}
+              {v.error ? t('Повторить') : other ? t('Перейти сюда') : t('Подключиться')}
             </button>
           </>
         )}
@@ -273,8 +263,7 @@ export function VoiceStage({ app, mobile }: { app: AppState; mobile?: boolean })
     );
   }
   const avatar = size ? Math.round(Math.min(160, Math.max(56, size.w * 0.38))) : 80;
-  // Телефон: сетка строится по числу людей, демонстрации — отдельными широкими строками сверху.
-  // При нечётном числе людей (3, 5) на всю ширину встаёт первый человек — не остаётся пустой половины рядом с последним.
+  // With an odd number of people (3, 5) the first person spans the full width, leaving no empty half next to the last one.
   const people = peerTiles.length;
   const personTiles = peerTiles.map((t, i) => (
     <Tile key={t.key} p={t.item} anim={t.anim} kind="cam" avatar={mobile ? 80 : avatar} span={mobile && i === 0 && (people === 3 || people === 5)} />

@@ -5,9 +5,10 @@ import sqlite3
 import os
 import json
 import re
+import urllib.parse
 from pathlib import Path
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException
 from livekit import api
@@ -16,7 +17,7 @@ app = FastAPI()
 
 
 def load_env_file(path: Path) -> None:
-    """Подхватывает .env при запуске без Docker (python main.py). Переменные окружения важнее."""
+    """Load .env when running without Docker (python main.py). Real environment variables win."""
     if not path.is_file():
         return
     for line in path.read_text(encoding="utf-8").splitlines():
@@ -29,7 +30,6 @@ def load_env_file(path: Path) -> None:
 
 load_env_file(Path(__file__).parent / ".env")
 
-# --- КОНФИГУРАЦИЯ ---
 LK_SERVER_URL = os.getenv("LK_SERVER_URL", "ws://127.0.0.1:7880")
 LK_API_URL = os.getenv("LK_API_URL", LK_SERVER_URL.replace("wss://", "https://").replace("ws://", "http://"))
 LK_API_KEY = os.getenv("LK_API_KEY")
@@ -39,7 +39,7 @@ VOICE_ROOM_NAME = os.getenv("VOICE_ROOM_NAME", "Voice-Lounge")
 
 
 def track_source(track) -> int:
-    """Источник трека LiveKit (protobuf-перечисление — число): 1 камера, 2 микрофон, 3 экран."""
+    """LiveKit track source (protobuf enum, an int): 1 camera, 2 microphone, 3 screen."""
     try:
         return int(getattr(track, "source", 0) or 0)
     except (TypeError, ValueError):
@@ -51,8 +51,7 @@ def live_tracks(participant, source: int) -> list:
 
 
 def is_participant_muted(participant) -> bool:
-    # Как в приложении: нет трека микрофона или он заглушён — микрофон выключен.
-    # Раньше тип трека сравнивали со строкой «audio», а LiveKit отдаёт числа — выключенный микрофон не находился никогда.
+    # No microphone track, or a muted one, means the microphone is off.
     mics = live_tracks(participant, 2)
     return not mics or all(getattr(t, "muted", False) for t in mics)
 
@@ -68,9 +67,7 @@ def is_participant_deafened(participant) -> bool:
         return False
 
 
-# --- БАЗА ДАННЫХ (SQLite) ---
 def init_db():
-    """Создает таблицу сообщений, если её нет"""
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
     c.execute('''
@@ -86,85 +83,19 @@ def init_db():
     conn.close()
 
 
-def save_message(room, user, content):
-    content = content.strip()
-    if not content:
-        return
-
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
-    c.execute("INSERT INTO messages (room, username, content) VALUES (?, ?, ?)",
-              (room, user, content))
-    conn.commit()
-    conn.close()
-
-
-def get_history(room, limit=50):
-    conn = sqlite3.connect(DB_NAME)
-    conn.row_factory = sqlite3.Row  # Чтобы обращаться по именам колонок
-    c = conn.cursor()
-    c.execute("SELECT username, content, timestamp FROM messages WHERE room = ? ORDER BY id DESC LIMIT ?",
-              (room, limit))
-    rows = c.fetchall()
-    conn.close()
-    # Разворачиваем список, чтобы старые были сверху
-    history = [{"user": r["username"], "content": r["content"], "timestamp": r["timestamp"]} for r in rows]
-    return history[::-1]
-
-
-# Инициализируем БД при старте
 init_db()
 
 
-# --- ОЧИСТКА ЧАТА ---
-@app.delete("/clear_chat/{room_name}")
-async def clear_chat(room_name: str):
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
-    c.execute("DELETE FROM messages WHERE room = ?", (room_name,))
-    conn.commit()
-    conn.close()
-    return {"ok": True}
-
-
-# --- LIVEKIT TOKEN ---
-@app.post("/get_token")
-async def get_token(request: Request):
-    if not LK_API_KEY or not LK_API_SECRET:
-        return JSONResponse({"error": "LiveKit credentials are not configured"}, status_code=503)
-
-    try:
-        data = await request.json()
-        username = (data.get("username") or "").strip()
-        room_name = (data.get("room_name") or VOICE_ROOM_NAME).strip()
-
-        if not username or not room_name:
-            return JSONResponse({"error": "username and room_name are required"}, status_code=400)
-
-        grant = api.VideoGrants(room_join=True, room=room_name)
-        token = api.AccessToken(LK_API_KEY, LK_API_SECRET) \
-            .with_identity(username) \
-            .with_name(username) \
-            .with_grants(grant) \
-            .to_jwt()
-
-        return {"token": token, "url": LK_SERVER_URL}
-    except Exception:
-        return JSONResponse({"error": "Could not issue a LiveKit token"}, status_code=500)
-
-
-@app.get("/participants/{room_name}")
+# Who is in a voice room, via the LiveKit API. Only used by /api/voice/participants.
 async def get_room_participants(room_name: str):
     if not LK_API_KEY or not LK_API_SECRET:
         return JSONResponse({"participants": []})
 
     lk_api = None
     try:
-        # Используем LiveKit API чтобы узнать, кто в комнате
         lk_api = api.LiveKitAPI(LK_API_URL, LK_API_KEY, LK_API_SECRET)
         results = await lk_api.room.list_participants(api.ListParticipantsRequest(room=room_name))
 
-        # Собираем список имен
         participants = [
             {
                 "identity": p.identity,
@@ -173,83 +104,58 @@ async def get_room_participants(room_name: str):
                 "deafened": is_participant_deafened(p),
                 "camera": has_live_track(p, 1),
                 "screen": has_live_track(p, 3),
-                # с какого устройства зашёл (атрибут из токена) — для иконки телефона у ника
+                # device type comes from the token attribute (phone icon next to the name)
                 "mobile": p.attributes.get("device") == "mobile",
             }
             for p in results.participants
         ]
         return JSONResponse({"participants": participants})
     except Exception as e:
-        # Если комнаты нет или ошибка, возвращаем пустой список
         print(f"Error fetching participants: {e}")
         return JSONResponse({"participants": []})
     finally:
         if lk_api:
             await lk_api.aclose()
 
-# --- WEBSOCKETS (TEXT CHAT) ---
-class ConnectionManager:
-    def __init__(self):
-        # Словарь: ключ = название комнаты, значение = список WebSocket объектов
-        self.active_connections: dict[str, list[WebSocket]] = {}
 
-    async def connect(self, websocket: WebSocket, room: str):
-        await websocket.accept()
-        if room not in self.active_connections:
-            self.active_connections[room] = []
-        self.active_connections[room].append(websocket)
-
-    def disconnect(self, websocket: WebSocket, room: str):
-        if room in self.active_connections:
-            if websocket in self.active_connections[room]:
-                self.active_connections[room].remove(websocket)
-            if not self.active_connections[room]:
-                del self.active_connections[room]
-
-    async def broadcast(self, message: dict, room: str):
-        if room in self.active_connections:
-            for connection in self.active_connections[room].copy():
-                await connection.send_json(message)
+# Admin endpoint: requires ADMIN_TOKEN (Authorization: Bearer <token>); disabled when ADMIN_TOKEN is empty.
+ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "")
 
 
-manager = ConnectionManager()
+def admin_ok(request: Request) -> bool:
+    import hmac
+
+    auth = request.headers.get("authorization", "")
+    given = auth[7:].strip() if auth.lower().startswith("bearer ") else ""
+    return bool(ADMIN_TOKEN) and bool(given) and hmac.compare_digest(given.encode(), ADMIN_TOKEN.encode())
 
 
-@app.websocket("/ws/{room_name}/{username}")
-async def websocket_endpoint(websocket: WebSocket, room_name: str, username: str):
-    await manager.connect(websocket, room_name)
-
-    # 1. При подключении отправляем историю чата
-    history = get_history(room_name)
-    await websocket.send_json(history)
-
-    try:
-        while True:
-            # 2. Ждем сообщение от клиента
-            data = await websocket.receive_text()
-
-            # 3. Сохраняем в БД
-            data = data.strip()
-            if not data:
-                continue
-
-            save_message(room_name, username, data)
-
-            # 4. Рассылаем всем в этой комнате
-            msg_obj = {"user": username, "msg": data}  # timestamp добавим на клиенте или вернем из базы
-            await manager.broadcast(msg_obj, room_name)
-
-    except WebSocketDisconnect:
-        manager.disconnect(websocket, room_name)
+@app.delete("/clear_chat/{room_name}")
+async def clear_chat(room_name: str, request: Request):
+    if not ADMIN_TOKEN:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    if not admin_ok(request):
+        return JSONResponse({"error": "forbidden"}, status_code=403)
+    conn = sqlite3.connect(DB_NAME)
+    ids = [r[0] for r in conn.execute("SELECT id FROM messages WHERE room = ?", (room_name,)).fetchall()]
+    in_room = "message_id IN (SELECT id FROM messages WHERE room = ?)"
+    # Photos and videos of these messages, from the DB and storage (unless a forwarded copy elsewhere still uses the file).
+    orphans = drop_attachments(conn, in_room, (room_name,))
+    conn.execute(f"DELETE FROM message_reactions WHERE {in_room}", (room_name,))
+    conn.execute(f"DELETE FROM message_hidden WHERE {in_room}", (room_name,))
+    conn.execute("DELETE FROM messages WHERE room = ?", (room_name,))
+    conn.execute("DELETE FROM chat_reads WHERE room = ?", (room_name,))
+    conn.execute("DELETE FROM chat_read_log WHERE room = ?", (room_name,))
+    conn.commit()
+    conn.close()
+    purge_s3_keys(orphans)
+    if ids:
+        await hub.send(room_name, {"type": "deleted", "ids": ids})
+    return {"ok": True, "messages": len(ids), "files": len(orphans)}
 
 
-# =====================================================================
-# API v2 для нового фронтенда (web/). Старые эндпоинты выше остаются
-# для legacy-страницы index.html (/legacy).
-# =====================================================================
-
-# Серверы: у каждого свой #general, свой чат «Лобби» и своя голосовая комната.
-# У «Ореол Гейминг» (rg) комнаты без префикса — так сохраняется старая история.
+# Seed servers: each has its own #general, Lobby chat and voice room.
+# "Ореол Гейминг" (rg) keeps unprefixed room names to preserve its old history.
 SERVERS = {
     "rg": {"voice": VOICE_ROOM_NAME},
     "am": {"voice": os.getenv("VOICE_ROOM_AM", "Voice-Academy")},
@@ -268,7 +174,7 @@ def voice_room(server: str | None) -> str:
     return SERVERS.get(server or "rg", SERVERS["rg"])["voice"]
 MAX_NAME_LEN = 32
 MAX_MESSAGE_LEN = 2000
-# «Залго»: к букве цепляют сотни диакритических знаков, и текст расползается по ленте. Оставляем не больше двух на символ.
+# Zalgo text: hundreds of combining marks on one letter spill over the list. Keep at most two per character.
 MAX_MARKS_PER_CHAR = 2
 
 
@@ -289,12 +195,11 @@ def clean_text(text: str) -> str:
 
 
 def to_iso(ts: str | None) -> str | None:
-    # SQLite CURRENT_TIMESTAMP хранит UTC в виде "YYYY-MM-DD HH:MM:SS".
+    # SQLite CURRENT_TIMESTAMP stores UTC as "YYYY-MM-DD HH:MM:SS".
     return ts.replace(" ", "T") + "Z" if ts else None
 
 
 def init_chat_features():
-    """Ответы, правки, закрепы, пересылка и «удалить у себя» — новые колонки и таблица скрытых сообщений."""
     conn = sqlite3.connect(DB_NAME)
     cols = {r[1] for r in conn.execute("PRAGMA table_info(messages)").fetchall()}
     for name, decl in (
@@ -303,11 +208,11 @@ def init_chat_features():
         ("pinned", "INTEGER NOT NULL DEFAULT 0"),
         ("fwd_user", "TEXT"),
         ("fwd_ts", "DATETIME"),
-        ("sys", "TEXT"),  # служебное событие в ленте: 'pin' / 'unpin' — «закрепил / открепил сообщение» (reply_to → какое)
+        ("sys", "TEXT"),  # service row in the list: 'pin' / 'unpin', reply_to points at the message
     ):
         if name not in cols:
             conn.execute(f"ALTER TABLE messages ADD COLUMN {name} {decl}")
-    # До какого сообщения пользователь дочитал комнату — для галочек «прочитано»
+    # How far each user has read a room, for read receipts.
     conn.execute(
         """CREATE TABLE IF NOT EXISTS chat_reads (
             user_id INTEGER NOT NULL,
@@ -316,7 +221,7 @@ def init_chat_features():
             PRIMARY KEY (user_id, room)
         )"""
     )
-    # Когда отметка сдвигалась — по ней видно, кто и когда прочитал конкретное сообщение
+    # When the mark moved, which tells who read a given message and when.
     conn.execute(
         """CREATE TABLE IF NOT EXISTS chat_read_log (
             user_id INTEGER NOT NULL,
@@ -349,11 +254,8 @@ def init_chat_features():
 init_chat_features()
 
 
-# =====================================================================
-# Вложения: пока только фото. Файлы лежат в S3 (Timeweb Cloud), бэкенд отдаёт их
-# по /api/media/<key> — бакет может оставаться приватным. Фото загружается заранее
-# (POST /api/attachments), а сообщение потом ссылается на id загруженных фото.
-# =====================================================================
+# Attachments live in S3 (Timeweb Cloud) and are served through /api/media/<key>, so the bucket can stay private.
+# Files are uploaded first (POST /api/attachments) and the message then references their ids.
 import io
 import threading
 import uuid
@@ -371,17 +273,24 @@ S3_REGION = os.getenv("S3_REGION", "ru-1")
 S3_ACCESS_KEY = os.getenv("S3_ACCESS_KEY")
 S3_SECRET_KEY = os.getenv("S3_SECRET_KEY")
 
-MAX_PHOTO_BYTES = 10 * 1024 * 1024  # 10 МБ на одно фото
-MAX_VIDEO_BYTES = 50 * 1024 * 1024  # 50 МБ на одно видео
-MAX_PHOTO_SIDE = 10_000  # по любой стороне, px
-MAX_PHOTO_PIXELS = 40_000_000  # ~40 Мп — защита от «бомб» распаковки
-MIN_PHOTO_SIDE = 1
-MAX_PHOTOS = 10  # фото в одном сообщении
-STALE_UPLOAD_HOURS = 24  # загружено, но так и не отправлено — удаляем
+MAX_PHOTO_BYTES = 10 * 1024 * 1024
+MAX_VIDEO_BYTES = 50 * 1024 * 1024
+MAX_PHOTO_SIDE = 8192
+MAX_PHOTO_PIXELS = 40_000_000
+MAX_PHOTO_RATIO = 16
+MAX_GIF_SIDE = 2048
+MAX_GIF_FRAME_PIXELS = 300_000_000
+MIN_VIDEO_SIDE = 16
+MAX_VIDEO_SIDE = 4096
+MAX_VIDEO_RATIO = 4
+MAX_PHOTOS = 10
+STALE_UPLOAD_HOURS = 24  # uploaded but never sent: deleted after this
 Image.MAX_IMAGE_PIXELS = MAX_PHOTO_PIXELS
-# Что Pillow нашёл внутри файла → (MIME, расширение). Заголовку Content-Type не доверяем.
+# Format detected by Pillow -> (mime, ext). The Content-Type header is not trusted.
 PHOTO_FORMATS = {"JPEG": ("image/jpeg", "jpg"), "PNG": ("image/png", "png"), "WEBP": ("image/webp", "webp"), "GIF": ("image/gif", "gif")}
-MEDIA_KEY_RE = re.compile(r"^photos/\d{4}/\d{2}/[0-9a-f]{32}\.(?:jpg|png|webp|gif|mp4|webm)$")
+MEDIA_KEY_RE = re.compile(r"^(?:photos/\d{4}/\d{2}/[0-9a-f]{32}\.(?:jpg|png|webp|gif|mp4|webm)|files/\d{4}/\d{2}/[0-9a-f]{32})$")
+MAX_FILE_BYTES = MAX_VIDEO_BYTES
+MAX_FILE_NAME = 180
 
 _s3_client = None
 
@@ -420,11 +329,28 @@ def init_attachments_db():
         CREATE INDEX IF NOT EXISTS attachments_key ON attachments(key);
         """
     )
+    # original file name, only for documents (photos and videos have none)
+    if "name" not in {r[1] for r in conn.execute("PRAGMA table_info(attachments)")}:
+        conn.execute("ALTER TABLE attachments ADD COLUMN name TEXT")
     conn.commit()
     conn.close()
 
 
 init_attachments_db()
+
+
+def is_file_key(key: str) -> bool:
+    return key.startswith("files/")
+
+
+def clean_file_name(name: str) -> str:
+    name = name.replace("\\", "/").rsplit("/", 1)[-1]
+    name = "".join(ch for ch in name if ch.isprintable()).strip(" .")
+    if len(name) > MAX_FILE_NAME:
+        stem, dot, ext = name.rpartition(".")
+        ext = ext[:16] if dot else ""
+        name = (stem if dot else name)[: MAX_FILE_NAME - len(ext) - 1].rstrip() + ("." + ext if ext else "")
+    return name or "file"
 
 
 def media_url(key: str) -> str:
@@ -433,12 +359,15 @@ def media_url(key: str) -> str:
 
 def attachments_of(conn, message_id: int) -> list[dict]:
     rows = conn.execute(
-        "SELECT id, key, mime, width, height FROM attachments WHERE message_id = ? ORDER BY position, id", (message_id,)
+        "SELECT id, key, mime, width, height, name, size FROM attachments WHERE message_id = ? ORDER BY position, id",
+        (message_id,),
     ).fetchall()
     return [att_json(a) for a in rows]
 
 
 def att_json(a) -> dict:
+    if is_file_key(a["key"]):
+        return {"id": a["id"], "url": media_url(a["key"]), "w": 0, "h": 0, "file": True, "name": a["name"], "size": a["size"]}
     d = {"id": a["id"], "url": media_url(a["key"]), "w": a["width"], "h": a["height"]}
     if a["mime"].startswith("video/"):
         d["video"] = True
@@ -446,7 +375,7 @@ def att_json(a) -> dict:
 
 
 def purge_s3_keys(keys) -> None:
-    """Удаляет объекты из бакета в фоне — ответ пользователю не ждёт сети."""
+    """Deletes bucket objects in the background so the response does not wait for the network."""
     keys = [k for k in set(keys) if k]
     if not keys or not S3_ACCESS_KEY:
         return
@@ -464,8 +393,9 @@ def purge_s3_keys(keys) -> None:
 
 
 def drop_attachments(conn, where: str, args: tuple) -> list[str]:
-    """Удаляет строки вложений по условию и возвращает ключи, на которые больше никто не ссылается
-    (пересланное сообщение использует тот же файл, что и оригинал). Коммит — на вызывающем."""
+    """Deletes attachment rows matching the condition and returns keys nobody references anymore
+    (a forwarded message shares the original's file). The caller commits.
+    """
     keys = [r[0] for r in conn.execute(f"SELECT DISTINCT key FROM attachments WHERE {where}", args).fetchall()]
     conn.execute(f"DELETE FROM attachments WHERE {where}", args)
     if not keys:
@@ -476,15 +406,16 @@ def drop_attachments(conn, where: str, args: tuple) -> list[str]:
 
 
 def photo_info(body: bytes):
-    """(MIME, расширение, ширина, высота) или текст ошибки. Размеры — как фото покажет браузер (с учётом EXIF-поворота)."""
+    """(mime, ext, width, height) or an error message. Size as the browser displays it (EXIF rotation applied)."""
     try:
         with Image.open(io.BytesIO(body)) as img:
             fmt = PHOTO_FORMATS.get(img.format or "")
             if not fmt:
                 return "Поддерживаются JPG, PNG, WEBP и GIF"
             w, h = img.size
+            frames = getattr(img, "n_frames", 1) if img.format == "GIF" else 1
             try:
-                if img.getexif().get(0x0112) in (5, 6, 7, 8):  # повёрнуто на 90° — стороны меняются местами
+                if img.getexif().get(0x0112) in (5, 6, 7, 8):  # rotated by 90 degrees: sides swap
                     w, h = h, w
             except Exception:
                 pass
@@ -492,29 +423,127 @@ def photo_info(body: bytes):
         return f"Слишком большое разрешение, максимум {MAX_PHOTO_PIXELS // 1_000_000} Мп"
     except (UnidentifiedImageError, OSError, ValueError):
         return "Файл не похож на изображение"
-    if min(w, h) < MIN_PHOTO_SIDE:
+    if min(w, h) < 1:
         return "Пустое изображение"
     if max(w, h) > MAX_PHOTO_SIDE or w * h > MAX_PHOTO_PIXELS:
         return f"Слишком большое разрешение: до {MAX_PHOTO_SIDE} px по стороне и {MAX_PHOTO_PIXELS // 1_000_000} Мп"
+    if max(w, h) > MAX_PHOTO_RATIO * min(w, h):
+        return f"Слишком вытянутое изображение: стороны должны отличаться не больше чем в {MAX_PHOTO_RATIO} раз"
+    if fmt[1] == "gif":
+        if max(w, h) > MAX_GIF_SIDE:
+            return f"GIF больше {MAX_GIF_SIDE} px по стороне"
+        if w * h * frames > MAX_GIF_FRAME_PIXELS:
+            return "В GIF слишком много кадров для такого размера"
     return (*fmt, w, h)
 
 
+def mp4_size(body: bytes) -> tuple[int, int] | None:
+
+    def boxes(start: int, end: int):
+        while start + 8 <= end:
+            size = int.from_bytes(body[start : start + 4], "big")
+            kind = body[start + 4 : start + 8]
+            head = 8
+            if size == 1:
+                size = int.from_bytes(body[start + 8 : start + 16], "big")
+                head = 16
+            elif size == 0:
+                size = end - start
+            if size < head or start + size > end:
+                return
+            yield kind, start + head, start + size
+            start += size
+
+    for kind, a, b in boxes(0, len(body)):
+        if kind != b"moov":
+            continue
+        for kind, ta, tb in boxes(a, b):
+            if kind != b"trak":
+                continue
+            for kind, ha, hb in boxes(ta, tb):
+                if kind != b"tkhd":
+                    continue
+                base = ha + (36 if body[ha] == 1 else 24)
+                if hb - base < 60:
+                    continue
+                w = int.from_bytes(body[base + 52 : base + 56], "big") >> 16
+                h = int.from_bytes(body[base + 56 : base + 60], "big") >> 16
+                if w and h:
+                    rotated = int.from_bytes(body[base + 16 : base + 20], "big") == 0
+                    return (h, w) if rotated else (w, h)
+    return None
+
+
+def webm_size(body: bytes) -> tuple[int, int] | None:
+
+    def vint(pos: int, keep_marker: bool):
+        if pos >= len(body) or not body[pos]:
+            return None, pos
+        first = body[pos]
+        n = 9 - first.bit_length()
+        value = first if keep_marker else first & (0xFF >> n)
+        for i in range(1, n):
+            if pos + i >= len(body):
+                return None, pos
+            value = (value << 8) | body[pos + i]
+        if not keep_marker and value == (1 << (7 * n)) - 1:
+            value = -1
+        return value, pos + n
+
+    def walk(start: int, end: int):
+        pos = start
+        while pos < end:
+            eid, p = vint(pos, True)
+            if eid is None:
+                return
+            size, p = vint(p, False)
+            if size is None:
+                return
+            stop = end if size < 0 else min(end, p + size)
+            yield eid, p, stop
+            pos = stop
+
+    path = [0x18538067, 0x1654AE6B, 0xAE, 0xE0]
+
+    def find(start: int, end: int, depth: int):
+        for eid, a, b in walk(start, end):
+            if eid == 0x1F43B675:
+                return None
+            if eid != path[depth]:
+                continue
+            if depth < len(path) - 1:
+                got = find(a, b, depth + 1)
+                if got:
+                    return got
+                continue
+            dims = {vid: int.from_bytes(body[va:vb], "big") for vid, va, vb in walk(a, b) if vid in (0xB0, 0xBA)}
+            if dims.get(0xB0) and dims.get(0xBA):
+                return dims[0xB0], dims[0xBA]
+        return None
+
+    return find(0, len(body), 0)
+
+
 def video_info(body: bytes, w: int, h: int):
-    """(MIME, расширение, ширина, высота) для MP4/MOV/WebM или None. Размеры кадра присылает браузер — нужны только для раскладки."""
     if body[:4] == bytes.fromhex("1a45dfa3"):
         mime, ext = "video/webm", "webm"
+        size = webm_size(body)
     elif body[4:8] == b"ftyp":
-        # MOV с iPhone тоже отдаём как MP4: Chrome и Safari его так проигрывают
         mime, ext = "video/mp4", "mp4"
+        size = mp4_size(body)
     else:
         return None
-    w = max(1, min(w or 16, MAX_PHOTO_SIDE))
-    h = max(1, min(h or 9, MAX_PHOTO_SIDE))
+    w, h = size or (w or 16, h or 9)
+    if min(w, h) < MIN_VIDEO_SIDE:
+        return "Слишком маленькое видео"
+    if max(w, h) > MAX_VIDEO_SIDE:
+        return f"Видео больше {MAX_VIDEO_SIDE} px по стороне"
+    if max(w, h) > MAX_VIDEO_RATIO * min(w, h):
+        return f"Слишком вытянутое видео: стороны должны отличаться не больше чем в {MAX_VIDEO_RATIO} раз"
     return mime, ext, w, h
 
 
 def purge_stale_uploads():
-    """Фото, загруженные, но так и не отправленные за сутки."""
     conn = sqlite3.connect(DB_NAME)
     keys = drop_attachments(
         conn, "message_id IS NULL AND created_at < datetime('now', ?)", (f"-{STALE_UPLOAD_HOURS} hours",)
@@ -526,7 +555,6 @@ def purge_stale_uploads():
 
 @app.post("/api/attachments")
 async def attachment_upload(request: Request):
-    """Тело запроса — само фото. Ответ: {id, url, w, h}; id потом передаётся в сообщении."""
     row = current_user(request)
     if not row:
         return unauthorized()
@@ -554,7 +582,13 @@ async def attachment_upload(request: Request):
         except ValueError:
             return 0
 
+    raw_name = request.query_params.get("name")
+    if raw_name is not None:
+        return await store_file(row, body, clean_file_name(raw_name))
+
     info = video_info(body, num("w"), num("h"))
+    if isinstance(info, str):
+        return JSONResponse({"error": info}, status_code=415)
     if not info:
         if len(body) > MAX_PHOTO_BYTES:
             return JSONResponse({"error": f"Фото больше {mb(MAX_PHOTO_BYTES)} МБ"}, status_code=413)
@@ -587,9 +621,39 @@ async def attachment_upload(request: Request):
     return att_json({"id": cur.lastrowid, "key": key, "mime": mime, "width": w, "height": h})
 
 
+async def store_file(row, body: bytes, name: str):
+    now = datetime.now(timezone.utc)
+    key = f"files/{now:%Y}/{now:%m}/{uuid.uuid4().hex}"
+    try:
+        await asyncio.to_thread(
+            s3().put_object,
+            Bucket=S3_BUCKET,
+            Key=key,
+            Body=body,
+            ContentType="application/octet-stream",
+            CacheControl="private, max-age=31536000, immutable",
+        )
+    except (BotoCoreError, ClientError) as e:
+        print(f"s3 upload: {e}")
+        return JSONResponse({"error": "Не удалось сохранить файл, попробуйте ещё раз"}, status_code=502)
+    conn = db()
+    cur = conn.execute(
+        "INSERT INTO attachments (user_id, key, mime, width, height, size, name) VALUES (?, ?, ?, 0, 0, ?, ?)",
+        (row["id"], key, "application/octet-stream", len(body), name),
+    )
+    conn.commit()
+    conn.close()
+    asyncio.create_task(asyncio.to_thread(purge_stale_uploads))
+    return att_json({"id": cur.lastrowid, "key": key, "mime": "application/octet-stream", "width": 0, "height": 0, "name": name, "size": len(body)})
+
+
+def download_disposition(name: str) -> str:
+    ascii_name = "".join(ch if 32 <= ord(ch) < 127 and ch not in '"\\;' else "_" for ch in name)
+    return f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{urllib.parse.quote(name, safe='')}"
+
+
 @app.delete("/api/attachments/{att_id}")
 async def attachment_cancel(att_id: int, request: Request):
-    """Убрали фото из поля ввода до отправки."""
     row = current_user(request)
     if not row:
         return unauthorized()
@@ -606,15 +670,15 @@ RANGE_RE = re.compile(r"^bytes=(\d*)-(\d*)$")
 
 @app.get("/api/media/{key:path}")
 async def media(key: str, request: Request):
-    # Отдаём только то, что записано в базе: по этому адресу нельзя прочитать произвольный объект бакета
+    # Only keys recorded in the DB: this route must not expose arbitrary bucket objects.
     if not MEDIA_KEY_RE.match(key):
         return JSONResponse({"error": "not found"}, status_code=404)
     conn = db()
-    att = conn.execute("SELECT mime FROM attachments WHERE key = ? LIMIT 1", (key,)).fetchone()
+    att = conn.execute("SELECT mime, name FROM attachments WHERE key = ? LIMIT 1", (key,)).fetchone()
     conn.close()
     if not att or not S3_ACCESS_KEY:
         return JSONResponse({"error": "not found"}, status_code=404)
-    # Видео браузер (особенно Safari) читает кусками по Range — без этого не проигрывает
+    # Browsers (Safari especially) read video in Range chunks and will not play without it.
     rng = RANGE_RE.match(request.headers.get("range", "").strip())
     if rng and not (rng[1] or rng[2]):
         rng = None
@@ -635,13 +699,18 @@ async def media(key: str, request: Request):
         print(f"s3 get: {e}")
         return Response(status_code=502)
     headers = {"Cache-Control": "public, max-age=31536000, immutable", "Accept-Ranges": "bytes"}
+    if is_file_key(key):
+        # documents always download: an uploaded HTML or SVG must never render on our origin
+        headers["Content-Disposition"] = download_disposition(att["name"] or "file")
+        headers["Content-Security-Policy"] = "default-src 'none'; sandbox"
+        headers["Cache-Control"] = "private, max-age=31536000, immutable"
     if obj.get("ContentLength") is not None:
         headers["Content-Length"] = str(obj["ContentLength"])
     status = 200
     if rng and obj.get("ContentRange"):
         headers["Content-Range"] = obj["ContentRange"]
         status = 206
-    # Тело читается кусками в пуле потоков — большие файлы не держим в памяти целиком
+    # The body is read in chunks in a thread pool, large files are never held in memory whole.
     return StreamingResponse(obj["Body"].iter_chunks(64 * 1024), status_code=status, media_type=att["mime"], headers=headers)
 
 
@@ -649,34 +718,33 @@ MSG_COLS = "id, room, username, content, timestamp, reply_to, edited_at, pinned,
 
 
 def reply_text(conn, q) -> str:
-    """Короткий текст для цитаты/закрепа: сам текст, а у сообщения из одних фото — «Фото»."""
     if q["content"]:
         return q["content"][:200]
-    n, v = conn.execute(
-        "SELECT COUNT(*), SUM(mime LIKE 'video/%') FROM attachments WHERE message_id = ?", (q["id"],)
+    n, v, f, name = conn.execute(
+        "SELECT COUNT(*), SUM(mime LIKE 'video/%'), SUM(key LIKE 'files/%'), MAX(name) FROM attachments WHERE message_id = ?",
+        (q["id"],),
     ).fetchone()
     if not n:
         return ""
-    label = "Видео" if v == n else "Фото" if not v else "Медиа"
+    if f == n:
+        return name if n == 1 and name else f"Файлы · {n}"
+    label = "Видео" if v == n else "Фото" if not v and not f else "Вложения"
     return label if n == 1 else f"{label} · {n}"
 
 
 def first_photo(conn, message_id: int) -> str | None:
-    """Адрес первого фото сообщения — миниатюра в цитате ответа."""
     a = conn.execute(
-        "SELECT key FROM attachments WHERE message_id = ? AND mime NOT LIKE 'video/%' ORDER BY position, id LIMIT 1",
+        "SELECT key FROM attachments WHERE message_id = ? AND mime LIKE 'image/%' ORDER BY position, id LIMIT 1",
         (message_id,),
     ).fetchone()
     return media_url(a[0]) if a else None
 
 
-# Реакции — только из этого набора (как в меню сообщения)
 REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🔥", "👎", "🤡", "🎉", "🙏"]
-MAX_REACTIONS_PER_USER = 3  # разных реакций одного человека на одно сообщение
+MAX_REACTIONS_PER_USER = 3  # distinct reactions per user per message
 
 
 def reactions_of(conn, message_id: int) -> list[dict]:
-    """[{e, users}] в порядке первой поставленной реакции."""
     rows = conn.execute(
         "SELECT emoji, username FROM message_reactions WHERE message_id = ? ORDER BY created_at, rowid", (message_id,)
     ).fetchall()
@@ -707,7 +775,6 @@ def msg_json(conn, r) -> dict:
         "sys": r["sys"],
         "attachments": attachments_of(conn, r["id"]),
         "reactions": reactions_of(conn, r["id"]),
-        # Сколько раз на сообщение ответили
         "replies": conn.execute(
             "SELECT COUNT(*) FROM messages WHERE reply_to = ? AND sys IS NULL", (r["id"],)
         ).fetchone()[0],
@@ -721,7 +788,7 @@ def chat_conn():
 
 
 def get_history_v2(room: str, limit: int = 100, user_id: int | None = None, before: int | None = None):
-    """Последние limit сообщений комнаты; before — только старше этого id (подгрузка истории при прокрутке вверх)."""
+    """The last `limit` messages of a room; `before` pages older history."""
     conn = chat_conn()
     hidden = "AND id NOT IN (SELECT message_id FROM message_hidden WHERE user_id = ?)" if user_id else ""
     older = "AND id < ?" if before else ""
@@ -758,7 +825,6 @@ def get_message(msg_id) -> dict | None:
 
 
 def save_system_message(room: str, user: str, kind: str, ref_id: int):
-    """Служебная строка в ленте («X закрепил сообщение»): хранится как сообщение с sys=kind."""
     conn = chat_conn()
     cur = conn.execute(
         "INSERT INTO messages (room, username, content, reply_to, sys) VALUES (?, ?, '', ?, ?)",
@@ -782,9 +848,9 @@ def save_message_v2(
     attachment_ids: list[int] | None = None,
     copy_attachments_from: int | None = None,
 ):
-    """attachment_ids — свои загруженные, ещё не отправленные фото (owner_id — кто загрузил);
-    copy_attachments_from — при пересылке берём фото исходного сообщения (тот же файл в бакете).
-    Пустое сообщение без фото не сохраняется — возвращается None."""
+    """attachment_ids: the owner's uploaded, unsent files. copy_attachments_from: forwarding reuses the original's files.
+    An empty message without attachments is not saved and None is returned.
+    """
     conn = chat_conn()
     if reply_to is not None:
         ok = conn.execute("SELECT 1 FROM messages WHERE id = ? AND room = ? AND sys IS NULL", (reply_to, room)).fetchone()
@@ -800,7 +866,7 @@ def save_message_v2(
                 f"SELECT id FROM attachments WHERE id IN ({marks}) AND user_id = ? AND message_id IS NULL", (*wanted, owner_id)
             ).fetchall()
         }
-        ids = [i for i in wanted if i in free]  # порядок — как выбрал пользователь
+        ids = [i for i in wanted if i in free]
     copy_from = copy_attachments_from is not None and conn.execute(
         "SELECT 1 FROM attachments WHERE message_id = ?", (copy_attachments_from,)
     ).fetchone()
@@ -815,8 +881,8 @@ def save_message_v2(
         conn.execute("UPDATE attachments SET message_id = ?, position = ? WHERE id = ?", (cur.lastrowid, pos, att))
     if copy_from:
         conn.execute(
-            "INSERT INTO attachments (message_id, user_id, key, mime, width, height, size, position) "
-            "SELECT ?, user_id, key, mime, width, height, size, position FROM attachments WHERE message_id = ?",
+            "INSERT INTO attachments (message_id, user_id, key, mime, width, height, size, position, name) "
+            "SELECT ?, user_id, key, mime, width, height, size, position, name FROM attachments WHERE message_id = ?",
             (cur.lastrowid, copy_attachments_from),
         )
     conn.commit()
@@ -827,7 +893,6 @@ def save_message_v2(
 
 
 def get_reads(room: str) -> dict:
-    """{username: id последнего прочитанного сообщения} по комнате."""
     conn = chat_conn()
     rows = conn.execute(
         "SELECT u.username, r.last_id FROM chat_reads r JOIN users u ON u.id = r.user_id WHERE r.room = ?", (room,)
@@ -837,7 +902,7 @@ def get_reads(room: str) -> dict:
 
 
 def mark_read(user_id: int, room: str, last_id: int) -> bool:
-    """Сдвигает отметку вперёд (назад — никогда). True, если она изменилась."""
+    """Moves the mark forward only. True if it changed."""
     conn = chat_conn()
     cur = conn.execute("SELECT last_id FROM chat_reads WHERE user_id = ? AND room = ?", (user_id, room)).fetchone()
     if cur and cur["last_id"] >= last_id:
@@ -868,7 +933,7 @@ def as_ids(value) -> list[int]:
 NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9 ._-]{1,31}$")
 
 
-# Имена, которые нельзя занять: @everyone и @here зовут весь чат, остальные выдают себя за систему
+# Names that cannot be taken: @everyone and @here ping the whole chat, the rest impersonate the system.
 RESERVED_NAMES = {"everyone", "here", "all", "channel", "admin", "administrator", "moderator", "system", "oreol", "support"}
 RESERVED_MSG = "Это имя зарезервировано, выберите другое"
 
@@ -878,16 +943,12 @@ def reserved_name(name: str) -> bool:
 
 
 def clean_name(value: str) -> str:
-    """Имя при входе — только латиница. Возвращает пустую строку, если имя не подходит."""
     name = " ".join((value or "").split())[:MAX_NAME_LEN]
     return name if NAME_RE.match(name) else ""
 
 
-# =====================================================================
-# Аккаунты (мини-регистрация для своих): email + пароль, без подтверждения почты.
-# Пароли — scrypt из стандартной библиотеки, сессии — случайный токен в таблице sessions.
-# Аватар и фон профиля хранятся файлами в UPLOADS_DIR и отдаются по /api/uploads/...
-# =====================================================================
+# Accounts: email + password, no email confirmation. Passwords use stdlib scrypt, sessions are random tokens
+# in the sessions table. Avatars and banners are files in UPLOADS_DIR served from /api/uploads/.
 import hashlib
 import hmac
 import secrets
@@ -932,18 +993,22 @@ def init_auth_db():
         );
         """
     )
+    # sessions expire by last use
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(sessions)")}
+    if "last_used" not in cols:
+        conn.execute("ALTER TABLE sessions ADD COLUMN last_used DATETIME")
     conn.commit()
     conn.close()
 
 
 init_auth_db()
 
-# ---------------------------------------------------------------------
-# Серверы, каналы и участники живут в БД. Ниже — только начальное наполнение:
-# три сервера с #general и голосовым «Лобби». Сервер с auto_join=1 автоматически
-# получает в участники каждого зарегистрированного пользователя.
-# ---------------------------------------------------------------------
-STATUSES = ("online", "idle", "dnd", "offline")  # offline = «невидимый»
+# A session lives 30 days after its last use: active users stay signed in, a stolen and abandoned token dies.
+SESSION_DAYS = 30
+
+# Servers, channels and members live in the DB; below is only the initial seed. Every registered user
+# automatically joins servers with auto_join=1.
+STATUSES = ("online", "idle", "dnd", "offline")  # offline means invisible
 SEED_SERVERS = [
     ("rg", "RG", "Ореол Гейминг", "Сервер для рейдов и общения", "linear-gradient(135deg,#ff6fd8,#7a5cff)"),
     ("am", "АМ", "Академия Манипуляций", "Психология влияния и переговоры", "linear-gradient(135deg,#ffb36b,#ff5c7a)"),
@@ -1003,7 +1068,7 @@ def init_servers_db():
                 "INSERT INTO channels (server_id, slug, name, kind, room, position) VALUES (?, 'lobby', 'Лобби', 'voice', ?, 1)",
                 (sid, chat_room(sid, "lobby")),
             )
-    # Уже зарегистрированные — участники всех auto_join-серверов (с даты регистрации)
+    # Existing users join every auto_join server (dated by their registration).
     conn.execute(
         "INSERT OR IGNORE INTO server_members (server_id, user_id, joined_at) "
         "SELECT s.id, u.id, u.created_at FROM servers s, users u WHERE s.auto_join = 1"
@@ -1023,7 +1088,6 @@ def join_auto_servers(conn, user_id: int):
 
 
 def member_server(conn, user_id: int, server_id: str):
-    """Сервер, если пользователь в нём состоит."""
     return conn.execute(
         "SELECT s.* FROM servers s JOIN server_members m ON m.server_id = s.id WHERE s.id = ? AND m.user_id = ?",
         (server_id, user_id),
@@ -1031,12 +1095,10 @@ def member_server(conn, user_id: int, server_id: str):
 
 
 def member_channel(conn, user_id: int, room: str):
-    """Канал по комнате чата, если пользователь — участник его сервера."""
     return conn.execute(
         "SELECT c.* FROM channels c JOIN server_members m ON m.server_id = c.server_id WHERE c.room = ? AND m.user_id = ?",
         (room, user_id),
     ).fetchone()
-
 
 
 def hash_password(password: str) -> str:
@@ -1076,7 +1138,10 @@ def me_user(row) -> dict:
 def new_session(user_id: int) -> str:
     token = secrets.token_urlsafe(32)
     conn = db()
-    conn.execute("INSERT INTO sessions (token, user_id) VALUES (?, ?)", (token, user_id))
+    conn.execute("INSERT INTO sessions (token, user_id, last_used) VALUES (?, ?, CURRENT_TIMESTAMP)", (token, user_id))
+    conn.execute(
+        "DELETE FROM sessions WHERE COALESCE(last_used, created_at) < datetime('now', ?)", (f"-{SESSION_DAYS} days",)
+    )
     conn.commit()
     conn.close()
     return token
@@ -1087,10 +1152,23 @@ def user_by_token(token: str | None):
         return None
     conn = db()
     row = conn.execute(
-        "SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ?", (token,)
+        "SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id "
+        "WHERE s.token = ? AND COALESCE(s.last_used, s.created_at) >= datetime('now', ?)",
+        (token, f"-{SESSION_DAYS} days"),
     ).fetchone()
+    if row:
+        # bump last_used at most hourly so not every request writes to the DB
+        conn.execute(
+            "UPDATE sessions SET last_used = CURRENT_TIMESTAMP WHERE token = ? "
+            "AND (last_used IS NULL OR last_used < datetime('now', '-1 hour'))",
+            (token,),
+        )
+        conn.commit()
     conn.close()
     return row
+
+
+SESSION_COOKIE = "oreol_session"
 
 
 def bearer(request: Request) -> str | None:
@@ -1098,8 +1176,32 @@ def bearer(request: Request) -> str | None:
     return auth[7:].strip() if auth.lower().startswith("bearer ") else None
 
 
+def session_token(request) -> str | None:
+    # HttpOnly cookie is the primary carrier; Bearer stays for migrating old clients and scripts
+    return request.cookies.get(SESSION_COOKIE) or bearer(request)
+
+
 def current_user(request: Request):
-    return user_by_token(bearer(request))
+    return user_by_token(session_token(request))
+
+
+def set_session_cookie(resp, token: str, request: Request):
+    https = request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https"
+    resp.set_cookie(
+        SESSION_COOKIE, token, max_age=SESSION_DAYS * 86400, path="/", httponly=True, secure=https, samesite="lax"
+    )
+    return resp
+
+
+def same_origin(headers) -> bool:
+    """Cookie auth needs a CSRF guard: SameSite=Lax still lets sibling subdomains through."""
+    site = headers.get("sec-fetch-site")
+    if site:
+        return site in ("same-origin", "none")
+    origin = headers.get("origin")
+    if not origin:
+        return True
+    return urllib.parse.urlsplit(origin).netloc == headers.get("host", "")
 
 
 def unauthorized():
@@ -1142,7 +1244,7 @@ async def auth_register(request: Request):
     conn.commit()
     row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
     conn.close()
-    return {"token": new_session(user_id), "user": me_user(row)}
+    return set_session_cookie(JSONResponse({"user": me_user(row)}), new_session(user_id), request)
 
 
 @app.post("/api/auth/login")
@@ -1155,24 +1257,32 @@ async def auth_login(request: Request):
     conn.close()
     if not row or not check_password(password, row["password_hash"]):
         return JSONResponse({"error": "Неверный email или пароль"}, status_code=401)
-    return {"token": new_session(row["id"]), "user": me_user(row)}
+    return set_session_cookie(JSONResponse({"user": me_user(row)}), new_session(row["id"]), request)
 
 
 @app.get("/api/auth/me")
 async def auth_me(request: Request):
-    row = current_user(request)
-    return {"user": me_user(row)} if row else unauthorized()
+    token = session_token(request)
+    row = user_by_token(token)
+    if not row:
+        resp = unauthorized()
+        resp.delete_cookie(SESSION_COOKIE, path="/")
+        return resp
+    # refreshing the cookie keeps active users signed in and moves old localStorage tokens into the cookie
+    return set_session_cookie(JSONResponse({"user": me_user(row)}), token, request)
 
 
 @app.post("/api/auth/logout")
 async def auth_logout(request: Request):
-    token = bearer(request)
+    token = session_token(request)
     if token:
         conn = db()
         conn.execute("DELETE FROM sessions WHERE token = ?", (token,))
         conn.commit()
         conn.close()
-    return {"ok": True}
+    resp = JSONResponse({"ok": True})
+    resp.delete_cookie(SESSION_COOKIE, path="/")
+    return resp
 
 
 @app.get("/api/users")
@@ -1219,8 +1329,32 @@ def remove_upload(kind: str, file: str | None):
             pass
 
 
+# Avatars are cropped to a circle and banners to a wide strip, so extreme shapes would just be cut away
+PROFILE_IMAGE = {
+    "avatars": {"min": (64, 64), "max_side": 2048, "ratio": (0.5, 2.0)},
+    "banners": {"min": (300, 75), "max_side": 4096, "ratio": (1.5, 6.0)},
+}
+MAX_PROFILE_GIF_FRAMES = 300
+
+
+def profile_image_problem(kind: str, size: tuple[int, int], frames: int) -> str | None:
+    rule = PROFILE_IMAGE[kind]
+    w, h = size
+    what = "Аватар" if kind == "avatars" else "Баннер"
+    if w < rule["min"][0] or h < rule["min"][1]:
+        return f"{what} слишком маленький: нужно минимум {rule['min'][0]}×{rule['min'][1]} px"
+    if max(w, h) > rule["max_side"]:
+        return f"{what} больше {rule['max_side']} px по стороне"
+    lo, hi = rule["ratio"]
+    if not lo <= w / h <= hi:
+        shape = "почти квадратная картинка, стороны до 1:2" if kind == "avatars" else "широкая картинка, от 3:2 до 6:1"
+        return f"Для {'аватара' if kind == 'avatars' else 'баннера'} нужна {shape}"
+    if frames > MAX_PROFILE_GIF_FRAMES:
+        return f"В GIF больше {MAX_PROFILE_GIF_FRAMES} кадров"
+    return None
+
+
 async def save_image(request: Request, kind: str):
-    """PUT /api/profile/avatar|banner: тело запроса — сама картинка (Content-Type image/*)."""
     row = current_user(request)
     if not row:
         return unauthorized()
@@ -1234,6 +1368,20 @@ async def save_image(request: Request, kind: str):
     if len(body) > MAX_IMAGE[kind]:
         mb = MAX_IMAGE[kind] // (1024 * 1024)
         return JSONResponse({"error": f"Файл больше {mb} МБ"}, status_code=413)
+    # format from the content, not the header, so HTML or scripts cannot pass as an image
+    try:
+        with Image.open(io.BytesIO(body)) as im:
+            fmt, size = im.format, im.size
+            frames = getattr(im, "n_frames", 1)
+            im.verify()
+    except Exception:
+        return JSONResponse({"error": "Файл повреждён или это не картинка"}, status_code=415)
+    ext = {"PNG": "png", "JPEG": "jpg", "WEBP": "webp", "GIF": "gif"}.get(fmt or "")
+    if not ext:
+        return JSONResponse({"error": "Поддерживаются PNG, JPG, WEBP и GIF"}, status_code=415)
+    problem = profile_image_problem(kind, size, frames)
+    if problem:
+        return JSONResponse({"error": problem}, status_code=415)
     column = "avatar" if kind == "avatars" else "banner"
     name = f"{row['id']}-{secrets.token_hex(6)}.{ext}"
     (UPLOADS_DIR / kind / name).write_bytes(body)
@@ -1285,12 +1433,7 @@ async def profile_banner_delete(request: Request):
 app.mount("/api/uploads", StaticFiles(directory=UPLOADS_DIR), name="uploads")
 
 
-
-# ---------------------------------------------------------------------
-# Учётная запись: имя, имя пользователя, email, телефон, пароль, удаление.
-# ---------------------------------------------------------------------
 def clean_phone(value: str) -> str | None:
-    """Телефон хранится как +цифры (10–15 цифр). Пустое значение — телефона нет."""
     digits = re.sub(r"\D", "", value or "")
     if not digits:
         return ""
@@ -1347,7 +1490,6 @@ async def account_update(request: Request):
     if updates:
         sets = ", ".join(f"{k} = ?" for k in updates)
         conn.execute(f"UPDATE users SET {sets} WHERE id = ?", (*updates.values(), row["id"]))
-        # История сообщений переезжает на новое имя пользователя
         if "username" in updates:
             conn.execute("UPDATE messages SET username = ? WHERE username = ?", (updates["username"], row["username"]))
             conn.execute("UPDATE OR IGNORE message_reactions SET username = ? WHERE username = ?", (updates["username"], row["username"]))
@@ -1373,8 +1515,8 @@ async def account_password(request: Request):
         return JSONResponse({"error": "Проверьте поля", "fields": {"password": f"Минимум {MIN_PASSWORD_LEN} символов"}}, status_code=400)
     conn = db()
     conn.execute("UPDATE users SET password_hash = ? WHERE id = ?", (hash_password(new), row["id"]))
-    # Остальные сессии завершаем — остаётся только текущая
-    conn.execute("DELETE FROM sessions WHERE user_id = ? AND token != ?", (row["id"], bearer(request)))
+    # sign out every other session
+    conn.execute("DELETE FROM sessions WHERE user_id = ? AND token != ?", (row["id"], session_token(request)))
     conn.commit()
     conn.close()
     return {"ok": True}
@@ -1391,7 +1533,6 @@ async def account_delete(request: Request):
     conn = db()
     conn.execute("DELETE FROM sessions WHERE user_id = ?", (row["id"],))
     conn.execute("DELETE FROM server_members WHERE user_id = ?", (row["id"],))
-    # Фото из его сообщений и неотправленные загрузки
     orphans = drop_attachments(
         conn,
         "message_id IN (SELECT id FROM messages WHERE username = ?) OR (message_id IS NULL AND user_id = ?)",
@@ -1431,14 +1572,13 @@ async def api_token(request: Request):
         room=room,
         can_publish=True,
         can_subscribe=True,
-        can_update_own_metadata=True,  # флаг «звук выключен» передаётся через metadata
+        can_update_own_metadata=True,  # the "deafened" flag travels in participant metadata
     )
     token = (
         api.AccessToken(LK_API_KEY, LK_API_SECRET)
         .with_identity(username)
         .with_name(username)
         .with_grants(grant)
-        # тип устройства задаётся клиентом по устройству (не по ширине окна) — показываем иконку телефона
         .with_attributes({"device": "mobile" if data.get("device") == "mobile" else "desktop"})
         .to_jwt()
     )
@@ -1446,10 +1586,9 @@ async def api_token(request: Request):
     return {"token": token, "url": LK_SERVER_URL, "room": room}
 
 
-# ===== Закрыли вкладку, будучи в голосовом =====
-# Клиент не шлёт «выход» при уходе со страницы (чтобы перезагрузка не выкидывала из канала),
-# а LiveKit держит «оборванного» участника долго. Поэтому страница при закрытии шлёт маяк,
-# и если за VOICE_LEAVE_GRACE секунд тот же пользователь не переподключился — убираем его из комнаты.
+# Tab closed while in voice. The client sends no "leave" on unload (so a reload keeps you in the channel),
+# and LiveKit keeps a dropped participant for a long time. The page sends a beacon instead, and if the same user
+# does not reconnect within VOICE_LEAVE_GRACE seconds they are removed from the room.
 VOICE_LEAVE_GRACE = 15
 VOICE_TOKEN_AT: dict[str, float] = {}
 
@@ -1457,7 +1596,7 @@ VOICE_TOKEN_AT: dict[str, float] = {}
 async def drop_voice_later(username: str, room: str, since: float):
     await asyncio.sleep(VOICE_LEAVE_GRACE)
     if VOICE_TOKEN_AT.get(username, 0) > since:
-        return  # перезагрузка: уже зашёл заново
+        return  # reloaded: already back
     lk_api = None
     try:
         lk_api = api.LiveKitAPI(LK_API_URL, LK_API_KEY, LK_API_SECRET)
@@ -1471,14 +1610,14 @@ async def drop_voice_later(username: str, room: str, since: float):
 
 @app.post("/api/voice/leaving")
 async def api_voice_leaving(request: Request):
-    """Маяк со страницы (navigator.sendBeacon) — без заголовков, токен в теле."""
+    """Beacon from the page (navigator.sendBeacon): no custom headers; the cookie authenticates, older builds put the token in the body."""
     if not LK_API_KEY or not LK_API_SECRET:
         return {"ok": False}
     try:
         data = json.loads((await request.body()) or b"{}")
     except ValueError:
         return JSONResponse({"error": "bad body"}, status_code=400)
-    row = user_by_token(str(data.get("auth") or ""))
+    row = current_user(request) or user_by_token(str(data.get("auth") or ""))
     if not row:
         return unauthorized()
     conn = db()
@@ -1491,9 +1630,12 @@ async def api_voice_leaving(request: Request):
 
 
 @app.get("/api/voice/participants")
-async def api_voice_participants(server: str = "rg"):
+async def api_voice_participants(request: Request, server: str = "rg"):
+    row = current_user(request)
+    if not row:
+        return unauthorized()
     conn = db()
-    srv = conn.execute("SELECT voice_room FROM servers WHERE id = ?", (server,)).fetchone()
+    srv = member_server(conn, row["id"], server)
     conn.close()
     if not srv:
         return JSONResponse({"error": "unknown server"}, status_code=400)
@@ -1501,7 +1643,6 @@ async def api_voice_participants(server: str = "rg"):
 
 
 class ChatHub:
-    """Комнаты чата: сокеты и список онлайн-пользователей."""
 
     def __init__(self):
         self.rooms: dict[str, list[tuple[WebSocket, str]]] = {}
@@ -1549,7 +1690,7 @@ class ChatHub:
                     pass
 
     def statuses(self) -> dict[str, str]:
-        """Видимый статус каждого подключённого. «Невидимые» не попадают — для всех они не в сети."""
+        """Visible status of each connected user. Invisible users are left out, everyone sees them offline."""
         names = self.all_users()
         if not names:
             return {}
@@ -1572,9 +1713,20 @@ hub = ChatHub()
 
 @app.websocket("/api/ws/{room}")
 async def api_ws(websocket: WebSocket, room: str):
-    row = user_by_token(websocket.query_params.get("token"))
-    user = row["username"] if row else ""
+    if not same_origin(websocket.headers):
+        await websocket.close(code=4403)
+        return
     await websocket.accept()
+    # the cookie arrives with the handshake; tabs opened before the cookie switch send {"type":"auth"} first
+    token = websocket.cookies.get(SESSION_COOKIE) or websocket.query_params.get("token")
+    if not token:
+        try:
+            first = json.loads(await asyncio.wait_for(websocket.receive_text(), timeout=10))
+            token = first.get("token") if isinstance(first, dict) and first.get("type") == "auth" else None
+        except (asyncio.TimeoutError, WebSocketDisconnect, ValueError):
+            token = None
+    row = user_by_token(token if isinstance(token, str) else None)
+    user = row["username"] if row else ""
     conn = db()
     channel = member_channel(conn, row["id"], room) if row else None
     conn.close()
@@ -1611,7 +1763,6 @@ async def api_ws(websocket: WebSocket, room: str):
                     if msg:
                         await hub.send(room, {"type": "message", "message": msg})
             elif kind == "edit":
-                # Изменить можно только своё сообщение
                 content = clean_text(str(data.get("content", ""))).strip()[:MAX_MESSAGE_LEN]
                 found = get_message(as_ids(data.get("id"))[0]) if as_ids(data.get("id")) else None
                 if content and found and found[0]["room"] == room and found[0]["username"] == user and not found[0]["sys"]:
@@ -1624,7 +1775,6 @@ async def api_ws(websocket: WebSocket, room: str):
                     conn.close()
                     await hub.send(room, {"type": "update", "message": get_message(found[0]["id"])[1]})
             elif kind == "react":
-                # Поставить или снять реакцию (повторное нажатие снимает)
                 emoji = str(data.get("emoji", ""))
                 found = get_message(as_ids(data.get("id"))[0]) if as_ids(data.get("id")) else None
                 if emoji in REACTIONS and found and found[0]["room"] == room and not found[0]["sys"]:
@@ -1642,7 +1792,7 @@ async def api_ws(websocket: WebSocket, room: str):
                             "SELECT emoji FROM message_reactions WHERE message_id = ? AND username = ? ORDER BY created_at, rowid",
                             (mid, user),
                         ).fetchall()
-                        # лимит: самая старая своя реакция уступает место новой
+                        # at the limit the user's oldest reaction makes room for the new one
                         for (old,) in mine[: max(0, len(mine) - MAX_REACTIONS_PER_USER + 1)]:
                             conn.execute(
                                 "DELETE FROM message_reactions WHERE message_id = ? AND username = ? AND emoji = ?", (mid, user, old)
@@ -1661,7 +1811,6 @@ async def api_ws(websocket: WebSocket, room: str):
                     conn.commit()
                     conn.close()
                     await hub.send(room, {"type": "update", "message": get_message(found[0]["id"])[1]})
-                    # Закрепили или открепили — в ленте появляется «X закрепил(а) / открепил(а) сообщение»
                     if on != bool(found[0]["pinned"]):
                         note = save_system_message(room, user, "pin" if on else "unpin", found[0]["id"])
                         await hub.send(room, {"type": "message", "message": note})
@@ -1673,7 +1822,6 @@ async def api_ws(websocket: WebSocket, room: str):
                     f"SELECT id, username FROM messages WHERE room = ? AND id IN ({marks})", (room, *ids)
                 ).fetchall()
                 if data.get("scope") == "all":
-                    # У всех — только свои
                     mine = [r["id"] for r in rows if r["username"] == user]
                     if mine:
                         m2 = ",".join("?" * len(mine))
@@ -1695,7 +1843,6 @@ async def api_ws(websocket: WebSocket, room: str):
                         await hub.send_user(room, user, {"type": "deleted", "ids": own})
                 conn.close()
             elif kind == "forward":
-                # Пересылка в другой (или этот же) чат, где пользователь состоит
                 target = str(data.get("to", ""))
                 conn = db()
                 allowed = member_channel(conn, uid, target)
@@ -1734,7 +1881,7 @@ async def api_ws(websocket: WebSocket, room: str):
             elif kind == "typing":
                 await hub.send(room, {"type": "typing", "user": user}, skip=websocket)
             elif kind == "voice":
-                # кто-то зашёл в войс или вышел — всем сразу «обновите состав», не дожидаясь опроса
+                # someone joined or left voice: everyone refreshes the roster now instead of waiting for the poll
                 await hub.broadcast_all({"type": "voice", "user": user})
     except WebSocketDisconnect:
         pass
@@ -1771,22 +1918,25 @@ async def servers_list(request: Request):
     return {"servers": out}
 
 
-# =====================================================================
-# Предпросмотр ссылок: заголовок, описание и картинка страницы (Open Graph).
-# Сервер сам ходит по ссылке, поэтому пускаем только в публичный интернет:
-# адреса локальной сети, localhost и служебные диапазоны отсекаются, и на каждом редиректе тоже.
-# =====================================================================
+# Link previews (Open Graph). The server fetches the link itself, so only the public internet is allowed:
+# private, loopback and reserved ranges are rejected, on every redirect too.
+import base64
+import codecs
 import html as html_lib
 import ipaddress
 import socket
+import http.client
 import urllib.error
 import urllib.parse
 import urllib.request
 from html.parser import HTMLParser
 
-LINK_MAX_BYTES = 512 * 1024  # дальше <head> обычно не нужен
+LINK_MAX_BYTES = 2 * 1024 * 1024  # YouTube puts ~850 KB of inline scripts before its og: tags
+GIF_SITES = ("tenor.com", "giphy.com")
+YOUTUBE_HOSTS = {"youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com", "youtu.be"}
 LINK_TIMEOUT = 5
 LINK_CACHE_SEC = 3600
+LINK_FAIL_CACHE_SEC = 120
 LINK_CACHE_MAX = 500
 _link_cache: dict[str, tuple[float, dict | None]] = {}
 
@@ -1820,7 +1970,50 @@ class _SafeRedirect(urllib.request.HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
-_link_opener = urllib.request.build_opener(_SafeRedirect)
+# Check and connect using the same DNS answer. Otherwise a short-TTL site could resolve to a public IP
+# for the check and to 127.0.0.1 for the connection (DNS rebinding).
+def _public_socket(host: str, port: int, timeout) -> socket.socket:
+    infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+    if not infos or not all(ipaddress.ip_address(i[4][0].split("%")[0]).is_global for i in infos):
+        raise OSError("private address")
+    err: OSError | None = None
+    for fam, typ, proto, _, addr in infos:
+        sock = socket.socket(fam, typ, proto)
+        sock.settimeout(timeout if isinstance(timeout, (int, float)) else LINK_TIMEOUT)
+        try:
+            sock.connect(addr)
+            return sock
+        except OSError as e:
+            err = e
+            sock.close()
+    raise err or OSError("no address")
+
+
+class _PublicHTTP(http.client.HTTPConnection):
+    def connect(self):
+        self.sock = _public_socket(self.host, self.port, self.timeout)
+
+
+class _PublicHTTPS(http.client.HTTPSConnection):
+    def connect(self):
+        sock = _public_socket(self.host, self.port, self.timeout)
+        self.sock = self._context.wrap_socket(sock, server_hostname=self.host)
+
+
+class _PublicHTTPHandler(urllib.request.HTTPHandler):
+    def http_open(self, req):
+        return self.do_open(_PublicHTTP, req)
+
+
+class _PublicHTTPSHandler(urllib.request.HTTPSHandler):
+    def https_open(self, req):
+        return self.do_open(_PublicHTTPS, req, context=self._context)
+
+
+# no system proxies: connect straight to the verified address
+_link_opener = urllib.request.build_opener(
+    urllib.request.ProxyHandler({}), _PublicHTTPHandler, _PublicHTTPSHandler, _SafeRedirect
+)
 
 
 class _MetaParser(HTMLParser):
@@ -1861,13 +2054,85 @@ def _clip(s: str, n: int) -> str:
     return s if len(s) <= n else s[: n - 1].rstrip() + "…"
 
 
+YOUTUBE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{6,20}$")
+# YouTube's own oEmbed first; noembed.com mirrors it for networks where youtube.com does not resolve
+YOUTUBE_OEMBED = ("https://www.youtube.com/oembed?format=json&url=", "https://noembed.com/embed?url=")
+
+
+def youtube_id(url: str) -> str | None:
+    u = urllib.parse.urlsplit(url)
+    host = (u.hostname or "").lower()
+    parts = [p for p in u.path.split("/") if p]
+    if host == "youtu.be":
+        vid = parts[0] if parts else ""
+    elif parts[:1] == ["watch"]:
+        vid = (urllib.parse.parse_qs(u.query).get("v") or [""])[0]
+    elif len(parts) >= 2 and parts[0] in ("shorts", "live", "embed"):
+        vid = parts[1]
+    else:
+        return None
+    return vid if YOUTUBE_ID_RE.match(vid) else None
+
+
+def youtube_preview(url: str) -> dict | None:
+    """oEmbed is small and stable, unlike the 1.5 MB watch page. The video URL itself is never fetched."""
+    vid = youtube_id(url)
+    if not vid:
+        return None
+    canonical = "https://www.youtube.com/watch?v=" + vid
+    data = None
+    for base in YOUTUBE_OEMBED:
+        req = urllib.request.Request(
+            base + urllib.parse.quote(canonical, safe=""),
+            headers={"User-Agent": "Mozilla/5.0 (compatible; OreolBot/1.0; link preview)"},
+        )
+        try:
+            with _link_opener.open(req, timeout=LINK_TIMEOUT) as r:
+                data = json.loads(r.read(64 * 1024))
+        except Exception:
+            continue
+        if isinstance(data, dict) and data.get("title"):
+            break
+        data = None
+    if not data:
+        return None
+    title = _clip(str(data.get("title") or ""), 160)
+    image = f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg"
+    return {
+        "url": url,
+        "title": title,
+        "description": _clip(str(data.get("author_name") or ""), 300),
+        "image": link_image_path(image) if image.startswith("https://") else None,
+        "site": "YouTube",
+    }
+
+
+def gif_site(host: str) -> bool:
+    return any(host == d or host.endswith("." + d) for d in GIF_SITES)
+
+
+def _int(v) -> int | None:
+    try:
+        n = int(str(v).strip())
+    except (TypeError, ValueError):
+        return None
+    return n if 0 < n <= 10000 else None
+
+
 def fetch_link_preview(url: str) -> dict | None:
+    host = (urllib.parse.urlsplit(url).hostname or "").lower()
+    if host in YOUTUBE_HOSTS:
+        return youtube_preview(url)
     if not public_url(url):
         return None
+    # a direct GIF file from Tenor/Giphy (media.tenor.com/....gif) is shown as is
+    if gif_site(host) and urllib.parse.urlsplit(url).path.lower().endswith(".gif"):
+        site = "Tenor" if host.endswith("tenor.com") else "GIPHY"
+        return {"url": url, "title": "", "description": "", "image": link_image_path(url), "site": site, "gif": True}
     req = urllib.request.Request(
         url,
         headers={
-            # многие сайты (YouTube, соцсети) отдают Open Graph только «ботам превью»
+            # many sites (YouTube, social networks) only serve Open Graph tags to preview bots
             "User-Agent": "Mozilla/5.0 (compatible; OreolBot/1.0; link preview)",
             "Accept": "text/html,application/xhtml+xml;q=0.9,*/*;q=0.5",
             "Accept-Language": "ru,en;q=0.8",
@@ -1879,15 +2144,24 @@ def fetch_link_preview(url: str) -> dict | None:
             ctype = r.headers.get("Content-Type", "")
             if "html" not in ctype.lower():
                 return None
-            raw = r.read(LINK_MAX_BYTES)
-            charset = r.headers.get_content_charset() or "utf-8"
+            try:
+                decoder = codecs.getincrementaldecoder(r.headers.get_content_charset() or "utf-8")(errors="replace")
+            except LookupError:
+                decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+            p = _MetaParser()
+            got = 0
+            # stop as soon as <head> is over instead of downloading the whole page
+            while got < LINK_MAX_BYTES and not p.done:
+                chunk = r.read(64 * 1024)
+                if not chunk:
+                    break
+                got += len(chunk)
+                try:
+                    p.feed(decoder.decode(chunk))
+                except Exception:
+                    break
     except Exception:
         return None
-    p = _MetaParser()
-    try:
-        p.feed(raw.decode(charset, errors="replace"))
-    except Exception:
-        pass
     m = p.meta
     title = _clip(m.get("og:title") or m.get("twitter:title") or p.title, 160)
     if not title:
@@ -1895,17 +2169,63 @@ def fetch_link_preview(url: str) -> dict | None:
     desc = _clip(m.get("og:description") or m.get("twitter:description") or m.get("description"), 300)
     image = m.get("og:image") or m.get("og:image:url") or m.get("twitter:image") or ""
     image = urllib.parse.urljoin(final, image.strip()) if image else ""
-    if not image.startswith("https://"):
+    if not image.startswith(("https://", "http://")) or len(image) > 2048:
         image = ""
     host = urllib.parse.urlsplit(final).hostname or ""
     site = _clip(m.get("og:site_name") or (host[4:] if host.startswith("www.") else host), 60)
-    return {"url": url, "title": title, "description": desc, "image": image or None, "site": site}
+    data = {"url": url, "title": title, "description": desc, "image": link_image_path(image) if image else None, "site": site}
+    # GIF services: show the whole animation at its own aspect ratio instead of a cropped thumbnail
+    if image and gif_site(host.lower()) and (m.get("og:image:type") == "image/gif" or image.lower().endswith(".gif")):
+        data.update(gif=True, w=_int(m.get("og:image:width")), h=_int(m.get("og:image:height")))
+    return data
+
+
+# The browser loads preview images through us, so the third-party site never sees its IP or viewing time.
+# The URL is signed: the proxy serves only images it found itself, it is not an open proxy.
+_LINK_IMG_KEY = secrets.token_bytes(32)
+LINK_IMG_MAX = 10 * 1024 * 1024  # full-size Tenor/Giphy GIFs
+LINK_IMG_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp", "image/avif"}
+
+
+def _link_img_sig(url: str) -> str:
+    return hmac.new(_LINK_IMG_KEY, url.encode(), hashlib.sha256).hexdigest()[:32]
+
+
+def link_image_path(url: str) -> str:
+    return f"/api/link-image?u={urllib.parse.quote(url, safe='')}&s={_link_img_sig(url)}"
+
+
+def fetch_link_image(url: str) -> tuple[bytes, str] | None:
+    got = _fetch_image(url)
+    host = (urllib.parse.urlsplit(url).hostname or "").lower()
+    if not got and host.endswith("ytimg.com"):
+        # some networks cannot reach YouTube's image hosts; wsrv.nl relays the same thumbnail
+        got = _fetch_image("https://wsrv.nl/?url=" + urllib.parse.quote(url.split("://", 1)[-1], safe=""))
+    return got
+
+
+def _fetch_image(url: str) -> tuple[bytes, str] | None:
+    if not public_url(url):
+        return None
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (compatible; OreolBot/1.0; link preview)", "Accept": "image/*"})
+    try:
+        with _link_opener.open(req, timeout=LINK_TIMEOUT) as r:
+            ctype = (r.headers.get_content_type() or "").lower()
+            if ctype not in LINK_IMG_TYPES:
+                return None
+            data = r.read(LINK_IMG_MAX + 1)
+    except Exception:
+        return None
+    if len(data) > LINK_IMG_MAX:
+        return None
+    return data, ctype
 
 
 def link_preview_cached(url: str) -> dict | None:
     now = time.time()
     hit = _link_cache.get(url)
-    if hit and now - hit[0] < LINK_CACHE_SEC:
+    # a failed fetch is retried sooner than a good preview expires
+    if hit and now - hit[0] < (LINK_CACHE_SEC if hit[1] else LINK_FAIL_CACHE_SEC):
         return hit[1]
     data = fetch_link_preview(url)
     if len(_link_cache) >= LINK_CACHE_MAX:
@@ -1926,9 +2246,23 @@ async def link_preview(url: str, request: Request):
     return data
 
 
+@app.get("/api/link-image")
+async def link_image(u: str, s: str):
+    if not hmac.compare_digest(s.encode(), _link_img_sig(u).encode()):
+        return JSONResponse({"error": "Нет картинки"}, status_code=404)
+    got = await asyncio.to_thread(fetch_link_image, u)
+    if not got:
+        return JSONResponse({"error": "Нет картинки"}, status_code=404)
+    data, ctype = got
+    return Response(
+        data,
+        media_type=ctype,
+        headers={"Cache-Control": "private, max-age=86400", "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "default-src 'none'"},
+    )
+
+
 @app.get("/api/chat/{room}/history")
 async def chat_history(room: str, request: Request, before: int, limit: int = 100):
-    """Более старые сообщения комнаты (до before), по limit за раз."""
     row = current_user(request)
     if not row:
         return unauthorized()
@@ -1942,10 +2276,99 @@ async def chat_history(room: str, request: Request, before: int, limit: int = 10
     return {"messages": msgs, "more": len(msgs) == limit}
 
 
+CHAT_MEDIA_KINDS = {
+    "photo": "a.mime LIKE 'image/%' AND a.mime != 'image/gif'",
+    "gif": "a.mime = 'image/gif'",
+    "video": "a.mime LIKE 'video/%'",
+    "file": "a.key LIKE 'files/%'",
+}
+LINK_RE = re.compile(r"(?<![\w./@])(?:https?://|www\.)[^\s<>\"]+[^\s<>\".,;:!?)\]}'»]", re.I)
+
+
+def chat_access(request: Request, room: str):
+    row = current_user(request)
+    if not row:
+        return None, unauthorized()
+    conn = db()
+    ok = member_channel(conn, row["id"], room)
+    conn.close()
+    if not ok:
+        return None, JSONResponse({"error": "Нет доступа к этому чату"}, status_code=403)
+    return row, None
+
+
+@app.get("/api/chat/{room}/media")
+async def chat_media(room: str, kind: str, request: Request, before: int | None = None, limit: int = 60):
+    """Chat showcase: photos, GIFs, videos, files or links, newest first. `next` is the cursor for older items."""
+    row, err = chat_access(request, room)
+    if err:
+        return err
+    limit = max(1, min(limit, 100))
+    conn = chat_conn()
+    hidden = "m.id NOT IN (SELECT message_id FROM message_hidden WHERE user_id = ?)"
+    if kind in CHAT_MEDIA_KINDS:
+        rows = conn.execute(
+            "SELECT a.id, a.key, a.mime, a.width, a.height, a.name, a.size, m.id AS msg, m.username, m.timestamp "
+            f"FROM attachments a JOIN messages m ON m.id = a.message_id WHERE m.room = ? AND {hidden} "
+            f"AND {CHAT_MEDIA_KINDS[kind]} AND a.id < ? ORDER BY a.id DESC LIMIT ?",
+            (room, row["id"], before or 2**62, limit),
+        ).fetchall()
+        conn.close()
+        items = [{**att_json(r), "msg": r["msg"], "user": r["username"], "ts": to_iso(r["timestamp"])} for r in rows]
+        return {"items": items, "next": rows[-1]["id"] if len(rows) == limit else None}
+    if kind != "link":
+        conn.close()
+        return JSONResponse({"error": "Неизвестный раздел"}, status_code=400)
+    items, cursor, done = [], before or 2**62, False
+    # links are pulled out of message text, so messages are scanned in pages until enough links are found
+    while len(items) < limit and not done:
+        rows = conn.execute(
+            f"SELECT m.id, m.username, m.content, m.timestamp FROM messages m WHERE m.room = ? AND {hidden} "
+            "AND m.id < ? AND (m.content LIKE '%http%' OR m.content LIKE '%www.%') ORDER BY m.id DESC LIMIT 200",
+            (room, row["id"], cursor),
+        ).fetchall()
+        done = len(rows) < 200
+        for r in rows:
+            cursor = r["id"]
+            for u in dict.fromkeys(m.group(0) for m in LINK_RE.finditer(r["content"] or "")):
+                items.append({"url": u if u.lower().startswith("http") else "https://" + u, "msg": r["id"], "user": r["username"], "ts": to_iso(r["timestamp"])})
+            if len(items) >= limit:
+                done = done and r["id"] == rows[-1]["id"]
+                break
+    conn.close()
+    return {"items": items, "next": None if done else cursor}
+
+
+@app.get("/api/chat/{room}/search")
+async def chat_search(room: str, q: str, request: Request, before: int | None = None, limit: int = 30):
+    """Messages containing q (case-insensitive, Cyrillic included), newest first."""
+    row, err = chat_access(request, room)
+    if err:
+        return err
+    q = q.strip().lower()[:100]
+    if not q:
+        return {"messages": [], "next": None}
+    limit = max(1, min(limit, 50))
+    conn = chat_conn()
+    # SQLite's LIKE only folds ASCII case, so compare Python-lowercased text
+    conn.create_function("ulower", 1, lambda t: t.lower() if isinstance(t, str) else t, deterministic=True)
+    pattern = "%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+    rows = conn.execute(
+        f"SELECT {MSG_COLS} FROM messages WHERE room = ? AND sys IS NULL "
+        "AND id NOT IN (SELECT message_id FROM message_hidden WHERE user_id = ?) "
+        "AND id < ? AND ulower(content) LIKE ? ESCAPE '\\' ORDER BY id DESC LIMIT ?",
+        (room, row["id"], before or 2**62, pattern, limit),
+    ).fetchall()
+    out = [msg_json(conn, r) for r in rows]
+    conn.close()
+    return {"messages": out, "next": rows[-1]["id"] if len(rows) == limit else None}
+
+
 @app.get("/api/chat/{room}/reads/{msg_id}")
 async def message_reads(room: str, msg_id: int, request: Request):
-    """Кто и когда прочитал сообщение: время — первый сдвиг отметки участника до этого сообщения или дальше.
-    Прочтения до появления журнала времени не имеют (at = null)."""
+    """Who read a message and when: the first time a member's mark reached it or moved past it.
+    Reads from before the log existed have no time (at = null).
+    """
     row = current_user(request)
     if not row:
         return unauthorized()
@@ -2011,12 +2434,83 @@ async def status_update(request: Request):
 
 WEB_DIST = Path(os.getenv("WEB_DIST", Path(__file__).parent / "web" / "dist"))
 
+
+# Security headers. Page CSP: own scripts only (the inline theme script in index.html is allowed by hash),
+# external resources only for Google Fonts, no framing by other sites.
+_csp_cache: tuple[float, str] | None = None
+
+
+def _origins(url: str) -> str:
+    """wss://host/rtc -> "wss://host https://host": LiveKit uses both WebSocket and HTTP."""
+    u = urllib.parse.urlsplit(url)
+    if not u.netloc:
+        return ""
+    http = {"wss": "https", "ws": "http"}.get(u.scheme, u.scheme)
+    return f"{u.scheme}://{u.netloc} {http}://{u.netloc}"
+
+
+def page_csp() -> str:
+    global _csp_cache
+    index = WEB_DIST / "index.html"
+    try:
+        mtime = index.stat().st_mtime
+    except OSError:
+        mtime = 0.0
+    if _csp_cache and _csp_cache[0] == mtime:
+        return _csp_cache[1]
+    hashes = []
+    if mtime:
+        page = index.read_text(encoding="utf-8")
+        for body in re.findall(r"<script(?![^>]*\ssrc=)[^>]*>(.*?)</script>", page, re.S):
+            digest = base64.b64encode(hashlib.sha256(body.encode()).digest()).decode()
+            hashes.append(f"'sha256-{digest}'")
+    csp = "; ".join(
+        [
+            "default-src 'self'",
+            "script-src 'self' blob: " + " ".join(hashes),  # blob: for the noise gate AudioWorklet
+            "worker-src 'self' blob:",
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+            "font-src 'self' data: https://fonts.gstatic.com",
+            "img-src 'self' data: blob:",
+            "media-src 'self' blob:",
+            f"connect-src 'self' {_origins(LK_SERVER_URL)}".rstrip(),
+            "object-src 'none'",
+            "base-uri 'self'",
+            "form-action 'self'",
+            "frame-ancestors 'none'",
+        ]
+    )
+    _csp_cache = (mtime, csp)
+    return csp
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    if (
+        request.method not in ("GET", "HEAD", "OPTIONS")
+        and request.cookies.get(SESSION_COOKIE)
+        and not same_origin(request.headers)
+    ):
+        return JSONResponse({"error": "Запрос с чужого сайта"}, status_code=403)
+    resp = await call_next(request)
+    h = resp.headers
+    h.setdefault("X-Content-Type-Options", "nosniff")
+    h.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    h.setdefault("X-Frame-Options", "DENY")
+    h.setdefault("Permissions-Policy", "camera=(self), microphone=(self), display-capture=(self), geolocation=()")
+    if request.headers.get("x-forwarded-proto") == "https" or request.url.scheme == "https":
+        h.setdefault("Strict-Transport-Security", "max-age=31536000")
+    if h.get("content-type", "").startswith("text/html"):
+        h.setdefault("Content-Security-Policy", page_csp())
+    return resp
+
+
 class SpaStatic(StaticFiles):
-    """Фронтенд с роутером: адреса страниц (/servers/…, /settings/…) отдают index.html,
-    а дальше их разбирает сам интерфейс. Отсутствующие файлы (с расширением) и /api — по-прежнему 404."""
+    """SPA routing: page URLs (/servers/..., /settings/...) get index.html and the UI parses them.
+    Missing files (with an extension) and /api still return 404.
+    """
 
     async def get_response(self, path, scope):
-        # Адрес страницы — без расширения в последнем сегменте и не /api
         page = not path.startswith("api") and "." not in path.rsplit("/", 1)[-1]
         try:
             resp = await super().get_response(path, scope)
@@ -2024,7 +2518,7 @@ class SpaStatic(StaticFiles):
             if e.status_code == 404 and page:
                 return await super().get_response("index.html", scope)
             raise
-        # Есть свой 404.html — StaticFiles отдаёт его ответом, а не исключением
+        # A custom 404.html is returned as a response, not raised
         if resp.status_code == 404 and page:
             return await super().get_response("index.html", scope)
         return resp
@@ -2032,11 +2526,6 @@ class SpaStatic(StaticFiles):
 
 if WEB_DIST.is_dir():
     app.mount("/", SpaStatic(directory=WEB_DIST, html=True), name="web")
-else:
-    @app.get("/", response_class=HTMLResponse)
-    async def get_index():
-        with open("index.html", "r", encoding="utf-8") as f:
-            return f.read()
 
 
 if __name__ == "__main__":

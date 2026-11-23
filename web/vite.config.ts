@@ -1,7 +1,7 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
-// В dev-режиме API и WebSocket проксируются на FastAPI (python main.py, порт 8000).
+// In dev mode the API and WebSocket are proxied to FastAPI (python main.py, port 8000).
 const backend = process.env.OREOL_BACKEND ?? 'http://127.0.0.1:8000';
 
 export default defineConfig({

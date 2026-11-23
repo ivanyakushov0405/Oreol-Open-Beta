@@ -4,13 +4,13 @@ import type { AppState } from '../../app/useAppState';
 import { Icon } from '../../shared/icons';
 import { handleOf, type Status } from '../../shared/model';
 import { Avatar, Banner } from '../../shared/ui/Avatar';
+import { t } from '../../shared/i18n';
 
-/* ---------- Окно аккаунта (Figma «Account menu (open)», Desktop · Direct messages) ---------- */
 export const STATUS_ITEMS: { id: Status; label: string }[] = [
-  { id: 'online', label: 'В сети' },
-  { id: 'idle', label: 'Не активен' },
-  { id: 'dnd', label: 'Не беспокоить' },
-  { id: 'offline', label: 'Невидимый' },
+  { id: 'online', label: t('В сети') },
+  { id: 'idle', label: t('Не активен') },
+  { id: 'dnd', label: t('Не беспокоить') },
+  { id: 'offline', label: t('Невидимый') },
 ];
 
 export function AccountMenu({
@@ -39,7 +39,6 @@ export function AccountMenu({
       window.removeEventListener('pointerdown', onDown);
     };
   }, [onClose]);
-  // Позиция: над панелью профиля, левый край на 4px левее неё (как в макете)
   const [pos, setPos] = useState<{ left: number; bottom: number } | null>(null);
   useLayoutEffect(() => {
     const place = () => {
@@ -65,7 +64,7 @@ export function AccountMenu({
           <span>{handleOf(app.name)}</span>
         </div>
         <div className="acct-items">
-          <div className="acct-over">Статус</div>
+          <div className="acct-over">{t('Статус')}</div>
           {STATUS_ITEMS.map((s) => (
             <button
               key={s.id}
@@ -81,16 +80,16 @@ export function AccountMenu({
           <hr />
           <button role="menuitem" className="acct-item" onClick={onProfile}>
             <Icon name="pencil" size={18} />
-            Редактировать профиль
+            {t('Редактировать профиль')}
           </button>
           <button role="menuitem" className="acct-item" onClick={onSettings}>
             <Icon name="settings" size={18} />
-            Настройки
+            {t('Настройки')}
           </button>
           <hr />
           <button role="menuitem" className="acct-item danger" onClick={app.logout}>
             <Icon name="logout" size={18} />
-            Выйти
+            {t('Выйти')}
           </button>
         </div>
       </div>

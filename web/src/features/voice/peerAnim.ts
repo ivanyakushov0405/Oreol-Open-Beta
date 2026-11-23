@@ -1,8 +1,9 @@
 import { useEffect, useReducer, useRef } from 'react';
 
-/** Анимация входа/выхода участников голосового: новые помечаются «in», ушедшие ещё ~0.25 с
- *  остаются на своём месте с пометкой «out», чтобы успеть плавно исчезнуть.
- *  scope — смена сервера/подключения: тогда ничего не анимируем, просто показываем новый список. */
+/**
+ * Join/leave animation for voice participants: newcomers are marked "in", leavers stay in place marked "out"
+ * for ~0.25 s to fade out. scope changes (server or connection) skip the animation and show the new list.
+ */
 const PEER_ANIM_MS = 260;
 export type Anim = 'in' | 'out' | undefined;
 export function usePeerAnim<T>(items: T[], keyOf: (t: T) => string, scope: string, settleMs = 0): { item: T; key: string; anim: Anim }[] {
@@ -20,16 +21,15 @@ export function usePeerAnim<T>(items: T[], keyOf: (t: T) => string, scope: strin
   const keys = items.map(keyOf);
   const keySet = new Set(keys);
   if (s.scope !== scope) {
-    // первый показ или другой сервер — без анимаций
     s.scope = scope;
     s.at = now;
     s.seen = new Set(keys);
     s.fresh.clear();
     s.ghosts.clear();
   } else if (now - s.at < settleMs || (s.prev.length === 0 && items.length > 0)) {
-    // сразу после смены источника списка (вошли/вышли из канала сами) список «доезжает» — без анимаций;
-    // так же и когда список пришёл впервые (участники сервера подгружаются после открытия канала)
-    // сразу после смены источника списка (вошли/вышли из канала сами) список «доезжает» — без анимаций
+    // Right after the list source changes (we joined or left ourselves) the list settles without animation;
+    // same when the list arrives for the first time (server members load after the channel opens).
+    // Right after the list source changes (we joined or left ourselves) the list settles without animation.
     s.seen = new Set(keys);
     s.ghosts.clear();
   } else {
@@ -38,7 +38,7 @@ export function usePeerAnim<T>(items: T[], keyOf: (t: T) => string, scope: strin
       if (!keySet.has(k) && !s.ghosts.has(k)) s.ghosts.set(k, { item: it, idx: i, at: now });
     });
     for (const k of keys) {
-      if (s.ghosts.has(k)) s.ghosts.delete(k); // вернулся, пока исчезал
+      if (s.ghosts.has(k)) s.ghosts.delete(k); // Came back while fading out.
       if (!s.seen.has(k)) {
         s.seen.add(k);
         s.fresh.set(k, now);

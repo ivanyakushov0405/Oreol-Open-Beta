@@ -1,10 +1,10 @@
-# LiveKit для new.halomvp.ru. Ключи приходят из LIVEKIT_KEYS (compose), IP — из --node-ip.
-port: 7890              # сигнальный WebSocket/API, только localhost → nginx /rtc
+# LiveKit for new.halomvp.ru. Keys come from LIVEKIT_KEYS (compose), the IP from --node-ip.
+port: 7890              # signalling WebSocket/API, localhost only -> nginx /rtc
 bind_addresses:
   - 127.0.0.1
 rtc:
-  tcp_port: 7981        # медиа по TCP (запасной путь), открыть в фаерволе
-  udp_port: 7982        # медиа по UDP (основной путь, один порт), открыть в фаерволе
+  tcp_port: 7981        # media over TCP (fallback), open in the firewall
+  udp_port: 7982        # media over UDP (primary, single port), open in the firewall
   use_external_ip: false
 audio:
   active_level: 52

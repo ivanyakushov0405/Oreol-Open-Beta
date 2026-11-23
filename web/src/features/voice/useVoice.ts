@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { VideoPresets, ConnectionQuality, DisconnectReason, Participant, RemoteTrack, Room, RoomEvent, Track, type LocalAudioTrack, type LocalTrackPublication, type LocalVideoTrack, type RemoteAudioTrack, type RemoteTrackPublication } from 'livekit-client';
-import { getToken } from '../../shared/api';
+
 import { getAudioPrefs, subscribeAudioPrefs } from '../../shared/audio/audioPrefs';
 import { playSound } from '../../shared/audio/sounds';
 import { createMicProcessor } from './micProcessor';
 import { getPeerVolume, subscribePeerVolume } from './peerVolume';
 import { VOICE_CHANGED, VOICE_LOCAL } from '../chat/useChat';
 import { FLIP_EVENT, getFacing, setFacing } from './camFacing';
+import { serverText, t } from '../../shared/i18n';
 
 export interface VoicePeer {
   identity: string;
@@ -15,23 +16,19 @@ export interface VoicePeer {
   micMuted: boolean;
   camera?: Track;
   screen?: Track;
-  /** Камера / демонстрация включены, но самого видео у нас нет (список из бэкенда, пока мы не в канале) — только для иконок. */
   camOn?: boolean;
   screenOn?: boolean;
-  /** Слышит ли участник других (для себя — состояние «Звук»; для других неизвестно). */
   deafened: boolean;
-  /** Зашёл с телефона/планшета — определяется по устройству, а не по ширине окна. */
   mobile?: boolean;
 }
 
-/** Телефон или планшет: по данным браузера об устройстве (не по размеру экрана). */
 export const IS_MOBILE_DEVICE: boolean = (() => {
   if (typeof navigator === 'undefined') return false;
   const uaData = (navigator as Navigator & { userAgentData?: { mobile?: boolean } }).userAgentData;
   if (uaData?.mobile) return true;
   const ua = navigator.userAgent;
   if (/Android|iPhone|iPad|iPod|Mobile|Windows Phone|Opera Mini|IEMobile/i.test(ua)) return true;
-  // iPadOS представляется как Mac — отличаем по сенсорному экрану
+  // iPadOS reports itself as a Mac; tell it apart by the touch screen.
   return /Macintosh/.test(ua) && navigator.maxTouchPoints > 1;
 })();
 
@@ -44,7 +41,6 @@ function toQuality(q: ConnectionQuality): Quality {
   return 'good';
 }
 
-/** Пробует понять, что участник заглушил звук: метаданные { deafened: true }. */
 function readDeafened(p: Participant) {
   try {
     return Boolean(p.metadata && JSON.parse(p.metadata).deafened);
@@ -53,7 +49,6 @@ function readDeafened(p: Participant) {
   }
 }
 
-/** Пинг: до 200 мс — хорошо, до 400 — средне, дальше — плохо (пороги под мобильный интернет). */
 export const PING_MEDIUM = 200;
 export const PING_BAD = 400;
 function linkQuality(q: Quality, rtt: number | null): Quality {
@@ -95,21 +90,16 @@ function snapshot(room: Room, localDeafened: boolean): VoicePeer[] {
   });
 }
 
-/** Захват микрофона: автоусиление (тихий голос подтягивается), шумо- и эхоподавление, моно. */
 const MIC_OPTIONS = { autoGainControl: true, noiseSuppression: true, echoCancellation: true, channelCount: 1 } as const;
-/** Опции захвата с выбранным в настройках микрофоном. */
 const micOptions = () => {
   const id = getAudioPrefs().inputId;
   return id ? { ...MIC_OPTIONS, deviceId: id } : { ...MIC_OPTIONS };
 };
 
-/** Реальный голосовой канал через LiveKit. */
-/** Голос, в котором пользователь был, — чтобы после перезагрузки страницы вернуться в него. */
 const LS_VOICE = 'oreol.voice';
 const LS_MIC_OFF = 'oreol.micOff';
-/** seen — когда вкладка последний раз была жива в голосе. */
 type SavedVoice = { server: string; startedAt: number; seen?: number };
-/** Вернуться в голос можно только после перезагрузки или короткого обрыва: закрыл вкладку и пришёл позже — в голос не закидываем. */
+/** Rejoin voice only after a reload or a short drop: closing the tab and coming back later does not rejoin. */
 const VOICE_RESUME_MS = 60_000;
 
 export function savedVoice(): SavedVoice | null {
@@ -131,28 +121,27 @@ function saveVoice(v: SavedVoice | null) {
     if (v) localStorage.setItem(LS_VOICE, JSON.stringify({ ...v, seen: Date.now() }));
     else localStorage.removeItem(LS_VOICE);
   } catch {
-    /* хранилище недоступно — просто не восстановим */
+    /* storage unavailable: rejoin is skipped */
   }
 }
 
-/** Событие «идёт проверка микрофона» (detail: true/false) — шлёт экран настроек звука. */
 export const MIC_TEST_EVENT = 'oreol:mic-test';
 
 const BYE = '{"t":"bye"}';
 
 export function useVoice(user: string) {
   const roomRef = useRef<Room | null>(null);
-  // Закрыли/перезагрузили страницу, будучи в канале: сервер уберёт нас, если не переподключимся за ~15 с
+  // Page closed or reloaded while in a channel: the server removes us unless we reconnect within ~15 s.
   useEffect(() => {
     const onHide = (e: PageTransitionEvent) => {
       if (e.persisted || !roomRef.current || !serverRef.current) return;
-      const body = JSON.stringify({ server: serverRef.current, auth: getToken() ?? '' });
+      const body = JSON.stringify({ server: serverRef.current });
       navigator.sendBeacon('/api/voice/leaving', new Blob([body], { type: 'text/plain' }));
-      // Собеседникам — «ухожу»: сервер уберёт нас только через ~15 с, а звук выхода у них должен прозвучать сразу
+      // Tell peers we are leaving: the server only removes us after ~15 s, but their leave sound should play now.
       try {
         void roomRef.current.localParticipant.publishData(new TextEncoder().encode(BYE), { reliable: true });
       } catch {
-        /* не успели — звук прозвучит, когда сервер уберёт участника */
+        /* too late: the sound plays when the server removes the participant */
       }
     };
     window.addEventListener('pagehide', onHide);
@@ -161,14 +150,12 @@ export function useVoice(user: string) {
   const audioBox = useRef<HTMLDivElement | null>(null);
   const deafRef = useRef(false);
   const serverRef = useRef<string | null>(null);
-  // Если до перезагрузки были в голосе — сразу показываем «Подключение…», а не пустое состояние
   const [state, setState] = useState<'idle' | 'connecting' | 'connected'>(() => (savedVoice() ? 'connecting' : 'idle'));
   const [reconnecting, setReconnecting] = useState(false);
   const [peers, setPeers] = useState<VoicePeer[]>([]);
   const [quality, setQuality] = useState<Quality>('good');
   const [error, setError] = useState<string | null>(null);
   const [deafened, setDeafened] = useState(false);
-  /** Микрофон можно выключить заранее, не заходя в канал: при входе он останется выключенным. */
   const [micWanted, setMicWanted] = useState(() => localStorage.getItem(LS_MIC_OFF) !== '1');
   const micWantedRef = useRef(micWanted);
   const setMicPref = (on: boolean) => {
@@ -178,12 +165,11 @@ export function useVoice(user: string) {
       if (on) localStorage.removeItem(LS_MIC_OFF);
       else localStorage.setItem(LS_MIC_OFF, '1');
     } catch {
-      /* приватный режим */
+      /* private mode */
     }
   };
   const [startedAt, setStartedAt] = useState<number | null>(() => savedVoice()?.startedAt ?? null);
   const [rtt, setRtt] = useState<number | null>(null);
-  /** Сервер, к голосу которого мы подключены (или подключаемся). */
   const [server, setServer] = useState<string | null>(() => savedVoice()?.server ?? null);
 
   if (!audioBox.current && typeof document !== 'undefined') {
@@ -197,13 +183,15 @@ export function useVoice(user: string) {
     const room = roomRef.current;
     if (!room) return;
     const next = snapshot(room, deafRef.current);
-    // События LiveKit сыплются пачками (подписка на трек, метаданные, говорящие…), а снимок часто тот же —
-    // новый массив перерисовывал всё приложение впустую
+    // LiveKit events come in bursts (track subscription, metadata, speakers) while the snapshot is often unchanged;
+    // a new array re-rendered the whole app for nothing.
     setPeers((prev) => (samePeers(prev, next) ? prev : next));
   }, []);
 
-  /** Звук собеседников идёт через WebAudio (webAudioMix): так громкость можно поднять выше 100%.
-   *  Аудио-элементы LiveKit держит заглушёнными — громкость и «заглушить всех» ставим усилением дорожки. */
+  /**
+   * Peer audio goes through WebAudio (webAudioMix) so volume can exceed 100%. LiveKit's audio elements stay muted;
+   * volume and "mute all" are applied as track gain.
+   */
   const audioTracks = useRef(new Map<RemoteAudioTrack, string>());
   const gainFor = (who: string) => (deafRef.current ? 0 : getAudioPrefs().outputVolume * getPeerVolume(who));
   const applyGains = useCallback(() => {
@@ -211,7 +199,6 @@ export function useVoice(user: string) {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const applyDeafen = useCallback((_on: boolean) => applyGains(), [applyGains]);
 
-  /** Громкость собеседников: общая громкость × личная громкость собеседника (меню по ПКМ, до 200%). */
   const applyVolume = useCallback((_v: number) => applyGains(), [applyGains]);
   useEffect(() => subscribePeerVolume(() => applyVolume(getAudioPrefs().outputVolume)), [applyVolume]);
 
@@ -219,7 +206,6 @@ export function useVoice(user: string) {
     const prev = roomRef.current;
     if (prev) {
       if (serverRef.current === serverId) return;
-      // Переход в голос другого сервера: сначала выходим из текущего.
       roomRef.current = null;
       await prev.disconnect();
     }
@@ -230,27 +216,26 @@ export function useVoice(user: string) {
     try {
       const res = await fetch('/api/token', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken() ?? ''}` },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ server: serverId, device: IS_MOBILE_DEVICE ? 'mobile' : 'desktop' }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Не удалось получить токен');
+      if (!res.ok) throw new Error(data.error ? serverText(data.error) : t('Не удалось получить токен'));
 
       const room = new Room({
-        // качество чужой камеры — под реальные пиксели плитки: на iPhone 1 CSS-пиксель = 3 точки экрана,
-        // а по умолчанию поток подбирался под CSS-размер — приходил слой втрое меньше и картинка была мутной
+        // Remote camera quality follows the tile's real pixels: on iPhone one CSS pixel is 3 device pixels,
+        // and sizing by CSS pixels delivered a layer three times smaller and a blurry picture.
         adaptiveStream: { pixelDensity: 'screen' },
         dynacast: true,
         audioCaptureDefaults: micOptions(),
-        // своя камера — 720p, 30 кадров (без явного размера телефоны часто снимали 640×480)
+        // Own camera at 720p 30 fps (without an explicit size phones often captured 640x480).
         videoCaptureDefaults: { resolution: VideoPresets.h720.resolution, ...(getAudioPrefs().videoId ? { deviceId: getAudioPrefs().videoId } : {}) },
         audioOutput: getAudioPrefs().outputId ? { deviceId: getAudioPrefs().outputId } : undefined,
         publishDefaults: { dtx: false, red: true, videoEncoding: { maxBitrate: 2_000_000, maxFramerate: 30 }, videoSimulcastLayers: [VideoPresets.h180, VideoPresets.h360] },
-        // звук собеседников — через WebAudio: личная громкость до 200% (усиление дорожки, а не volume элемента)
         webAudioMix: true,
-        // Перезагрузка страницы не должна выкидывать из канала: не отправляем «выход» при уходе со страницы.
-        // После перезагрузки заходим с тем же именем — LiveKit заменяет старое подключение новым,
-        // и остальные не видят выхода/входа. Если вкладку закрыли насовсем, сервер уберёт участника сам по таймауту.
+        // A reload must not drop us from the channel, so no "leave" is sent when the page unloads.
+        // After reload we join with the same identity: LiveKit replaces the old connection and others see no leave/join.
+        // If the tab is closed for good, the server removes the participant on timeout.
         disconnectOnPageLeave: false,
       });
       roomRef.current = room;
@@ -269,10 +254,10 @@ export function useVoice(user: string) {
         RoomEvent.ParticipantMetadataChanged,
       ] as const;
       events.forEach((ev) => room.on(ev, refresh));
-      // Звуки входа/выхода собеседников. Перезагрузка у собеседника = замена подключения с тем же именем
-      // (выход и вход почти одновременно) — такие пары не озвучиваем.
+      // Peer join/leave sounds. A peer reloading means the same identity reconnects
+      // (leave and join almost at once); such pairs stay silent.
       const leaveTimers = new Map<string, number>();
-      // кто уже «озвучен» как ушедший (по сигналу «ухожу») — когда сервер уберёт его позже, второй раз не звучит
+      // Peers already announced as gone (via the "bye" signal) do not sound again when the server removes them later.
       const announced = new Set<string>();
       const leaveSoon = (who: string, ms: number) => {
         window.clearTimeout(leaveTimers.get(who));
@@ -292,16 +277,16 @@ export function useVoice(user: string) {
           leaveTimers.delete(p.identity);
           return;
         }
-        announced.delete(p.identity); // ушёл (звук был) и вернулся — это новый вход
+        announced.delete(p.identity); // Left (sound played) and came back: a new join.
         playSound('peer-join');
       });
       room.on(RoomEvent.ParticipantDisconnected, (p: Participant) => {
-        if (room.remoteParticipants.has(p.identity)) return; // уже переподключился
-        if (announced.delete(p.identity)) return; // выход уже прозвучал по сигналу «ухожу»
-        // короткая пауза — только чтобы не озвучивать перезагрузку (выход и вход почти одновременно)
+        if (room.remoteParticipants.has(p.identity)) return;
+        if (announced.delete(p.identity)) return;
+        // A short pause only to keep reloads silent (leave and join almost at once).
         leaveSoon(p.identity, 700);
       });
-      // Собеседник закрыл/перезагрузил страницу: ждём чуть-чуть — если не вернулся, звучит выход
+      // A peer closed or reloaded the page: wait a little, and play the leave sound if they do not return.
       room.on(RoomEvent.DataReceived, (data: Uint8Array, who?: Participant) => {
         if (!who || new TextDecoder().decode(data) !== BYE) return;
         leaveSoon(who.identity, 2500);
@@ -331,9 +316,9 @@ export function useVoice(user: string) {
         setReconnecting(false);
       });
       room.on(RoomEvent.Disconnected, (reason?: DisconnectReason) => {
-        if (roomRef.current !== room) return; // старая комната после перехода на другой сервер
-        // Закрытие/перезагрузка вкладки — это CLIENT_INITIATED: запись оставляем, чтобы вернуться в голос.
-        // Выкинул сервер или связь не восстановилась — забываем.
+        if (roomRef.current !== room) return;
+        // Closing or reloading the tab is CLIENT_INITIATED: keep the record to rejoin voice.
+        // Kicked by the server or the connection did not recover: forget it.
         if (reason !== DisconnectReason.CLIENT_INITIATED) saveVoice(null);
         roomRef.current = null;
         serverRef.current = null;
@@ -352,21 +337,20 @@ export function useVoice(user: string) {
       } catch (err) {
         console.error('LiveKit connect failed', data.url, err);
         const why = err instanceof Error ? err.message : String(err);
-        throw new Error(`Не удалось подключиться к голосу (${data.url}): ${why}`);
+        throw new Error(t('Не удалось подключиться к голосу ({0}): {1}', { 0: data.url, 1: why }));
       }
       try {
         if (micWantedRef.current) await room.localParticipant.setMicrophoneEnabled(true, micOptions());
       } catch {
-        setError('Нет доступа к микрофону, вы в канале без звука');
+        setError(t('Нет доступа к микрофону, вы в канале без звука'));
       }
       await room.startAudio().catch(() => undefined);
-      // После перезагрузки браузер может не дать играть звук без жеста — включаем по первому клику/нажатию
+      // After reload the browser may block audio until a gesture; resume on the first click or tap.
       if (!room.canPlaybackAudio) {
         const unlock = () => void room.startAudio().catch(() => undefined);
         window.addEventListener('pointerdown', unlock, { once: true });
         window.addEventListener('keydown', unlock, { once: true });
       }
-      // пока подключались, из канала уже вышли
       if (roomRef.current !== room) {
         void room.disconnect();
         return;
@@ -378,7 +362,6 @@ export function useVoice(user: string) {
       if (resumeFrom == null) playSound('join');
       refresh();
     } catch (e) {
-      // вышли сами, пока подключались — это не ошибка
       if (serverRef.current !== serverId) return;
       roomRef.current?.disconnect();
       roomRef.current = null;
@@ -386,12 +369,12 @@ export function useVoice(user: string) {
       setServer(null);
       setState('idle');
       saveVoice(null);
-      setError(e instanceof Error ? e.message : 'Ошибка подключения к голосу');
+      setError(e instanceof Error ? e.message : t('Ошибка подключения к голосу'));
     }
   }, [user, refresh]);
 
-  // Пока в голосе — отмечаем, что вкладка жива: по этой отметке после перезагрузки возвращаемся в голос,
-  // а если вкладку закрыли и пришли позже минуты — нет
+  // While in voice, mark the tab alive: after a reload this mark brings us back to voice,
+  // but not if the tab was closed and reopened more than a minute later.
   useEffect(() => {
     if (state !== 'connected' || !server || startedAt == null) return;
     const mark = () => serverRef.current === server && roomRef.current && saveVoice({ server, startedAt });
@@ -409,15 +392,14 @@ export function useVoice(user: string) {
   const leave = useCallback(() => {
     saveVoice(null);
     if (!roomRef.current) {
-      // ещё не подключились (например, восстановление после перезагрузки отменено)
       setState('idle');
       setServer(null);
       serverRef.current = null;
     }
     const room = roomRef.current;
     if (!room) return;
-    // Звук выхода — сразу, а само отключение — когда он отзвучит: на iPhone остановка микрофона
-    // переключает аудио телефона, и звук посреди этого рвался. Интерфейс при этом выходит сразу.
+    // Play the leave sound first and disconnect when it ends: on iPhone stopping the microphone
+    // switches the phone's audio route and cut the sound. The UI leaves immediately.
     const connected = room.state === 'connected';
     if (connected) playSound('leave');
     roomRef.current = null;
@@ -427,9 +409,8 @@ export function useVoice(user: string) {
     setReconnecting(false);
     setPeers([]);
     setStartedAt(null);
-    // ещё подключаемся — прерываем сразу
     if (!connected) return void room.disconnect();
-    // собеседников больше не слышно и нас — тоже, хотя подключение ещё живо до конца звука
+    // Peers can no longer hear us or be heard, though the connection lives until the sound ends.
     audioTracks.current.forEach((_who, t) => t.setVolume(0));
     room.localParticipant.getTrackPublication(Track.Source.Microphone)?.mute().catch(() => undefined);
     window.setTimeout(() => {
@@ -437,7 +418,6 @@ export function useVoice(user: string) {
     }, 650);
   }, []);
 
-  // Микрофон и звук независимы: переключение одного не трогает другое.
   const toggleMic = useCallback(async () => {
     const room = roomRef.current;
     if (!room || room.state !== 'connected') {
@@ -452,13 +432,13 @@ export function useVoice(user: string) {
       setMicPref(next);
       playSound(next ? 'mic-on' : 'mic-off');
     } catch {
-      setError('Нет доступа к микрофону');
+      setError(t('Нет доступа к микрофону'));
     }
     refresh();
   }, [refresh]);
 
-  // Проверка микрофона в настройках: на время теста микрофон в звонке по-настоящему выключается
-  // (собеседники не слышат проверку, а виджет и панель показывают «выключен»), после — возвращается как было.
+  // Microphone test in settings: the call microphone is really muted for the duration
+  // (peers do not hear the test and the UI shows it as muted), then restored.
   useEffect(() => {
     let held = false;
     const onTest = (e: Event) => {
@@ -493,7 +473,7 @@ export function useVoice(user: string) {
     try {
       const id = getAudioPrefs().videoId;
       const turnOn = !room.localParticipant.isCameraEnabled;
-      // на телефоне без выбранного в настройках устройства — та камера, что была в прошлый раз (фронтальная по умолчанию)
+      // On phones without a camera chosen in settings, use the last one (front by default).
       if (turnOn && !id && IS_MOBILE_DEVICE) {
         await room.localParticipant.setCameraEnabled(true, { resolution: VideoPresets.h720.resolution, facingMode: getFacing() });
       } else {
@@ -501,13 +481,13 @@ export function useVoice(user: string) {
         await room.localParticipant.setCameraEnabled(turnOn, { resolution: VideoPresets.h720.resolution, ...(id ? { deviceId: id } : {}) });
       }
     } catch {
-      setError('Нет доступа к камере');
+      setError(t('Нет доступа к камере'));
     }
     refresh();
   }, [refresh]);
 
-  // Фронтальная ⇄ основная камера телефона: перезапускаем ту же дорожку с другой камерой —
-  // собеседники видят смену без выключения видео
+  // Switch front/back camera by restarting the same track with another camera,
+  // so peers see the change without the video turning off.
   useEffect(() => {
     let busy = false;
     const onFlip = async () => {
@@ -519,7 +499,7 @@ export function useVoice(user: string) {
         await track.restartTrack({ facingMode: next, resolution: VideoPresets.h720.resolution });
         setFacing(next);
       } catch {
-        setError('Не удалось переключить камеру');
+        setError(t('Не удалось переключить камеру'));
       } finally {
         busy = false;
         refresh();
@@ -537,12 +517,12 @@ export function useVoice(user: string) {
       await room.localParticipant.setScreenShareEnabled(next, { audio: true });
       if (room.localParticipant.isScreenShareEnabled === next) playSound(next ? 'share-on' : 'share-off');
     } catch {
-      /* пользователь отменил выбор экрана */
+      /* user cancelled the screen picker */
     }
     refresh();
   }, [refresh]);
 
-  // Зашли в войс или вышли — сообщаем всем сразу (через сокет чата), чтобы у других список обновился без задержки
+  // Joined or left voice: tell everyone through the chat socket so their lists update without delay.
   const wasIn = useRef(false);
   useEffect(() => {
     const inNow = state === 'connected';
@@ -550,7 +530,7 @@ export function useVoice(user: string) {
     wasIn.current = inNow;
   }, [state]);
 
-  // Пинг до сервера LiveKit: RTT активной ICE-пары WebRTC (запасной вариант — RTT сигнального канала).
+  // Ping to LiveKit: RTT of the active ICE candidate pair (fallback: signalling RTT).
   useEffect(() => {
     if (state !== 'connected') {
       setRtt(null);
@@ -567,9 +547,9 @@ export function useVoice(user: string) {
         try {
           const report = await t.getStats();
           if (!report) continue;
-          // Пара, через которую реально идёт трафик, — из статистики транспорта; иначе любая выбранная/номинированная.
-          // currentRoundTripTime у Chrome бывает 0 (ещё не было проверок связи или пара старая) — тогда берём
-          // среднее totalRoundTripTime / responsesReceived, а нули не показываем вовсе («0 мс» на десктопе).
+          // The pair actually carrying traffic comes from transport stats; otherwise any selected/nominated pair.
+          // Chrome sometimes reports currentRoundTripTime as 0 (no checks yet or a stale pair); then use
+          // totalRoundTripTime / responsesReceived and never show zero.
           let selectedId: string | undefined;
           report.forEach((r) => {
             if (r.type === 'transport' && (r as RTCTransportStats).selectedCandidatePairId) selectedId = (r as RTCTransportStats).selectedCandidatePairId;
@@ -590,7 +570,7 @@ export function useVoice(user: string) {
           });
           if (best != null) ms = Math.max(1, Math.round(best));
         } catch {
-          /* транспорт ещё не готов */
+          /* transport not ready yet */
         }
       }
       if (ms == null && engine?.client?.rtt && engine.client.rtt > 0) ms = Math.max(1, Math.round(engine.client.rtt));
@@ -604,7 +584,6 @@ export function useVoice(user: string) {
     };
   }, [state]);
 
-  // Смена устройств в настройках — сразу и в активном звонке.
   useEffect(() => {
     let last = getAudioPrefs();
     return subscribeAudioPrefs(() => {
@@ -618,7 +597,6 @@ export function useVoice(user: string) {
     });
   }, []);
 
-  // Обработка микрофона (громкость ввода + порог чувствительности) — процессор на дорожке LiveKit.
   useEffect(() => {
     if (state !== 'connected') return;
     let ac: AudioContext | null = null;
@@ -652,8 +630,8 @@ export function useVoice(user: string) {
     state,
     server,
     peers,
-    // Одна оценка связи на всё (статус, значок, точка, цвет пинга): худшее из оценки LiveKit и пинга.
-    // Раньше статус шёл от LiveKit, а пинг красился по своим порогам — «Подключено» зелёным рядом с красным пингом.
+    // One link quality for everything (status, icon, dot, ping color): the worse of LiveKit's estimate and ping.
+    // Status used to follow LiveKit while ping had its own thresholds, giving a green "Connected" next to a red ping.
     quality: linkQuality(quality, rtt),
     reconnecting,
     error,
@@ -670,20 +648,22 @@ export function useVoice(user: string) {
     toggleDeafen,
     toggleCamera,
     toggleScreen,
-    /** Дорожка своего микрофона (после обработки) — для индикатора уровня в виджете звонка. */
     micTrack: () => roomRef.current?.localParticipant.getTrackPublication(Track.Source.Microphone)?.track?.mediaStreamTrack,
   };
 }
 
 export type VoiceApi = ReturnType<typeof useVoice>;
 
-/** Кто сейчас в голосовом (для сайдбара, пока сами не подключились). */
 export type RosterEntry = { identity: string; isMuted: boolean; deafened?: boolean; camera?: boolean; screen?: boolean; mobile?: boolean };
 const NO_ROSTER: RosterEntry[] = [];
-/** seed — кто был с нами в канале, пока мы были в голосе (без нас). Сразу после выхода список ещё не загружен —
- *  показываем их, а не пустоту: раньше плитки на миг пропадали и появлялись заново («рваная» анимация выхода). */
-/** Последний известный состав войса каждого сервера: при смене сервера участники видны сразу, а не после запроса.
- *  Его же пополняет опрос меток над иконками серверов (useVoiceCounts). */
+/**
+ * seed: who was in the channel with us (excluding us). Right after leaving the list is not loaded yet,
+ * so show them instead of nothing; otherwise tiles vanished and reappeared.
+ */
+/**
+ * Last known voice roster per server, so switching servers shows people at once. Also fed by the
+ * server icon labels poll (useVoiceCounts).
+ */
 const rosterCache = new Map<string, RosterEntry[]>();
 
 export function useVoiceRoster(enabled: boolean, server: string, seed?: RosterEntry[]) {
@@ -700,16 +680,16 @@ export function useVoiceRoster(enabled: boolean, server: string, seed?: RosterEn
       try {
         const r = await fetch(`/api/voice/participants?server=${encodeURIComponent(server)}`);
         const d = await r.json();
-        // тот же состав — тот же массив: иначе раз в 1,5 с перерисовывалось всё приложение
+        // Same roster, same array: otherwise the whole app re-rendered every 1.5 s.
         const next: RosterEntry[] = d.participants ?? [];
         rosterCache.set(server, next);
         if (alive) setList((prev) => (prev && prev.server === server && JSON.stringify(prev.items) === JSON.stringify(next) ? prev : { server, items: next }));
       } catch {
-        /* бэкенд недоступен */
+        /* backend unavailable */
       }
     };
     load();
-    // чужой вход/выход — перечитываем сразу и ещё раз чуть позже (LiveKit убирает вышедшего не мгновенно)
+    // Someone else joined or left: refetch now and once more a bit later (LiveKit removes leavers with a delay).
     let again = 0;
     const onVoice = () => {
       void load();
@@ -717,8 +697,7 @@ export function useVoiceRoster(enabled: boolean, server: string, seed?: RosterEn
       again = window.setTimeout(() => void load(), 900);
     };
     window.addEventListener(VOICE_CHANGED, onVoice);
-    // Пока сам не в голосе, состав узнаём опросом — раньше раз в 5 с, и вошедшие появлялись с задержкой.
-    // Теперь чаще, а при возвращении на вкладку — сразу.
+    // While not in voice the roster is polled, more often than the old 5 s, and immediately when the tab becomes visible.
     const id = window.setInterval(() => document.visibilityState === 'visible' && load(), 1500);
     const onVis = () => document.visibilityState === 'visible' && load();
     document.addEventListener('visibilitychange', onVis);
@@ -732,14 +711,13 @@ export function useVoiceRoster(enabled: boolean, server: string, seed?: RosterEn
   }, [enabled, server]);
   if (list && list.server === server) return list.items;
   if (!enabled) return NO_ROSTER;
-  // Состав из голоса — только сразу после выхода из него (пока не пришёл список). Раньше он держался вечно:
-  // при смене сервера на миг показывался давно вышедший («призрак»), а если состава не было — пустота вместо кэша.
+  // The roster from our own voice session is only used right after leaving, until the list arrives. Kept forever, it
+  // showed long-gone "ghosts" when switching servers.
   const sd = seedRef.current;
   if (sd.server === server && Date.now() - sd.at < 4000) return sd.items;
   return rosterCache.get(server) ?? NO_ROSTER;
 }
 
-/** Сколько человек в голосовом канале каждого сервера — для меток над иконками серверов. */
 export function useVoiceCounts(servers: string[]) {
   const [counts, setCounts] = useState<Record<string, number>>({});
   const key = servers.join(',');

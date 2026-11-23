@@ -1,5 +1,7 @@
-/** Лёгкий отклик вибрацией. Android — navigator.vibrate. В Safari на iPhone (iOS 17.4+) vibrate нет,
- *  но нажатие на переключатель <input switch> даёт системный «тик» — нажимаем его программно через label. */
+/**
+ * Light haptic feedback. Android uses navigator.vibrate. Safari on iPhone (iOS 17.4+) has no vibrate, but toggling
+ * an <input switch> produces a system tick, so it is clicked programmatically through a label.
+ */
 let label: HTMLLabelElement | null = null;
 export function haptic() {
   try {
@@ -19,6 +21,6 @@ export function haptic() {
     }
     label.click();
   } catch {
-    /* отклик не обязателен */
+    /* haptics are optional */
   }
 }

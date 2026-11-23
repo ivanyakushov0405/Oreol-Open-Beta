@@ -1,9 +1,10 @@
 import { useEffect, type RefObject } from 'react';
 
-/** Уровень своего микрофона → CSS-переменная --lvl (0…1) и класс .speaking на кнопке; без перерисовок React.
- *  Подсветка и заполнение берутся из одного сигнала, поэтому всегда совпадают: раньше подсветка шла
- *  от детектора речи LiveKit, а заполнение — от анализатора, и они расходились.
- *  Дорожка — уже после шумового порога: что не уходит в звонок, то и не заполняет иконку. */
+/**
+ * Own microphone level as the --lvl CSS variable (0..1) and the .speaking class, without React re-renders.
+ * Highlight and fill come from one signal so they always agree. The track is taken after the noise gate:
+ * what does not reach the call does not fill the icon.
+ */
 export function useMicLevel(ref: RefObject<HTMLElement>, enabled: boolean, getTrack: () => MediaStreamTrack | undefined) {
   useEffect(() => {
     const el = ref.current;
@@ -18,8 +19,8 @@ export function useMicLevel(ref: RefObject<HTMLElement>, enabled: boolean, getTr
     let an: AnalyserNode | null = null;
     let src: MediaStreamAudioSourceNode | null = null;
     let timer = 0;
-    // что уже записано в DOM — пишем только заметные изменения: раньше --lvl менялся на каждом кадре
-    // (60 раз в секунду всё время звонка, даже в тишине), и телефон перерисовывал виджет с размытием без остановки
+    // Only noticeable changes are written to the DOM: --lvl used to change every frame (60 times a second for the
+    // whole call, even in silence) and the phone kept repainting the blurred widget.
     let shown = -1;
     let shownSpeaking = false;
     let track: MediaStreamTrack | undefined;
@@ -45,11 +46,11 @@ export function useMicLevel(ref: RefObject<HTMLElement>, enabled: boolean, getTr
       let s = 0;
       for (let i = 0; i < buf.length; i++) s += buf[i] * buf[i];
       const db = 20 * Math.log10(Math.sqrt(s / buf.length) || 1e-8);
-      const target = Math.max(0, Math.min(1, (db + 55) / 40)); // −55 дБ — пусто, −15 дБ — полная
-      lvl += (target - lvl) * (target > lvl ? 0.85 : 0.3); // быстро вверх, плавно вниз (шаг 50 мс)
-      if (target > 0.12) holdUntil = now + 350; // держим подсветку между словами
+      const target = Math.max(0, Math.min(1, (db + 55) / 40)); // -55 dB is empty, -15 dB is full.
+      lvl += (target - lvl) * (target > lvl ? 0.85 : 0.3); // Fast attack, slow release (50 ms step).
+      if (target > 0.12) holdUntil = now + 350; // Hold the highlight between words.
       if (lvl < 0.02) lvl = 0;
-      const q = Math.round(lvl * 20) / 20; // 5% шаг — глазу хватает, а записей в разы меньше
+      const q = Math.round(lvl * 20) / 20;
       if (q !== shown) {
         shown = q;
         el.style.setProperty('--lvl', String(q));
@@ -60,7 +61,7 @@ export function useMicLevel(ref: RefObject<HTMLElement>, enabled: boolean, getTr
         el.classList.toggle('speaking', sp);
       }
     };
-    // 20 раз в секунду вместо каждого кадра: анализатору хватает, а кадр не занят без нужды
+    // 20 times a second instead of every frame: enough for the analyser and keeps frames free.
     timer = window.setInterval(tick, 50);
     return () => {
       window.clearInterval(timer);

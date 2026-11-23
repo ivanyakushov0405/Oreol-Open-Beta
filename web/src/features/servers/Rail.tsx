@@ -4,8 +4,8 @@ import type { AppState } from '../../app/useAppState';
 import { Icon, LogoPeople } from '../../shared/icons';
 import type { ServerId } from '../../shared/model';
 import { useVoiceCounts } from '../voice/useVoice';
+import { t } from '../../shared/i18n';
 
-/* ---------- Рейл серверов ---------- */
 export function Rail({
   app,
   home,
@@ -20,11 +20,10 @@ export function Rail({
   noHome?: boolean;
 }) {
   const inVoice = app.voice.state === 'connected';
-  // Метка «в войсе N» над каждым сервером, где кто-то сидит (а не только где сидим мы)
   const counts = useVoiceCounts(app.servers.map((s) => s.id));
   const [tip, setTip] = useState<{ text: string; x: number; y: number } | null>(null);
   const hover = (text: string) => ({
-    // подсказка с названием — только для мыши: на телефоне палец «наводит» при каждом нажатии, и она лишь мешала
+    // Tooltip only for mouse: on phones every tap "hovers" and it just got in the way.
     onPointerEnter: (e: RPointerEvent<HTMLElement>) => {
       if (e.pointerType !== 'mouse') return;
       const r = e.currentTarget.getBoundingClientRect();
@@ -34,10 +33,9 @@ export function Rail({
   });
   return (
     <nav className="rail glass" onScroll={() => setTip(null)}>
-      {/* На телефоне личные сообщения — вкладка «Чаты» в таб-панели, на рейле их нет */}
       {!noHome && (
         <>
-          <button className={'rail-home' + (home ? ' on' : '')} aria-label="Личные сообщения" onClick={onHome} {...hover('Личные сообщения')}>
+          <button className={'rail-home' + (home ? ' on' : '')} aria-label={t('Личные сообщения')} onClick={onHome} {...hover(t('Личные сообщения'))}>
             <LogoPeople size={30} />
           </button>
           <div className="rail-sep" />
@@ -66,9 +64,9 @@ export function Rail({
       })}
       <button
         className="rail-add"
-        aria-label="Создать сервер"
-        {...hover('Создать сервер')}
-        onClick={() => app.notify('Создание серверов скоро будет')}
+        aria-label={t('Создать сервер')}
+        {...hover(t('Создать сервер'))}
+        onClick={() => app.notify(t('Создание серверов скоро будет'))}
       >
         <Icon name="plus" />
       </button>

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api, getToken, putUser, type PublicUser } from '../../shared/api';
+import { api, putUser, type PublicUser } from '../../shared/api';
 import { firstPhotoUrl, previewText, type ChatMessage, type Status } from '../../shared/model';
 
 type ServerEvent =
@@ -15,42 +15,37 @@ type ServerEvent =
   | { type: 'profile'; user: PublicUser }
   | { type: 'voice'; user: string };
 
-/** Вход/выход из войса — мгновенно всем через сокет чата (иначе другие узнавали только при следующем опросе).
- *  Своё событие отправляет один из открытых сокетов; приход чужого — событие окна, по нему перечитывают состав. */
+/**
+ * Voice join/leave goes to everyone through the chat socket at once, otherwise others only saw it on the next poll.
+ * One open socket sends our own event; others' events become a window event that triggers a roster refresh.
+ */
 export const VOICE_LOCAL = 'oreol:voice-local';
 export const VOICE_CHANGED = 'oreol:voice';
 let voiceSentAt = 0;
 
 const TYPING_TTL = 3500;
-/** Сколько сообщений сервер присылает за раз (история при входе и каждая подгрузка более старых). */
 const PAGE = 100;
 
-/** Реальный чат комнаты: история из SQLite, новые сообщения, «печатает», статусы подключённых. */
-/** Длительность анимации удаления сообщения (как у @keyframes msg-out). */
 const MSG_OUT_MS = 450;
 
-/** Последние ленты комнат за эту сессию: чат открывается сразу и не пустеет без связи. */
 const chatCache = new Map<string, { messages: ChatMessage[]; pinned: ChatMessage[]; reads: Record<string, number> }>();
 
 export function useChat(room: string | null, user: string) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  /** Все закреплённые в комнате (не только из загруженной истории). */
   const [pinned, setPinned] = useState<ChatMessage[]>([]);
-  /** Что показывает лента: весь чат или только закреплённые. */
   const [view, setView] = useState<'all' | 'pinned'>('all');
+  /** Request for ChatBody to scroll to a message, set by reveal(). */
+  const [jumpReq, setJumpReq] = useState<{ id: number; n: number } | null>(null);
   const [statuses, setStatuses] = useState<Record<string, Status>>({});
   const [typing, setTyping] = useState<Record<string, number>>({});
   const [connected, setConnected] = useState(false);
-  /** До какого сообщения дочитал каждый участник комнаты — для галочек «прочитано». */
   const [reads, setReads] = useState<Record<string, number>>({});
   const readSent = useRef(0);
-  /** Новичок в чате (ни разу не отмечал прочитанное): история до его прихода не считается непрочитанной. */
+  /** Newcomer to the chat (never marked anything read): history before they joined does not count as unread. */
   const [floor, setFloor] = useState(0);
-  /** Комната, чья история сейчас загружена (null — ещё не пришла). */
   const [loaded, setLoaded] = useState<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const lastTypingSent = useRef(0);
-  /** Есть ли в комнате сообщения старше загруженных (подгружаются при прокрутке вверх). */
   const [hasMore, setHasMore] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const olderBusy = useRef(false);
@@ -72,7 +67,7 @@ export function useChat(room: string | null, user: string) {
 
   useEffect(() => {
     if (!room || !user) return;
-    // Комнату уже открывали — сразу показываем последнюю известную ленту, пока сокет (пере)подключается
+    // A room opened before shows its last known list right away while the socket (re)connects.
     const cached = chatCache.get(room);
     setMessages(cached?.messages ?? []);
     setPinned(cached?.pinned ?? []);
@@ -90,8 +85,7 @@ export function useChat(room: string | null, user: string) {
 
     const open = () => {
       const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-      // Кто пишет — сервер узнаёт по токену сессии, а не по имени из адреса
-      const ws = new WebSocket(`${proto}://${location.host}/api/ws/${room}?token=${encodeURIComponent(getToken() ?? '')}`);
+      const ws = new WebSocket(`${proto}://${location.host}/api/ws/${room}`);
       wsRef.current = ws;
       ws.onopen = () => {
         attempt = 0;
@@ -100,7 +94,7 @@ export function useChat(room: string | null, user: string) {
       ws.onmessage = (e) => {
         const ev = JSON.parse(e.data) as ServerEvent;
         if (ev.type === 'history') {
-          // переподключение: уже подгруженные более старые сообщения не выбрасываем
+          // On reconnect keep the older messages already loaded.
           const first = ev.messages.length ? Number(ev.messages[0].id) : Infinity;
           const older = msgsRef.current.filter((m) => Number(m.id) < first && !m.leaving);
           setMessages(older.length ? [...older, ...ev.messages] : ev.messages);
@@ -110,7 +104,7 @@ export function useChat(room: string | null, user: string) {
           setReads(ev.reads ?? {});
           readSent.current = ev.reads?.[user] ?? 0;
           if (ev.reads?.[user] == null) {
-            // запоминаем «точку входа» на устройстве, чтобы после перезагрузки старое снова не стало новым
+            // Remember the join point on this device so old messages do not become new again after reload.
             const key = `oreol.chatFloor.${user}.${room}`;
             const saved = localStorage.getItem(key);
             let f = Number(saved) || 0;
@@ -119,7 +113,7 @@ export function useChat(room: string | null, user: string) {
               try {
                 localStorage.setItem(key, String(f));
               } catch {
-                /* хранилище недоступно */
+                /* ignore */
               }
             }
             setFloor(f);
@@ -132,7 +126,6 @@ export function useChat(room: string | null, user: string) {
           setPinned(set);
         } else if (ev.type === 'update') {
           const m = ev.message;
-          // правка/закреп: само сообщение и короткие копии в ответах на него
           const patch = (list: ChatMessage[]) =>
             list.map((x) =>
               x.id === m.id ? m : x.reply && x.reply.id === m.id ? { ...x, reply: { id: m.id, user: m.user, content: previewText(m).slice(0, 200), photo: firstPhotoUrl(m.attachments) ?? null } } : x,
@@ -145,7 +138,6 @@ export function useChat(room: string | null, user: string) {
         } else if (ev.type === 'deleted') {
           const gone = new Set(ev.ids.map(String));
           const drop = (list: ChatMessage[]) => {
-            // удалённые ответы больше не считаются у исходных сообщений
             const less = new Map<string, number>();
             list.forEach((x) => {
               if (gone.has(String(x.id)) && x.reply && !x.sys) less.set(String(x.reply.id), (less.get(String(x.reply.id)) ?? 0) + 1);
@@ -155,7 +147,7 @@ export function useChat(room: string | null, user: string) {
               .filter((x) => !gone.has(String(x.id)))
               .map((x) => (x.reply && gone.has(String(x.reply.id)) ? { ...x, reply: { id: x.reply.id, deleted: true } } : x));
           };
-          // сначала сообщение уходит с анимацией (см. .msg-out), потом исчезает из ленты
+          // The message animates out first (see .msg-out), then leaves the list.
           setMessages((list) => list.map((x) => (gone.has(String(x.id)) ? { ...x, leaving: true } : x)));
           setPinned(drop);
           window.setTimeout(() => setMessages(drop), MSG_OUT_MS);
@@ -163,7 +155,6 @@ export function useChat(room: string | null, user: string) {
           onForwarded.current?.(ev.to, ev.count);
         } else if (ev.type === 'message') {
           const nm = ev.message;
-          // новый ответ — +1 к счётчику ответов у исходного сообщения
           const bump = (list: ChatMessage[]) =>
             nm.reply && !nm.sys ? list.map((x) => (String(x.id) === String(nm.reply!.id) ? { ...x, replies: (x.replies ?? 0) + 1 } : x)) : list;
           setMessages((m) => [...bump(m), nm]);
@@ -179,7 +170,7 @@ export function useChat(room: string | null, user: string) {
         else if (ev.type === 'voice') window.dispatchEvent(new Event(VOICE_CHANGED));
       };
       ws.onclose = () => {
-        // старый сокет, на смену которому уже открыли новый (см. wake), ничего не трогает
+        // An old socket already replaced by a new one (see wake) must not touch state.
         if (wsRef.current !== ws) return;
         setConnected(false);
         if (closed) return;
@@ -188,8 +179,8 @@ export function useChat(room: string | null, user: string) {
       };
     };
     open();
-    // Вернулись в приложение (телефон снимал его с экрана — сокет за это время умирает) или снова появилась сеть:
-    // переподключаемся сразу, а не по таймеру повторов (он успевал дорасти до 8 с)
+    // Back in the app (the phone killed the socket in the background) or online again:
+    // reconnect now instead of waiting for the retry timer, which could reach 8 s.
     const wake = () => {
       if (closed || document.visibilityState !== 'visible') return;
       const ws = wsRef.current;
@@ -217,12 +208,10 @@ export function useChat(room: string | null, user: string) {
     };
   }, [room, user]);
 
-  // Последняя лента комнаты — в кэш (показывается сразу при повторном открытии и пока нет связи)
   useEffect(() => {
     if (room && loaded === room) chatCache.set(room, { messages: messages.filter((m) => !m.leaving), pinned, reads });
   }, [room, loaded, messages, pinned, reads]);
 
-  // Чистим устаревшие «печатает».
   useEffect(() => {
     const id = window.setInterval(() => {
       setTyping((t) => {
@@ -249,14 +238,10 @@ export function useChat(room: string | null, user: string) {
     },
     [raw],
   );
-  /** Изменить своё сообщение. */
   const edit = useCallback((id: number | string, content: string) => !!content.trim() && raw({ type: 'edit', id, content: content.trim() }), [raw]);
-  /** Удалить: у себя (любые) или у всех (только свои — проверяет сервер). */
   const remove = useCallback((ids: (number | string)[], scope: 'me' | 'all') => raw({ type: 'delete', ids, scope }), [raw]);
   const pin = useCallback((id: number | string, on: boolean) => raw({ type: 'pin', id, pinned: on }), [raw]);
-  /** Поставить или снять реакцию (сервер решает по тому, стоит ли она уже). */
   const react = useCallback((id: number | string, emoji: string) => raw({ type: 'react', id, emoji }), [raw]);
-  /** Переслать сообщения в другую комнату; ответ сервера придёт в onForwarded. */
   const onForwarded = useRef<((to: string, count: number) => void) | null>(null);
   const forward = useCallback(
     (ids: (number | string)[], to: string, done?: (to: string, count: number) => void) => {
@@ -266,7 +251,6 @@ export function useChat(room: string | null, user: string) {
     [raw],
   );
 
-  /** Отметить комнату прочитанной до сообщения id (отправляется только при сдвиге вперёд). */
   const markRead = useCallback(
     (id: number | string) => {
       const n = Number(id);
@@ -284,7 +268,6 @@ export function useChat(room: string | null, user: string) {
     ws.send(JSON.stringify({ type: 'typing' }));
   }, []);
 
-  /** Подгрузить сообщения старше самого старого загруженного (прокрутили ленту к началу). */
   const loadOlder = useCallback(async () => {
     const r = roomRef.current;
     if (!r || olderBusy.current || !hasMore) return;
@@ -301,23 +284,54 @@ export function useChat(room: string | null, user: string) {
       });
       setHasMore(d.more);
     } catch {
-      /* нет связи — попробуем при следующей прокрутке */
+      /* ignore */
     } finally {
       olderBusy.current = false;
       setLoadingOlder(false);
     }
   }, [messages, hasMore]);
 
+  /** Loads history back to the message, then asks the open chat to scroll to it. False if it is gone. */
+  const reveal = useCallback(async (id: number | string) => {
+    const r = roomRef.current;
+    const target = Number(id);
+    if (!r || !target) return false;
+    const has = () => msgsRef.current.some((m) => Number(m.id) === target);
+    olderBusy.current = true;
+    try {
+      for (let i = 0; i < 25 && !has(); i++) {
+        const oldest = msgsRef.current.find((m) => !m.leaving && Number(m.id) > 0);
+        if (!oldest || Number(oldest.id) < target) break;
+        const d = await api<{ messages: ChatMessage[]; more: boolean }>(`/api/chat/${encodeURIComponent(r)}/history?before=${oldest.id}&limit=200`);
+        if (roomRef.current !== r) return false;
+        const have = new Set(msgsRef.current.map((m) => String(m.id)));
+        const merged = [...d.messages.filter((m) => !have.has(String(m.id))), ...msgsRef.current];
+        msgsRef.current = merged;
+        setMessages(merged);
+        setHasMore(d.more);
+        if (!d.more) break;
+      }
+    } catch {
+      return false;
+    } finally {
+      olderBusy.current = false;
+    }
+    if (!has()) return false;
+    setView('all');
+    setJumpReq({ id: target, n: Date.now() });
+    return true;
+  }, []);
+
   return {
     messages,
+    reveal,
+    jumpReq,
     hasMore,
     loadingOlder,
     loadOlder,
-    /** Комната загруженной истории: пока она не совпала с открытой, в messages может быть прошлый чат. */
     room: loaded,
     pinned,
     reads,
-    /** До какого сообщения прочитал сам пользователь (с учётом «точки входа» новичка). */
     myRead: Math.max(reads[user] ?? 0, floor),
     markRead,
     view,

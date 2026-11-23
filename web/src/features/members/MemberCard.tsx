@@ -4,10 +4,10 @@ import { Icon } from '../../shared/icons';
 import { handleOf, nameColor, type Status } from '../../shared/model';
 import { Avatar, Banner } from '../../shared/ui/Avatar';
 import { Modal } from '../../shared/ui/Modal';
+import { locale, t } from '../../shared/i18n';
 
-const sinceFmt = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
+const sinceFmt = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'long', year: 'numeric' });
 
-/** Карточка участника (Figma «Member card (open)», 300px): баннер 84, аватар 72, блок сведений и две кнопки. */
 export function MemberCard({
   name,
   me,
@@ -26,12 +26,9 @@ export function MemberCard({
   name: string;
   me: boolean;
   status?: Status;
-  /** Мобильная версия: карточка выезжает снизу шторкой (Figma «Mobile · Member sheet»). */
   sheet?: boolean;
-  /** Иконка сервера для блока «Общие серверы» в развёрнутой шторке. */
   serverIcon?: { short: string; gradient: string };
   onCall?: () => void;
-  /** Телефон: содержимое развёрнутой шторки — полный профиль, как окно профиля на десктопе. */
   full?: ReactNode;
   at: { x: number; y: number };
   activity: string;
@@ -44,22 +41,20 @@ export function MemberCard({
   const profile = useUser(name);
   const display = profile?.displayName || name;
   const [pos, setPos] = useState({ left: at.x, top: at.y });
-  // Шторка: тянуть за верх вверх — развернуть, вниз — свернуть/закрыть (Figma «Member sheet · expanded»)
+  // Sheet: drag the top up to expand, down to collapse or close.
   const [expanded, setExpandedState] = useState(false);
-  // Доп. блоки показываем сразу при разворачивании и убираем только после того, как шторка свернулась
+  // Extra blocks appear immediately on expand and are removed only after the sheet has collapsed.
   const [extras, setExtras] = useState(false);
-  // Высота свёрнутой шторки — меряем один раз, чтобы анимировать высоту между двумя числами
+  // Collapsed sheet height, measured once so the animation runs between two numbers.
   const [h0, setH0] = useState<number | null>(null);
   useLayoutEffect(() => {
     if (sheet && ref.current) setH0(ref.current.offsetHeight);
   }, [sheet]);
   const expRef = useRef(false);
-  /** Карточка появилась при сворачивании из профиля — для обратной анимации. */
   const [back, setBack] = useState(false);
   const setExpanded = (v: boolean | ((x: boolean) => boolean)) => {
     setExpandedState((x) => {
       const next = typeof v === 'function' ? v(x) : v;
-      // Разворот — сразу полный профиль; сворот — сразу карточка, она «собирается» обратно, пока шторка опускается
       if (next) {
         setExtras(true);
         setBack(false);
@@ -86,7 +81,7 @@ export function MemberCard({
     try {
       localStorage.setItem(noteKey, v);
     } catch {
-      /* хранилище недоступно */
+      /* ignore */
     }
   };
   const grab = {
@@ -126,7 +121,7 @@ export function MemberCard({
         className="popover-backdrop"
         onClick={onClose}
         onContextMenu={(e) => {
-          // ПКМ мимо карточки: закрываем её и передаём ПКМ тому, что под курсором (например, меню пользователя)
+          // Right click outside the card: close it and pass the click to whatever is under the cursor (e.g. the user menu).
           e.preventDefault();
           const { clientX, clientY } = e;
           const self = e.currentTarget;
@@ -140,8 +135,8 @@ export function MemberCard({
         ref={ref}
         style={
           sheet
-            ? // Шторка всегда полной высоты, свёрнутая — сдвинута вниз так, что видна только карточка.
-              // Разворот — сдвиг (transform), а не высота: высота перекладывала всю шторку на каждом кадре — «мало кадров».
+            ? // The sheet is always full height; collapsed it is shifted down so only the card shows.
+              // Expanding moves it with transform, not height: animating height relaid the whole sheet every frame.
               ((h0 === null
                 ? { transform: drag > 0 ? `translateY(${drag}px)` : undefined }
                 : {
@@ -155,10 +150,10 @@ export function MemberCard({
           if (sheet && e.target === e.currentTarget && (e.propertyName === 'transform' || e.propertyName === 'height') && !expanded) setExtras(false);
         }}
         role="dialog"
-        aria-label={`Профиль ${name}`}
+        aria-label={t('Профиль {0}', { 0: name })}
       >
         {sheet && (
-          <div className="sheet-handle" {...grab} aria-label={expanded ? 'Свернуть' : 'Развернуть'} role="button">
+          <div className="sheet-handle" {...grab} aria-label={expanded ? t('Свернуть') : t('Развернуть')} role="button">
             <span className="sheet-grab" aria-hidden="true" />
           </div>
         )}
@@ -180,48 +175,47 @@ export function MemberCard({
               {activity}
             </span>
           </div>
-          {/* «Позвонить» — только в чужой карточке */}
           {sheet && extras && !me && (
             <div className="mc-actions">
               <button type="button" className="mc-btn" onClick={onCall}>
                 <Icon name="voice" size={16} />
-                Позвонить
+                {t('Позвонить')}
               </button>
             </div>
           )}
           <div className="mc-info">
             {profile?.bio && (
               <section>
-                <div className="mc-over">О себе</div>
+                <div className="mc-over">{t('О себе')}</div>
                 <p className="mc-bio">{profile.bio}</p>
               </section>
             )}
             <section>
-              <div className="mc-over">Ник на сервере</div>
+              <div className="mc-over">{t('Ник на сервере')}</div>
               <div className="mc-value">
                 {name} · {serverName}
               </div>
             </section>
             <section>
-              <div className="mc-over">Роли</div>
+              <div className="mc-over">{t('Роли')}</div>
               <div className="mc-roles">
                 <span className="mc-role">
                   <i style={{ background: 'var(--role-everyone, #5c7590)' }} />
                   @everyone
                 </span>
-                {me && <span className="mc-role">Это вы</span>}
+                {me && <span className="mc-role">{t('Это вы')}</span>}
               </div>
             </section>
             <section>
-              <div className="mc-over">На сервере с</div>
-              <div className="mc-value muted">{sinceFmt.format(since).replace(' г.', '')}</div>
+              <div className="mc-over">{t('На сервере с')}</div>
+              <div className="mc-value muted">{sinceFmt.format(since).replace(t(' г.'), '')}</div>
             </section>
           </div>
           {sheet && extras && (
             <>
               <div className="mc-info">
                 <section>
-                  <div className="mc-over">Общие серверы: 1</div>
+                  <div className="mc-over">{t('Общие серверы: 1')}</div>
                   <div className="mc-server">
                     <span className="mc-server-ico" style={{ background: serverIcon?.gradient }}>
                       {serverIcon?.short}
@@ -237,25 +231,23 @@ export function MemberCard({
               </div>
               <div className="mc-info">
                 <section>
-                  <div className="mc-over">Заметка</div>
+                  <div className="mc-over">{t('Заметка')}</div>
                   <textarea
                     className="mc-note"
                     rows={2}
                     value={note}
-                    placeholder="Нажмите, чтобы добавить заметку. Её видите только вы"
+                    placeholder={t('Нажмите, чтобы добавить заметку. Её видите только вы')}
                     onChange={(e) => saveNote(e.target.value)}
                   />
                 </section>
               </div>
             </>
           )}
-          {/* Своя карточка — переход к редактированию профиля. У чужих на телефоне «Профиль» не нужен:
-              карточка разворачивается жестом/тапом по язычку */}
           {(me || !sheet) && (
             <div className={'mc-actions' + (sheet && extras && !me ? ' hidden' : '')}>
               <button type="button" className={'mc-btn' + (me ? ' primary' : '')} onClick={onProfile}>
                 {me && <Icon name="settings" size={16} />}
-                {me ? 'Редактировать профиль' : 'Профиль'}
+                {me ? t('Редактировать профиль') : t('Профиль')}
               </button>
             </div>
           )}

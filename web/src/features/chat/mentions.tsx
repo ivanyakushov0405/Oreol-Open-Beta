@@ -3,15 +3,12 @@ import { userByTag } from '../../shared/api';
 import { cleanText, handleOf, MENTION_ALL } from '../../shared/model';
 import { openProfile } from '../profile/profile';
 
-/** Событие «упомянуть пользователя» (detail: имя) — поле ввода вставляет его @юзернейм. */
 export const MENTION_EVENT = 'oreol:mention';
 
 export const LONG_PRESS_MS = 420;
 
-/** @юзернейм в тексте сообщения. */
-// латиница и кириллица; точка в конце («@ivan.») к упоминанию не относится
+// Latin and Cyrillic; a trailing dot ("@ivan.") is not part of the mention.
 const MENTION_RE = /(^|[^\p{L}\p{N}_.@])(@[\p{L}\p{N}_](?:[\p{L}\p{N}._]*[\p{L}\p{N}_])?)/giu;
-/** Сообщение зовёт меня: по юзернейму или через @everyone / @here. */
 export function mentionsMe(text: string, myTag: string) {
   for (const m of text.matchAll(MENTION_RE)) {
     const t = m[2].toLowerCase();
@@ -19,10 +16,8 @@ export function mentionsMe(text: string, myTag: string) {
   }
   return false;
 }
-/** Ссылка в тексте: http(s)://… или www.…; знаки препинания в конце к ней не относятся. */
 const URL_RE = /(?<![A-Za-z0-9_./@])(?:https?:\/\/|www\.)[^\s<>"]+[^\s<>".,;:!?)\]}'»]/gi;
 export const linkHref = (u: string) => (/^https?:/i.test(u) ? u : 'https://' + u);
-/** Первая ссылка сообщения — для карточки предпросмотра. */
 export function firstLink(text: string) {
   const m = text.match(URL_RE);
   return m ? linkHref(m[0]) : null;
@@ -50,7 +45,6 @@ function withLinks(text: string, keyBase: number): ReactNode[] {
   if (last < text.length) out.push(text.slice(last));
   return out;
 }
-/** Текст с подсвеченными упоминаниями (циановые; своё — с подложкой). */
 export function withMentions(text: string, myTag: string): ReactNode {
   text = cleanText(text);
   const out: ReactNode[] = [];

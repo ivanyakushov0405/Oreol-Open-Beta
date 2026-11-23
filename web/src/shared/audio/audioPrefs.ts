@@ -1,29 +1,19 @@
 import { useSyncExternalStore } from 'react';
 
-/** Настройки звука, сохраняются на этом устройстве. */
 export interface AudioPrefs {
-  /** deviceId микрофона ('' — системный по умолчанию). */
   inputId: string;
-  /** deviceId динамиков/наушников ('' — системный по умолчанию). */
   outputId: string;
-  /** Определять чувствительность автоматически (без шумового порога). */
   autoSensitivity: boolean;
-  /** Порог голоса в дБ (SENS_MIN…SENS_MAX): тише — микрофон не передаёт звук. */
   sensitivity: number;
-  /** Громкость микрофона, 0…2 (1 = как есть). */
   inputVolume: number;
-  /** Громкость собеседников, 0…1. */
   outputVolume: number;
-  /** deviceId камеры ('' — по умолчанию). */
   videoId: string;
-  /** Звуки входа/выхода, микрофона, наушников и демонстрации. */
   sounds: boolean;
-  /** Громкость звуков интерфейса, 0…1. */
   soundVolume: number;
 }
 
 const KEY = 'oreol.audio';
-/** Диапазон порога: речь после автоусиления обычно −35…−15 дБ, поэтому 0 дБ (ничего не проходит) недоступен. */
+/** Threshold range: speech after auto gain is usually -35..-15 dB, so 0 dB (nothing passes) is not offered. */
 export const SENS_MIN = -80;
 export const SENS_MAX = -15;
 const DEFAULTS: AudioPrefs = {
@@ -61,7 +51,7 @@ export function setAudioPrefs(patch: Partial<AudioPrefs>) {
   try {
     localStorage.setItem(KEY, JSON.stringify(prefs));
   } catch {
-    /* хранилище недоступно */
+    /* storage unavailable */
   }
   listeners.forEach((l) => l());
 }
@@ -77,10 +67,8 @@ export function useAudioPrefs() {
   return useSyncExternalStore(subscribeAudioPrefs, getAudioPrefs);
 }
 
-/** Можно ли выбрать устройство вывода (Chrome/Edge — да, Firefox/Safari — частично). */
 export const canPickOutput = typeof HTMLMediaElement !== 'undefined' && 'setSinkId' in HTMLMediaElement.prototype;
 
-/** Уровень сигнала в дБ (−100…0) по анализатору. */
 export function readLevel(an: AnalyserNode, buf: Float32Array<ArrayBuffer>) {
   an.getFloatTimeDomainData(buf);
   let sum = 0;

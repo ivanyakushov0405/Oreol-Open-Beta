@@ -9,12 +9,12 @@ import { userMenuProps } from '../members/userMenu';
 import { openProfile } from '../profile/profile';
 import { LinkPreview } from './LinkPreview';
 import { firstLink, LONG_PRESS_MS, mentionsMe, withMentions } from './mentions';
-import { PhotoGrid, PhotoViewer, photosWidth } from './Photos';
+import { FileList, PhotoGrid, PhotoViewer, photosWidth } from './Photos';
+import { locale, t } from '../../shared/i18n';
 
-const timeFmt = new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit' });
-const dayFmt = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long' });
+const timeFmt = new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit' });
+const dayFmt = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'long' });
 
-/** Время оригинала пересланного сообщения: в тот же день — только часы, иначе с датой. */
 function fwdTime(orig: Date, msg: Date) {
   const t = timeFmt.format(orig);
   return orig.toDateString() === msg.toDateString() ? t : `${dayFmt.format(orig)}, ${t}`;
@@ -24,45 +24,44 @@ function dayLabel(d: Date) {
   const today = new Date();
   const y = new Date();
   y.setDate(today.getDate() - 1);
-  if (d.toDateString() === today.toDateString()) return 'Сегодня';
-  if (d.toDateString() === y.toDateString()) return 'Вчера';
+  if (d.toDateString() === today.toDateString()) return t('Сегодня');
+  if (d.toDateString() === y.toDateString()) return t('Вчера');
   return dayFmt.format(d);
 }
 
-/** Действия с сообщением из ленты (меню по ПКМ / долгому нажатию, выделение, переход к оригиналу ответа). */
 export interface MessageActions {
-  /** row — строка сообщения, если меню открыли долгим нажатием (телефон: оно поднимается над размытым экраном). */
   onMenu?: (m: ChatMessage, x: number, y: number, row?: HTMLElement, lift?: boolean) => void;
-  /** Свайп сообщения влево (телефон) — ответить на него. */
   onReply?: (m: ChatMessage) => void;
-  /** Нажали на реакцию под сообщением — поставить такую же или снять свою. */
   onReact?: (m: ChatMessage, emoji: string) => void;
-  /** Режим выделения: нажатие отмечает сообщение. */
   selecting?: boolean;
   selected?: Set<string>;
   onToggle?: (m: ChatMessage) => void;
-  /** Нажали на цитату ответа — перейти к оригиналу. */
   onJump?: (id: number | string) => void;
-  /** Подсветить и прокрутить к сообщению: меняется n — переход повторяется. */
   focus?: { id: number | string; n: number } | null;
-  /** Сообщает, какой закреп показать в плашке (id; 0 — среди загруженных подходящего нет). */
   onView?: (pinId: number) => void;
-  /** Свои сообщения с id ≤ этого прочитаны кем-то из собеседников (две галочки). */
   readUpTo?: number;
-  /** Линия «Новое» — перед первым чужим сообщением с id больше этого (что было прочитано при открытии чата). */
   newAfter?: number;
-  /** В комнате есть сообщения старше загруженных — подгружаются, когда ленту долистали к началу. */
   more?: boolean;
   loadingOlder?: boolean;
   onOlder?: () => void;
 }
 
-type ListProps = { messages: ChatMessage[]; me: string; empty: ReactNode } & MessageActions;
+type ListProps = { messages: ChatMessage[]; me: string; empty: ReactNode; room?: string } & MessageActions;
 
-/** Лента перерисовывается только когда меняется то, что в ней видно (сообщения, выделение, прочтения…).
- *  Раньше любое обновление приложения — кто-то заговорил в войсе, печатает, сменился онлайн — заново строило
- *  все сообщения с упоминаниями, фото и цитатами; на телефоне это и давало подвисания.
- *  Обработчики (они новые на каждой отрисовке ChatBody) подменяем постоянными, которые зовут свежие. */
+/**
+ * Messages rendered at once and added per step when scrolled to the top. The rest of loaded history stays
+ * in memory: a long list in the DOM made scrolling and loading stutter on phones.
+ */
+const WINDOW = 60;
+const STEP = 40;
+/** Never keep more rows than this in the DOM; rows far from the viewport go back to memory. */
+const MAX_ROWS = 140;
+
+/**
+ * The list re-renders only when what it shows changes. Previously any app update (someone speaking, typing,
+ * presence) rebuilt every message and caused stalls on phones. Handlers, new on each ChatBody render,
+ * are replaced with stable ones that call the latest version.
+ */
 export function MessageList(props: ListProps) {
   const latest = useRef(props);
   latest.current = props;
@@ -94,7 +93,6 @@ export function MessageList(props: ListProps) {
 
 const MessageListView = memo(MessageListImpl, (a, b) => {
   for (const k of Object.keys({ ...a, ...b }) as (keyof ListProps)[]) {
-    // «пусто» — разметка, новая на каждой отрисовке; важна, только когда сообщений нет
     if (k === 'empty') {
       if (b.messages.length === 0) return false;
       continue;
@@ -105,7 +103,8 @@ const MessageListView = memo(MessageListImpl, (a, b) => {
 });
 
 function MessageListImpl({
-  messages,
+  messages: all,
+  room = '',
   me,
   empty,
   onMenu,
@@ -124,18 +123,92 @@ function MessageListImpl({
   onOlder,
 }: ListProps) {
   const ref = useRef<HTMLDivElement>(null);
+  // Rendered window of loaded history, from id floor to id ceil (null: up to the newest).
+  // Every insertion into a long list made the browser restyle the whole page and scrolling stuttered on phones.
+  // Ids instead of indexes, so messages loaded above or arriving below do not shift the window.
+  const [win, setWin] = useState<{ room: string; floor: number; ceil: number | null } | null>(null);
+  const cur = win && win.room === room ? win : null;
+  const [firstIdx, endIdx] = useMemo(() => {
+    const n = all.length;
+    if (!cur) return [Math.max(0, n - WINDOW), n];
+    let a = all.findIndex((m) => Number(m.id) >= cur.floor);
+    if (a < 0) a = Math.max(0, n - WINDOW);
+    let b = n;
+    if (cur.ceil !== null) {
+      const c = cur.ceil;
+      const j = all.findIndex((m) => Number(m.id) > c);
+      if (j >= 0) b = j;
+    }
+    if (b <= a) b = Math.min(n, a + WINDOW);
+    return [a, b];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [all, cur?.floor, cur?.ceil]);
+  const messages = useMemo(() => (firstIdx === 0 && endIdx === all.length ? all : all.slice(firstIdx, endIdx)), [all, firstIdx, endIdx]);
+  const hidden = firstIdx;
+  const below = all.length - endIdx;
+  const winRef = useRef({ all, firstIdx, endIdx });
+  winRef.current = { all, firstIdx, endIdx };
+  const idAt = (list: ChatMessage[], i: number) => Number(list[i]?.id) || 0;
+  const setRange = (a: number, b: number) => {
+    const list = winRef.current.all;
+    setWin({ room, floor: idAt(list, a), ceil: b >= list.length ? null : idAt(list, b - 1) });
+  };
+  useEffect(() => {
+    if (!cur && all.length) setWin({ room, floor: idAt(all, Math.max(0, all.length - WINDOW)), ceil: null });
+  }, [all, cur, room]);
+  /** The row at the top of the viewport and its offset: after the window changes it is put back in place. */
+  const anchor = useRef<{ id: string; top: number } | null>(null);
+  const keepAnchor = () => {
+    const el = ref.current;
+    if (!el) return;
+    const box = el.getBoundingClientRect();
+    for (const row of el.querySelectorAll<HTMLElement>(':scope > [data-mid]')) {
+      const r = row.getBoundingClientRect();
+      if (r.bottom > box.top) {
+        anchor.current = { id: row.dataset.mid!, top: r.top - box.top };
+        return;
+      }
+    }
+  };
+  const reveal = () => {
+    const { firstIdx: a, endIdx: b } = winRef.current;
+    if (a <= 0) return false;
+    keepAnchor();
+    const na = Math.max(0, a - STEP);
+    setRange(na, Math.min(b, na + MAX_ROWS));
+    return true;
+  };
+  const revealDown = () => {
+    const { all: list, firstIdx: a, endIdx: b } = winRef.current;
+    if (b >= list.length) return false;
+    keepAnchor();
+    const nb = Math.min(list.length, b + STEP);
+    setRange(Math.max(a, nb - MAX_ROWS), nb);
+    return true;
+  };
+  /** Back at the bottom: trim the top of the DOM again after a pause so scrolling does not jump. */
+  const trimTimer = useRef(0);
+  const trimLater = () => {
+    window.clearTimeout(trimTimer.current);
+    trimTimer.current = window.setTimeout(() => {
+      const { all: list, firstIdx: i, endIdx: e } = winRef.current;
+      if (!stick.current || e < list.length || list.length - i <= WINDOW + STEP) return;
+      setRange(list.length - WINDOW, list.length);
+    }, 1500);
+  };
+  useEffect(() => () => window.clearTimeout(trimTimer.current), []);
   const stick = useRef(true);
-  // «Запас» сверху ленты: в самом начале истории можно долистать дальше — первое сообщение
-  // останавливается ближе к середине экрана. Появляется, только когда лента не помещается в экран.
+  // Spacer above the list: at the very start of history you can scroll a bit further and the first message stops
+  // closer to the middle of the screen. Only present when the list overflows the viewport.
   const head = useRef<HTMLDivElement>(null);
   const moreRef = useRef(more);
-  moreRef.current = more;
-  /** Первое сообщение и высота ленты на прошлой отрисовке: подгрузили старые сверху — экран остаётся на месте. */
+  moreRef.current = !!more || hidden > 0;
+  /** First message and list height on the previous render: loading older messages keeps the viewport in place. */
   const prevTop = useRef<{ id: number; h: number } | null>(null);
   const rest = (el: HTMLElement) => Math.max(0, el.scrollHeight - el.clientHeight);
-  // Градиент своих сообщений — один на всё окно чата: каждому облачку сообщаем, где оно в окне (--by, --bh),
-  // а окну — его высоту (--vh). Раньше это делал background-attachment: fixed, но пока экран выезжал (transform),
-  // fixed переставал работать и градиент на миг становился у каждого облачка своим — мигал.
+  // One own-message gradient for the whole chat window: each bubble gets its position (--by, --bh) and the window
+  // its height (--vh). background-attachment: fixed used to do this, but it broke while the screen slid in
+  // (transform) and every bubble flashed its own gradient.
   const gradRaf = useRef(0);
   const paintGrad = (now = false) => {
     if (now) {
@@ -150,22 +223,21 @@ function MessageListImpl({
       paintNow();
     });
   };
-  /** Градиент своих облачков и их хвостиков — по положению в окне чата (сразу, до отрисовки кадра). */
   const paintNow = (all = false) => {
     const el = ref.current;
     if (!el) return;
-    // Сначала все замеры, потом все записи: чередование «замер → запись» на каждом облачке заставляло
-    // браузер пересчитывать раскладку столько раз, сколько своих сообщений, на каждом кадре прокрутки.
+    // Measure everything first, then write: interleaving reads and writes forced a layout per own message
+    // on every scroll frame.
     const box = el.getBoundingClientRect();
     const h = el.clientHeight;
     const bubbles = el.querySelectorAll<HTMLElement>('.msg.mine .bubble');
     const rects = Array.from(bubbles, (b) => b.getBoundingClientRect());
     if (el.style.getPropertyValue('--vh') !== h + 'px') el.style.setProperty('--vh', h + 'px');
-    const margin = h; // при прокрутке — только видимые и ближайшие; дальние получат значения, когда подъедут
+    const margin = h; // While scrolling only visible and nearby bubbles are updated; the rest get values when they come close.
     bubbles.forEach((b, i) => {
       const r = rects[i];
       const y = Math.round(r.top - box.top);
-      // у всех облачков при первой раскладке: без значений хвостик оставался пустым
+      // All bubbles on the first layout, otherwise their tails stay empty.
       const has = b.style.getPropertyValue('--by') !== '';
       if (!all && has && (r.bottom < box.top - margin || r.top > box.bottom + margin)) return;
       const by = String(y);
@@ -182,15 +254,13 @@ function MessageListImpl({
     const overflow = el.scrollHeight - cur > el.clientHeight + 1;
     const h = overflow && !moreRef.current ? Math.round(el.clientHeight * 0.4) : 0;
     if (h === cur) return;
-    // высота запаса меняется — сохраняем то, что сейчас на экране (если не прилипли к низу)
     t.style.height = h + 'px';
     if (!stick.current) el.scrollTop += h - cur;
   };
   const press = useRef<{ t: number; x: number; y: number; hold: number; row: HTMLElement } | null>(null);
-  /** Свайп сообщения влево для ответа. */
   const swipe = useRef<{ id: number; x: number; y: number; row: HTMLElement; m: ChatMessage; on: boolean; dx: number; ticked: boolean } | null>(null);
-  // Safari отдаёт жест прокрутке по первым движениям пальца (и шлёт pointercancel): свайп для ответа срывался,
-  // если палец шёл чуть наискосок. Пока палец идёт скорее влево, чем вверх-вниз, прокрутку не начинаем.
+  // Safari hands the gesture to scrolling based on the first finger moves (and sends pointercancel), so the reply swipe
+  // failed on slightly diagonal moves. While the finger moves more left than vertical, scrolling does not start.
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -218,9 +288,7 @@ function MessageListImpl({
       el.removeEventListener('touchmove', move);
     };
   }, []);
-  /** Открытое на весь экран фото. */
   const [viewer, setViewer] = useState<{ photos: Attachment[]; i: number } | null>(null);
-  // Кнопка «вниз»: появляется, когда ушли от низа ленты; на ней — сколько новых сообщений пришло, пока смотрели выше
   const [away, setAway] = useState(false);
   const [unread, setUnread] = useState(0);
   const [dock, setDock] = useState<HTMLElement | null>(null);
@@ -231,11 +299,18 @@ function MessageListImpl({
     if (!el) return;
     stick.current = true;
     setUnread(0);
+    // More messages below the window: jump straight to the newest instead of scrolling through history.
+    const { all: list, endIdx: e } = winRef.current;
+    if (e < list.length) {
+      anchor.current = null;
+      setRange(Math.max(0, list.length - WINDOW), list.length);
+      return;
+    }
     el.scrollTo({ top: rest(el), behavior: 'smooth' });
   };
 
-  // «Линия чтения»: обычно сразу под плашкой закрепа, но к концам ленты нелинейно уходит к краям —
-  // в самом верху выбирается первый закреп, в самом низу последний.
+  // The reading line normally sits right under the pinned banner but moves to the list edges near the ends,
+  // so the first pin is chosen at the very top and the last one at the very bottom.
   const onViewRef = useRef(onView);
   onViewRef.current = onView;
   const raf = useRef(0);
@@ -249,8 +324,6 @@ function MessageListImpl({
       const cs = getComputedStyle(el);
       const top = box.top + parseFloat(cs.paddingTop || '0');
       const bottom = box.bottom - parseFloat(cs.paddingBottom || '0');
-      // Линия — по нижнему краю плашки и ниже не опускается; только на последнем экране прокрутки
-      // она плавно уходит к краю ленты (вверху — к верхнему, внизу — к нижнему)
       const max = rest(el);
       const h = Math.max(bottom - top, 1);
       let limit = top;
@@ -261,8 +334,6 @@ function MessageListImpl({
         if (toEnd < h) limit = top + (bottom - top) * Math.pow(1 - toEnd / h, 3);
         else if (toStart < h) limit = top - (top - box.top) * Math.pow(1 - toStart / h, 3);
       }
-      // Самый верхний закреп, который ещё виден ниже линии; если на экране закрепов нет —
-      // последний, ушедший выше линии
       const pinned = el.querySelectorAll<HTMLElement>('[data-pin]');
       let visible = 0;
       let above = 0;
@@ -281,26 +352,35 @@ function MessageListImpl({
 
   useLayoutEffect(() => {
     const el = ref.current;
-    // удалённое сообщение схлопывается от своей настоящей высоты (см. @keyframes msg-out)
+    // A deleted message collapses from its real height (see @keyframes msg-out).
     el?.querySelectorAll<HTMLElement>('.msg-out:not([style*="--h"])').forEach((n) => n.style.setProperty('--h', `${n.offsetHeight}px`));
-    // новые чужие сообщения, пришедшие, пока лента прокручена вверх, — в счётчик на кнопке «вниз»
-    const last = messages.length ? Number(messages[messages.length - 1].id) || 0 : 0;
+    const last = all.length ? Number(all[all.length - 1].id) || 0 : 0;
     if (!stick.current && lastSeen.current && last > lastSeen.current) {
-      const fresh = messages.filter((m) => Number(m.id) > lastSeen.current && m.user !== me && !m.sys).length;
+      const fresh = all.filter((m) => Number(m.id) > lastSeen.current && m.user !== me && !m.sys).length;
       if (fresh) setUnread((n) => n + fresh);
     }
     lastSeen.current = Math.max(lastSeen.current, last);
     const first = messages.length ? Number(messages[0].id) || 0 : 0;
     const was = prevTop.current;
     if (el) sizeHead(el);
-    if (el && was && first && first < was.id && !stick.current) el.scrollTop += el.scrollHeight - was.h;
+    const an = anchor.current;
+    anchor.current = null;
+    const row = an && el && !stick.current ? el.querySelector<HTMLElement>(`:scope > [data-mid="${CSS.escape(an.id)}"]`) : null;
+    if (el && row) {
+      el.scrollTop += row.getBoundingClientRect().top - el.getBoundingClientRect().top - an!.top;
+    } else if (el && was && first && first < was.id && !stick.current) el.scrollTop += el.scrollHeight - was.h;
     if (el && stick.current) el.scrollTop = rest(el);
     if (el) prevTop.current = { id: first, h: el.scrollHeight };
     report();
     paintGrad(true);
   }, [messages]); // eslint-disable-line react-hooks/exhaustive-deps
-  // Высота поля ввода (--composer-h) приходит после первой отрисовки и меняет отступ снизу —
-  // без этого последние сообщения оставались под полем ввода, лента «начиналась не снизу».
+  // A history page arrived while the list is still at the top: show the next part right away.
+  useEffect(() => {
+    const el = ref.current;
+    if (el && hidden > 0 && !stick.current && el.scrollTop < el.clientHeight * 1.5) reveal();
+  }, [hidden > 0]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The composer height (--composer-h) arrives after the first render and changes the bottom padding;
+  // without this the last messages stayed under the composer.
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -312,8 +392,8 @@ function MessageListImpl({
       paintGrad(true);
     };
     const pin = () => {
-      // Пока плавно появляется/уходит виджет звонка, отступ ленты меняется на каждом кадре — тогда только
-      // держим низ (дёшево), а полный пересчёт (замеры всех облачков) — один раз, когда отступ встанет
+      // While the call widget animates, the padding changes every frame: only keep the bottom pinned (cheap)
+      // and do the full re-measure once the padding settles.
       if (el.closest('.call-anim')) {
         if (stick.current) el.scrollTop = rest(el);
         window.clearTimeout(settle);
@@ -325,7 +405,6 @@ function MessageListImpl({
     const ro = new ResizeObserver(pin);
     ro.observe(el);
     Array.from(el.children).forEach((c) => ro.observe(c));
-    // новые сообщения/картинки меняют высоту содержимого, а не самой ленты
     const mo = new MutationObserver((list) => {
       list.forEach((m) => m.addedNodes.forEach((n) => n instanceof Element && ro.observe(n)));
       pin();
@@ -338,10 +417,15 @@ function MessageListImpl({
     };
   }, []);
 
-  // Переход к сообщению: прокрутка к середине и короткая подсветка
   useEffect(() => {
-    // старый переход (например, при открытии списка закреплённых лента создаётся заново) не повторяем
     if (!focus || Date.now() - focus.n > 1500) return;
+    // The message is loaded but outside the window: widen the window to it, the jump happens on the next render.
+    const at = all.findIndex((m) => String(m.id) === String(focus.id));
+    if (at >= 0 && (at < firstIdx || at >= endIdx)) {
+      const a = Math.max(0, at - 20);
+      setRange(a, Math.min(all.length, a + WINDOW + 20));
+      return;
+    }
     const row = ref.current?.querySelector<HTMLElement>(`[data-mid="${CSS.escape(String(focus.id))}"]`);
     if (!row) return;
     stick.current = false;
@@ -351,7 +435,7 @@ function MessageListImpl({
     row.classList.add('flash');
     const id = window.setTimeout(() => row.classList.remove('flash'), 1400);
     return () => window.clearTimeout(id);
-  }, [focus]);
+  }, [focus, firstIdx, endIdx]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const cancelPress = () => {
     const p = press.current;
@@ -379,21 +463,20 @@ function MessageListImpl({
   };
 
   const myTag = handleOf(me);
-  // Первое фото сообщений ленты — миниатюра в цитате, если сервер не прислал её сам (старые ответы)
+  // Thumbnail for reply quotes when the server did not send one (old replies).
   const firstPhoto = new Map<string, string>();
-  messages.forEach((x) => {
+  all.forEach((x) => {
     const u = firstPhotoUrl(x.attachments);
     if (u) firstPhoto.set(String(x.id), u);
   });
   const items: ReactNode[] = [];
   let lastDay = '';
   let newPlaced = false;
-  /** ПКМ и долгое нажатие на сообщение — меню. */
   const pressProps = (m: ChatMessage) => ({
     onContextMenu: (e: React.MouseEvent) => {
       if (!onMenu) return;
       e.preventDefault();
-      // на сенсорном экране меню открывает своё долгое нажатие (с подъёмом сообщения), системное не нужно
+      // On touch screens our own long press opens the menu (with the lifted message), the system one is not needed.
       if (matchMedia('(hover: none)').matches) return;
       cancelPress();
       if (!selecting) onMenu(m, e.clientX, e.clientY, e.currentTarget as HTMLElement, false);
@@ -405,15 +488,12 @@ function MessageListImpl({
       const row = e.currentTarget as HTMLElement;
       const x = e.clientX;
       const y = e.clientY;
-      // свайп для ответа — только пальцем (мышью отвечают кнопкой при наведении)
       if (onReply && !m.sys && !m.leaving && !mouse) swipe.current = { id: e.pointerId, x, y, row, m, on: false, dx: 0, ticked: false };
-      // долгое нажатие с меню — только пальцем (мышью меню открывает ПКМ)
       if (mouse || !onMenu) return;
       press.current = {
         x,
         y,
         row,
-        // пока держат — сообщение чуть «вдавливается»
         hold: window.setTimeout(() => (row.dataset.pressing = ''), 140),
         t: window.setTimeout(() => {
           press.current = null;
@@ -441,12 +521,10 @@ function MessageListImpl({
         try {
           sw.row.setPointerCapture(e.pointerId);
         } catch {
-          /* палец уже отпущен */
+          /* ignore */
         }
       }
-      // влево — за пальцем, дальше порога — с сопротивлением; вправо не едет
       const raw = Math.min(0, e.clientX - sw.x);
-      // дальше порога — с сопротивлением и не больше чем на 20px сверх него
       const d = raw < -SWIPE_REPLY ? -SWIPE_REPLY - 20 * (1 - Math.exp((raw + SWIPE_REPLY) / 40)) : raw;
       sw.dx = raw;
       sw.row.style.transform = `translateX(${d}px)`;
@@ -473,20 +551,19 @@ function MessageListImpl({
     if (newAfter > 0 && !newPlaced && !m.sys && m.user !== me && Number(m.id) > newAfter) {
       newPlaced = true;
       items.push(
-        <div className="new-line" key="new-line" role="separator" aria-label="Новые сообщения">
-          <span>Новое</span>
+        <div className="new-line" key="new-line" role="separator" aria-label={t('Новые сообщения')}>
+          <span>{t('Новое')}</span>
         </div>,
       );
     }
     const reply = m.reply;
+    const media = (m.attachments ?? []).filter((a) => !a.file);
+    const docs = (m.attachments ?? []).filter((a) => a.file);
     const replyPhoto = reply && !reply.deleted ? reply.photo || firstPhoto.get(String(reply.id)) : undefined;
-    // Служебная строка «X закрепил(а) / открепил(а) …» — в стиле плашки даты, клик ведёт к сообщению.
-    // Как и обычное сообщение: меню по ПКМ/долгому нажатию, выделение, удаление
     if (m.sys === 'pin' || m.sys === 'unpin') {
       const gone = !reply || reply.deleted;
       const sel = !!selected?.has(String(m.id));
       items.push(
-        // Одна плашка по центру ленты: ник, действие и текст закреплённого сообщения
         <button
           type="button"
           className={'sys-row' + (gone ? ' gone' : '') + (m.leaving ? ' msg-out' : '') + (selecting ? ' selecting' : '') + (sel ? ' selected' : '')}
@@ -505,7 +582,7 @@ function MessageListImpl({
               <Nick name={m.user} />
             </span>
             <span className="sn-text">
-              {m.sys === 'pin' ? 'закрепил(а)' : 'открепил(а)'} {gone ? 'сообщение' : <>«{reply.content}»</>}
+              {m.sys === 'pin' ? t('закрепил(а)') : t('открепил(а)')} {gone ? t('сообщение') : <>«{reply.content}»</>}
             </span>
           </span>
         </button>,
@@ -517,7 +594,7 @@ function MessageListImpl({
     const read = mine && Number(m.id) <= readUpTo;
     const pinMark = m.pinned ? <Icon name="pin-fill" size={15} className="msg-pin" /> : null;
     const replyCount = m.replies ? (
-      <span className="msg-replies" title={`Ответов: ${m.replies}`}>
+      <span className="msg-replies" title={t('Ответов: {0}', { 0: m.replies })}>
         <Icon name="reply-fill" size={14} />
         {m.replies}
       </span>
@@ -545,11 +622,9 @@ function MessageListImpl({
           </span>
         )}
         <div
-          className={'bubble' + (m.attachments?.length ? ' has-photos' : '')}
-          // облачко с фото — по ширине фото (+ отступ 4px и рамка 1px с каждой стороны)
-          style={m.attachments?.length ? { width: photosWidth(m.attachments) + 10 } : undefined}
+          className={'bubble' + (media.length ? ' has-photos' : '')}
+          style={media.length ? { width: photosWidth(media) + 10 } : undefined}
         >
-          {/* Шапка: имя · пин · время · ответы; у своих — наоборот, без имени и с галочками в конце */}
           <div className="meta">
             {!mine && (
               <span className="msg-nick" role="button" tabIndex={0} {...userMenuProps(m.user)} onClick={(e) => (e.stopPropagation(), !selecting && openProfile(m.user, { inChat: true }))}>
@@ -558,14 +633,14 @@ function MessageListImpl({
             )}
             {mine && replyCount}
             {!mine && pinMark}
-            <time title={m.edited ? 'Изменено' : undefined}>
-              {m.edited && <span className="msg-edited">изм. </span>}
+            <time title={m.edited ? t('Изменено') : undefined}>
+              {m.edited && <span className="msg-edited">{t('изм. ')}</span>}
               {timeFmt.format(d)}
             </time>
             {mine && pinMark}
             {!mine && replyCount}
             {mine && (
-              <span className={'msg-ticks' + (read ? ' read' : '')} title={read ? 'Прочитано' : 'Отправлено'}>
+              <span className={'msg-ticks' + (read ? ' read' : '')} title={read ? t('Прочитано') : t('Отправлено')}>
                 <Icon name={read ? 'check-double' : 'check'} size={15} />
               </span>
             )}
@@ -574,7 +649,7 @@ function MessageListImpl({
             <div className="msg-fwd">
               <div className="fwd-title">
                 <Icon name="reply" size={14} className="flip" />
-                <span>Переслано от</span>
+                <span>{t('Переслано от')}</span>
               </div>
               <div className="fwd-from">
                 <Avatar name={m.fwd.user} size={18} />
@@ -593,7 +668,7 @@ function MessageListImpl({
               }}
             >
               {reply.deleted ? (
-                <span className="rt">Сообщение удалено</span>
+                <span className="rt">{t('Сообщение удалено')}</span>
               ) : replyPhoto ? (
                 <>
                   <img className="rq-thumb" src={replyPhoto} alt="" loading="lazy" draggable={false} />
@@ -610,9 +685,8 @@ function MessageListImpl({
               )}
             </button>
           )}
-          {!!m.attachments?.length && (
-            <PhotoGrid photos={m.attachments} onOpen={selecting ? undefined : (i) => setViewer({ photos: m.attachments!, i })} />
-          )}
+          {!!media.length && <PhotoGrid photos={media} onOpen={selecting ? undefined : (i) => setViewer({ photos: media, i })} />}
+          {!!docs.length && <FileList files={docs} selecting={!!selecting} />}
           {!!m.content && <div className="text">{withMentions(m.content, myTag)}</div>}
           {!!m.content && !m.attachments?.length && firstLink(m.content) && <LinkPreview url={firstLink(m.content)!} />}
           {!!m.reactions?.length && (
@@ -624,7 +698,6 @@ function MessageListImpl({
                   className={'reaction' + (r.users.includes(me) ? ' on' : '')}
                   title={r.users.join(', ')}
                   disabled={!onReact}
-                  // нажатие на реакцию не начинает долгое нажатие сообщения; при выделении оно отмечает сообщение
                   onPointerDown={(e) => !selecting && e.stopPropagation()}
                   onClick={(e) => {
                     if (selecting) return;
@@ -650,10 +723,16 @@ function MessageListImpl({
       onScroll={(e) => {
         const el = e.currentTarget;
         const gap = rest(el) - el.scrollTop;
-        stick.current = gap < 80;
-        setAway(gap > 240);
-        if (stick.current) setUnread(0);
-        if (more && el.scrollTop < el.clientHeight) onOlder?.();
+        stick.current = gap < 80 && below === 0;
+        setAway(gap > 240 || below > 0);
+        if (stick.current) {
+          setUnread(0);
+          if (all.length - hidden > WINDOW + STEP) trimLater();
+        }
+        // Near the top: reveal what is already loaded first, and ask the server early while memory still has a buffer.
+        if (el.scrollTop < el.clientHeight * 1.5) reveal();
+        else if (below > 0 && gap < el.clientHeight * 1.5) revealDown();
+        if (more && hidden < STEP * 2) onOlder?.();
         if (prevTop.current) prevTop.current.h = el.scrollHeight;
         cancelPress();
         report();
@@ -661,9 +740,9 @@ function MessageListImpl({
       }}
     >
       <div className="chat-head-room" ref={head} aria-hidden />
-      {more && messages.length > 0 && (
+      {(more || hidden > 0) && messages.length > 0 && (
         <div className="chat-older" aria-live="polite">
-          {loadingOlder ? <span className="btn-spin" role="status" aria-label="Загружаем более старые сообщения" /> : null}
+          {loadingOlder ? <span className="btn-spin" role="status" aria-label={t('Загружаем более старые сообщения')} /> : null}
         </div>
       )}
       {messages.length ? items : <div className="empty-state">{empty}</div>}
@@ -673,8 +752,8 @@ function MessageListImpl({
           <button
             type="button"
             className={'to-bottom glass' + (away || unread ? ' on' : '')}
-            aria-label={unread ? `Новых сообщений: ${unread}. Прокрутить вниз` : 'Прокрутить вниз'}
-            title="Вниз"
+            aria-label={unread ? t('Новых сообщений: {0}. Прокрутить вниз', { 0: unread }) : t('Прокрутить вниз')}
+            title={t('Вниз')}
             tabIndex={away || unread ? 0 : -1}
             onClick={toBottom}
           >

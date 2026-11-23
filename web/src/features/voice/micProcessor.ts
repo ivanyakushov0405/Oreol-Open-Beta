@@ -1,12 +1,12 @@
 import type { AudioProcessorOptions, Track, TrackProcessor } from 'livekit-client';
 import { getAudioPrefs, subscribeAudioPrefs } from '../../shared/audio/audioPrefs';
 
-/** Обработка микрофона перед отправкой: громкость ввода и шумовой порог (чувствительность).
- *  микрофон → AudioWorklet «oreol-gate» (усиление + ворота) → в звонок.
- *
- *  Ворота работают в аудиопотоке, а не на таймере страницы: раньше порог проверялся раз в 20 мс
- *  через setInterval, и при любой нагрузке на страницу (а в фоновой вкладке — раз в секунду)
- *  ворота не успевали открыться — голос получался прерывистым. */
+/**
+ * Microphone processing before sending: input gain and noise gate (sensitivity).
+ * microphone -> AudioWorklet "oreol-gate" (gain + gate) -> call.
+ * The gate runs on the audio thread, not a page timer: a 20 ms setInterval missed openings under page load
+ * (and ran once a second in background tabs), making speech choppy.
+ */
 const GATE_SRC = `
 class OreolGate extends AudioWorkletProcessor {
   constructor() {
@@ -23,13 +23,13 @@ class OreolGate extends AudioWorkletProcessor {
     const n = inp.length, vol = this.vol;
     let s = 0;
     for (let i = 0; i < n; i++) { const x = inp[i] * vol; s += x * x; }
-    // сглаженная мощность (~25 мс), как у индикатора уровня в настройках
+    // smoothed power (~25 ms), same as the level meter in settings
     this.pow += (s / n - this.pow) * Math.min(1, n / (0.025 * sampleRate));
     const db = 10 * Math.log10(this.pow || 1e-10);
-    // после слова держим открытыми 400 мс, чтобы не «рубить» окончания и паузы между словами
+    // stay open 400 ms after speech so word endings and short pauses are not cut
     if (this.auto || db > this.thr) this.holdUntil = currentTime + 0.4;
     const open = currentTime < this.holdUntil;
-    const k = 1 - Math.exp(-1 / ((open ? 0.004 : 0.08) * sampleRate)); // открытие ~4 мс, закрытие ~80 мс
+    const k = 1 - Math.exp(-1 / ((open ? 0.004 : 0.08) * sampleRate)); // opens in ~4 ms, closes in ~80 ms
     const target = open ? 1 : 0;
     const o = out[0];
     let g = this.g;
@@ -83,7 +83,7 @@ export function createMicProcessor(): TrackProcessor<Track.Kind.Audio, AudioProc
       unsub = subscribeAudioPrefs(() => w.port.postMessage(gateParams()));
       node = w;
     } catch {
-      // Без AudioWorklet — только громкость ввода, без порога (лучше без ворот, чем с рваным звуком)
+      // Without AudioWorklet only input gain, no gate (better no gate than choppy audio).
       const g = ac.createGain();
       g.gain.value = getAudioPrefs().inputVolume;
       unsub = subscribeAudioPrefs(() => g.gain.setTargetAtTime(getAudioPrefs().inputVolume, ac.currentTime, 0.03));
@@ -100,7 +100,7 @@ export function createMicProcessor(): TrackProcessor<Track.Kind.Audio, AudioProc
       proc.processedTrack = dest!.stream.getAudioTracks()[0];
     },
     async restart(opts) {
-      // смена устройства: дорожка новая, выход тот же — собеседники ничего не замечают
+      // Device change: new track, same output, so peers notice nothing.
       teardown();
       await build(opts);
     },

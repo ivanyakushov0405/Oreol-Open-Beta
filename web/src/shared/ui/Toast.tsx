@@ -3,7 +3,6 @@ import { Icon } from '../icons';
 
 export type ToastKind = 'info' | 'success' | 'error';
 
-/** Всплывающее сообщение внизу экрана: info — нейтральное, success — зелёное, error — красное. */
 export function useToast() {
   const [msg, setMsg] = useState<{ text: string; kind: ToastKind; id: number } | null>(null);
   useEffect(() => {
@@ -23,7 +22,6 @@ export function useToast() {
   };
 }
 
-/** Плашка сверху: нет связи с сервером / переподключение голоса. */
 export function ConnBanner({ text, tone = 'warn' }: { text: string; tone?: 'warn' | 'error' }) {
   return (
     <div className={`conn-banner conn-${tone}`} role="status">

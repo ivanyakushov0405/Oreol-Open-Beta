@@ -2,15 +2,15 @@ import { Fragment, useState } from 'react';
 import type { AppState } from '../../app/useAppState';
 import { Icon } from '../../shared/icons';
 import { Toggle } from './Toggle';
+import { t } from '../../shared/i18n';
 
-/* ---------- Роли (макет «Desktop · Server settings · Роли») ---------- */
 const ROLE_SWATCHES = ['#00e5ff', '#ff5c7a', '#7a5cff', '#3ddc97', '#ffb840', '#548fff', '#fa78d9', '#5c7590'];
 const PERMISSIONS = [
-  { id: 'channels', title: 'Управлять каналами', text: 'Создавать, менять и удалять каналы' },
-  { id: 'messages', title: 'Удалять сообщения', text: 'Чужие сообщения в любом канале' },
-  { id: 'kick', title: 'Выгонять участников', text: 'Можно вернуться по приглашению' },
-  { id: 'ban', title: 'Банить участников', text: 'Блокировка без возможности войти' },
-  { id: 'everyone', title: 'Упоминать @everyone', text: 'Уведомление всем участникам' },
+  { id: 'channels', title: t('Управлять каналами'), text: t('Создавать, менять и удалять каналы') },
+  { id: 'messages', title: t('Удалять сообщения'), text: t('Чужие сообщения в любом канале') },
+  { id: 'kick', title: t('Выгонять участников'), text: t('Можно вернуться по приглашению') },
+  { id: 'ban', title: t('Банить участников'), text: t('Блокировка без возможности войти') },
+  { id: 'everyone', title: t('Упоминать @everyone'), text: t('Уведомление всем участникам') },
 ] as const;
 type PermId = (typeof PERMISSIONS)[number]['id'];
 interface RoleState {
@@ -21,10 +21,10 @@ interface RoleState {
 }
 const allPerms = (on: boolean): Record<PermId, boolean> => ({ channels: on, messages: on, kick: on, ban: on, everyone: on });
 const INITIAL_ROLES: RoleState[] = [
-  { id: 'admin', name: 'Админ', color: '#ff5c7a', perms: allPerms(true) },
-  { id: 'mod', name: 'Модератор', color: '#00e5ff', perms: { channels: true, messages: true, kick: true, ban: false, everyone: false } },
-  { id: 'raid', name: 'Рейд-лид', color: '#7a5cff', perms: { channels: false, messages: false, kick: false, ban: false, everyone: true } },
-  { id: 'healer', name: 'Хилер', color: '#3ddc97', perms: allPerms(false) },
+  { id: 'admin', name: t('Админ'), color: '#ff5c7a', perms: allPerms(true) },
+  { id: 'mod', name: t('Модератор'), color: '#00e5ff', perms: { channels: true, messages: true, kick: true, ban: false, everyone: false } },
+  { id: 'raid', name: t('Рейд-лид'), color: '#7a5cff', perms: { channels: false, messages: false, kick: false, ban: false, everyone: true } },
+  { id: 'healer', name: t('Хилер'), color: '#3ddc97', perms: allPerms(false) },
   { id: 'everyone', name: '@everyone', color: '#5c7590', perms: allPerms(false) },
 ];
 
@@ -35,7 +35,7 @@ function RoleRow({ role, count, on, onClick }: { role: RoleState; count: string;
         <i style={{ background: role.color }} />
       </span>
       <span className="role-name" style={{ color: role.color }}>
-        {role.name || 'Без названия'}
+        {role.name || t('Без названия')}
       </span>
       <span className="role-count">{count}</span>
       <Icon name="chevron-right" size={18} />
@@ -51,15 +51,14 @@ export function RolesEditor({ app }: { app: AppState }) {
   const custom = roles.filter((r) => r.id !== 'everyone');
   const everyone = roles.find((r) => r.id === 'everyone')!;
   const locked = role.id === 'everyone';
-  // Мок-участников нет: «Админ» — владелец сервера (вы), @everyone — все, кто сейчас в сети.
-  const countOf = (r: RoleState) => (r.id === 'everyone' ? `все ${app.members.length}` : `${r.id === 'admin' ? 1 : 0} уч.`);
+  const countOf = (r: RoleState) => (r.id === 'everyone' ? t('все {0}', { 0: app.members.length }) : t('{0} уч.', { 0: r.id === 'admin' ? 1 : 0 }));
 
   return (
     <div className="roles-layout">
       <section className="roles-panel">
         <div className="roles-head">
-          <h3>Роли: {custom.length}</h3>
-          <p>Чем выше в списке, тем главнее. Перетаскивайте, чтобы изменить порядок.</p>
+          <h3>{t('Роли: ')}{custom.length}</h3>
+          <p>{t('Чем выше в списке, тем главнее. Перетаскивайте, чтобы изменить порядок.')}</p>
         </div>
         <div className="roles-list">
           {custom.map((r, i) => (
@@ -69,11 +68,11 @@ export function RolesEditor({ app }: { app: AppState }) {
             </Fragment>
           ))}
         </div>
-        <button type="button" className="btn-chip" onClick={() => app.notify('Создание ролей скоро будет')}>
+        <button type="button" className="btn-chip" onClick={() => app.notify(t('Создание ролей скоро будет'))}>
           <Icon name="plus" size={16} />
-          Создать роль
+          {t('Создать роль')}
         </button>
-        <div className="overline roles-overline">По умолчанию</div>
+        <div className="overline roles-overline">{t('По умолчанию')}</div>
         <div className="roles-list">
           <RoleRow role={everyone} count={countOf(everyone)} on={locked} onClick={() => setSelected('everyone')} />
         </div>
@@ -81,9 +80,9 @@ export function RolesEditor({ app }: { app: AppState }) {
 
       <div className="roles-editor">
         <section className="roles-panel">
-          <h3>Роль</h3>
+          <h3>{t('Роль')}</h3>
           <label className="auth-field">
-            <span className="field-label">Название роли</span>
+            <span className="field-label">{t('Название роли')}</span>
             <input
               className="input role-input"
               style={{ color: role.color }}
@@ -94,13 +93,13 @@ export function RolesEditor({ app }: { app: AppState }) {
             />
           </label>
           <div className="role-colors">
-            <span className="field-label">Цвет</span>
+            <span className="field-label">{t('Цвет')}</span>
             <div className="swatches">
               {ROLE_SWATCHES.map((c) => (
                 <button
                   type="button"
                   key={c}
-                  aria-label={'Цвет ' + c}
+                  aria-label={t('Цвет ') + c}
                   className={'swatch' + (role.color === c ? ' on' : '')}
                   style={{ background: c }}
                   disabled={locked}
@@ -110,7 +109,7 @@ export function RolesEditor({ app }: { app: AppState }) {
             </div>
           </div>
         </section>
-        <div className="overline roles-overline">Права</div>
+        <div className="overline roles-overline">{t('Права')}</div>
         <section className="perms-panel">
           {PERMISSIONS.map((p, i) => (
             <Fragment key={p.id}>
