@@ -303,7 +303,19 @@ export function Composer({
             onTyping?.();
           }}
         />
-        <button type="button" className="icon-btn" title="Эмодзи" onClick={() => setText((t) => t + '🙂')}>
+        <button
+          type="button"
+          className="icon-btn"
+          title="Смайлик"
+          disabled={disabled}
+          // случайный смайлик: пустое поле — сразу отправляем, иначе дописываем к тексту
+          onPointerDown={(e) => e.preventDefault()}
+          onClick={() => {
+            const e = EMOJIS[Math.floor(Math.random() * EMOJIS.length)];
+            if (!text.trim() && !shownPhotos.length) onSend(e, []);
+            else setText((t) => t + e);
+          }}
+        >
           <Icon name="smile" />
         </button>
         <button
@@ -319,6 +331,9 @@ export function Composer({
     </form>
   );
 }
+
+/** Что отправляет кнопка смайлика (случайный из списка). */
+const EMOJIS = ['🙂', '🤡'];
 
 interface Pending {
   key: string;
