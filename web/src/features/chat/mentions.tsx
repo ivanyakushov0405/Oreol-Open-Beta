@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { userByTag } from '../../shared/api';
-import { handleOf } from '../../shared/model';
+import { cleanText, handleOf } from '../../shared/model';
 import { openProfile } from '../profile/profile';
 
 /** Событие «упомянуть пользователя» (detail: имя) — поле ввода вставляет его @юзернейм. */
@@ -17,6 +17,7 @@ export function mentionsMe(text: string, myTag: string) {
 }
 /** Текст с подсвеченными упоминаниями (циановые; своё — с подложкой). */
 export function withMentions(text: string, myTag: string): ReactNode {
+  text = cleanText(text);
   const out: ReactNode[] = [];
   let last = 0;
   for (const m of text.matchAll(MENTION_RE)) {
@@ -33,7 +34,7 @@ export function withMentions(text: string, myTag: string): ReactNode {
           const u = userByTag(tag, handleOf);
           if (!u) return;
           e.stopPropagation();
-          openProfile(u.username);
+          openProfile(u.username, { inChat: true });
         }}
       >
         {tag}

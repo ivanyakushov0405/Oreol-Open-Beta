@@ -295,7 +295,7 @@ export function useAppState(
   const connBanner = !online
     ? 'Нет подключения к интернету'
     : lost && !phoneUi
-      ? 'Нет связи с сервером — переподключаемся…'
+      ? 'Нет связи с сервером, переподключаемся…'
       : voice.reconnecting
         ? 'Голосовой канал: переподключаемся…'
         : null;

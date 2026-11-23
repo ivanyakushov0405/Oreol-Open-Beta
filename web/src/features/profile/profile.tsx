@@ -21,7 +21,15 @@ let opener: ((name: string) => void) | null = null;
 export const setProfileOpener = (f: ((name: string) => void) | null) => {
   opener = f;
 };
-export const openProfile = (name: string) => (opener ? opener(name) : set(name));
+/** Профиль открыт из чата (аватар, ник, упоминание в сообщении) — только тогда в «…» есть «Упомянуть»:
+ *  из списка участников или войса упоминать некуда. */
+let fromChat = false;
+export const profileFromChat = () => fromChat;
+export const openProfile = (name: string, opts?: { inChat?: boolean }) => {
+  fromChat = !!opts?.inChat;
+  if (opener) opener(name);
+  else set(name);
+};
 /** Событие «открыть редактирование своего профиля» — его ловят Desktop и Mobile (у них свои настройки). */
 export const EDIT_PROFILE_EVENT = 'oreol:edit-profile';
 
@@ -90,7 +98,7 @@ export function ProfileDetails({ app, name, onClose }: { app: AppState; name: st
   const activity = inVoice ? `В голосовом · ${app.voiceChannel?.name ?? 'Голосовой'}` : LABEL[status];
   const since = fmt(member?.joinedAt);
   const created = fmt(profile?.createdAt);
-  const later = (what: string) => () => app.notify(`${what} — скоро будут`);
+  const later = (what: string) => () => app.notify(`${what} скоро будут`);
   const shared = useSharedServers(app.servers, name);
   const [sharedOpen, setSharedOpen] = useState(false);
   const open = (server: Server) => {
@@ -132,7 +140,7 @@ export function ProfileDetails({ app, name, onClose }: { app: AppState; name: st
               <Icon name="voice" size={16} />
               Позвонить
             </button>
-            <button
+            {profileFromChat() && <button
               type="button"
               className="mc-btn icon"
               aria-label="Ещё"
@@ -142,7 +150,7 @@ export function ProfileDetails({ app, name, onClose }: { app: AppState; name: st
               }}
             >
               <Icon name="more" size={16} />
-            </button>
+            </button>}
           </>
         )}
       </div>
@@ -197,7 +205,7 @@ export function ProfileDetails({ app, name, onClose }: { app: AppState; name: st
               disabled={!shared?.length}
               onClick={() => setSharedOpen((x) => !x)}
             >
-              <span className="mc-over">Общие серверы — {shared ? shared.length : '…'}</span>
+              <span className="mc-over">Общие серверы: {shared ? shared.length : '…'}</span>
               <span className="pm-shared-icons">
                 {shared?.slice(0, 3).map(({ server }) => (
                   <span key={server.id} className="mc-server-ico sm" style={{ background: server.gradient }}>

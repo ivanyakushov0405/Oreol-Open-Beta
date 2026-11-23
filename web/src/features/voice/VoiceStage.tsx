@@ -44,7 +44,7 @@ export function PeerFlags({ p, order }: { p: VoicePeer; order: 'tile' | 'row' })
   );
 }
 
-/** Демонстрация на весь экран: стандартный fullscreen, а на iPhone (где его у обычных элементов нет) — видеоплеер системы. */
+/** Видео (демонстрация или вебка) на весь экран: стандартный fullscreen, а на iPhone (где его у обычных элементов нет) — видеоплеер системы. */
 function openFullscreen(tile: HTMLElement) {
   const video = tile.querySelector('video') as (HTMLVideoElement & { webkitEnterFullscreen?: () => void }) | null;
   if (!video) return;
@@ -76,8 +76,8 @@ function Tile({ p, kind, wide, span, avatar = 80, anim }: { p: VoicePeer; kind: 
     <div
       className={'tile' + (p.speaking && kind === 'cam' ? ' speaking' : '') + (track ? '' : ' novideo') + (wide ? ' wide' : '') + (span ? ' span' : '') + animClass(anim)}
       {...userMenuProps(p.identity)}
-      // демонстрация — на весь экран, остальные плитки — профиль участника
-      onClick={(e) => (kind === 'screen' && track ? openFullscreen(e.currentTarget) : openProfile(p.identity))}
+      // видео (демонстрация и вебка) — на весь экран; плитка без видео и подпись с ником — профиль участника
+      onClick={(e) => (track ? openFullscreen(e.currentTarget) : openProfile(p.identity))}
     >
       {track ? (
         <>
@@ -96,7 +96,15 @@ function Tile({ p, kind, wide, span, avatar = 80, anim }: { p: VoicePeer; kind: 
               <Icon name="camera-flip" size={22} />
             </button>
           )}
-          <span className="tile-pill">{label}</span>
+          <span
+            className="tile-pill"
+            onClick={(e) => {
+              e.stopPropagation();
+              openProfile(p.identity);
+            }}
+          >
+            {label}
+          </span>
         </>
       ) : (
         <>

@@ -313,7 +313,7 @@ function MessageMenu({
             </button>
             <div className="msg-menu-sep" />
             <p className="mm-del-text">
-              {del.mine ? 'Можно убрать только у себя или удалить у всех участников чата.' : 'Чужое сообщение можно убрать только у себя — у остальных оно останется.'}
+              {del.mine ? 'Можно убрать только у себя или удалить у всех участников чата.' : 'Чужое сообщение можно убрать только у себя, у остальных оно останется.'}
             </p>
             {del.mine && (
               <button type="button" className="msg-menu-item danger" onClick={() => (onClose(), del.run('all'))}>
@@ -384,6 +384,7 @@ export function ChatBody({ app, chat, channel, compact }: { app: AppState; chat:
   const cls = 'chat' + (app.glassChat ? ' transparent' : '');
   const title = channel.kind === 'voice' ? `чат «${channel.name}»` : `#${channel.name}`;
   const me = app.name;
+  const mentionPeople = useMemo(() => app.members.map((m) => m.username).filter((n) => n !== me), [app.members, me]);
   useOpenChat(channel.room);
 
   const [menu, setMenu] = useState<{ m: ChatMessage; x: number; y: number; row?: HTMLElement; lift?: boolean; photo?: string } | null>(null);
@@ -465,7 +466,7 @@ export function ChatBody({ app, chat, channel, compact }: { app: AppState; chat:
   };
   const jump = (id: Id) => {
     if (!byId.has(String(id))) {
-      app.notify('Сообщение слишком старое — его нет в загруженной истории');
+      app.notify('Сообщение слишком старое, его нет в загруженной истории');
       return;
     }
     if (pinnedView) chat.setView('all');
@@ -679,12 +680,12 @@ export function ChatBody({ app, chat, channel, compact }: { app: AppState; chat:
           pinnedView ? (
             <>
               <b>Закреплённых пока нет</b>
-              Закрепите важное сообщение — через меню по правой кнопке или долгому нажатию.
+              Закрепите важное сообщение через меню по правой кнопке или долгому нажатию.
             </>
           ) : (
             <>
               <b>{chat.connected ? `Добро пожаловать в ${title}` : 'Подключаемся к чату…'}</b>
-              {chat.connected ? 'Сообщений пока нет — напишите первым' : 'Нет связи с сервером'}
+              {chat.connected ? 'Сообщений пока нет. Напишите первым' : 'Нет связи с сервером'}
             </>
           )
         }
@@ -719,7 +720,7 @@ export function ChatBody({ app, chat, channel, compact }: { app: AppState; chat:
           }}>
             <Icon name="copy" />
           </button>
-          <button className="sb-act" disabled={!selected.size} title="Переслать" onClick={() => setFwd(selList.map((m) => m.id))}>
+          <button className="sb-act" disabled={!selected.size || selList.some((m) => m.sys)} title={selList.some((m) => m.sys) ? 'Строки о закрепе не пересылаются' : 'Переслать'} onClick={() => setFwd(selList.map((m) => m.id))}>
             <Icon name="reply" className="flip" />
           </button>
           <button className="sb-act danger" disabled={!selected.size} title="Удалить" onClick={() => setDel(selList.map((m) => m.id))}>
@@ -742,6 +743,7 @@ export function ChatBody({ app, chat, channel, compact }: { app: AppState; chat:
           onCancel={replyTarget ? cancelBar : undefined}
           onDraft={(t) => (draft.current = t)}
           allowPhotos={!editing}
+          people={mentionPeople}
           onError={(t) => app.notify(t, 'error')}
           onSend={(text, photos) => {
             if (editing) {
@@ -786,7 +788,7 @@ export function ChatBody({ app, chat, channel, compact }: { app: AppState; chat:
           <p className="chat-modal-text">
             {delMine
               ? 'Можно убрать только у себя или удалить у всех участников чата.'
-              : 'Чужие сообщения можно убрать только у себя — у остальных они останутся.'}
+              : 'Чужие сообщения можно убрать только у себя, у остальных они останутся.'}
           </p>
           <div className="chat-modal-actions">
             {delMine && (

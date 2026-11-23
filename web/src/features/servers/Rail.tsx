@@ -68,7 +68,7 @@ export function Rail({
         className="rail-add"
         aria-label="Создать сервер"
         {...hover('Создать сервер')}
-        onClick={() => app.notify('Создание серверов — скоро будет')}
+        onClick={() => app.notify('Создание серверов скоро будет')}
       >
         <Icon name="plus" />
       </button>

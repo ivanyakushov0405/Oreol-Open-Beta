@@ -122,7 +122,7 @@ export function Login({ onLogin }: { onLogin: (token: string, user: Me) => void 
               Ваш новый ореол друзей
             </h1>
           </div>
-          <p>Соберите свой сервер и позовите друзей: текстовые и голосовые каналы, личные сообщения и звонки — в одном приложении.</p>
+          <p>Соберите свой сервер и позовите друзей: текстовые и голосовые каналы, личные сообщения и звонки в одном приложении.</p>
         </div>
 
         <div className="auth-card">
@@ -175,7 +175,7 @@ export function Login({ onLogin }: { onLogin: (token: string, user: Me) => void 
                   {loginErr && <span className="field-hint error">{loginErr}</span>}
                 </label>
                 <button className="btn btn-primary auth-submit" type="submit" disabled={busy} tabIndex={tabL}>
-                  {busy && mode === 'login' ? 'Входим…' : 'Войти'}
+                  {busy && mode === 'login' ? <span className="btn-spin" role="status" aria-label="Входим" /> : 'Войти'}
                 </button>
                 <div className="auth-foot">
                   Нет аккаунта?{' '}
@@ -260,7 +260,7 @@ export function Login({ onLogin }: { onLogin: (token: string, user: Me) => void 
                 </label>
                 {suCommon && <span className="field-hint error">{suCommon}</span>}
                 <button className="btn btn-primary auth-submit stagger" style={{ ['--i' as string]: 4 }} type="submit" disabled={busy} tabIndex={tabS}>
-                  {busy && mode === 'signup' ? 'Создаём…' : 'Создать аккаунт'}
+                  {busy && mode === 'signup' ? <span className="btn-spin" role="status" aria-label="Создаём аккаунт" /> : 'Создать аккаунт'}
                 </button>
                 <div className="auth-foot">
                   Уже есть аккаунт?{' '}

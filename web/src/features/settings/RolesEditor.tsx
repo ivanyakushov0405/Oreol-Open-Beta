@@ -58,8 +58,8 @@ export function RolesEditor({ app }: { app: AppState }) {
     <div className="roles-layout">
       <section className="roles-panel">
         <div className="roles-head">
-          <h3>Роли — {custom.length}</h3>
-          <p>Выше по списку — главнее. Перетаскивайте, чтобы изменить порядок.</p>
+          <h3>Роли: {custom.length}</h3>
+          <p>Чем выше в списке, тем главнее. Перетаскивайте, чтобы изменить порядок.</p>
         </div>
         <div className="roles-list">
           {custom.map((r, i) => (
@@ -69,7 +69,7 @@ export function RolesEditor({ app }: { app: AppState }) {
             </Fragment>
           ))}
         </div>
-        <button type="button" className="btn-chip" onClick={() => app.notify('Создание ролей — скоро будет')}>
+        <button type="button" className="btn-chip" onClick={() => app.notify('Создание ролей скоро будет')}>
           <Icon name="plus" size={16} />
           Создать роль
         </button>

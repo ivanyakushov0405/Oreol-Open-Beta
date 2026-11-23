@@ -33,12 +33,12 @@ export function useServerSwipe(stage: RefObject<HTMLElement>, opts: { can: (dir:
       const dy = y - s.y;
       const dx = x - s.x;
       if (!s.decided) {
-        if (Math.abs(dy) < (s.mouse ? 6 : 4) && Math.abs(dx) < 4) return false;
+        if (Math.abs(dy) < (s.mouse ? 6 : 8) && Math.abs(dx) < 8) return false;
         s.decided = true;
         // палец вниз — предыдущий сервер, вверх — следующий
         const dir: -1 | 1 = dy > 0 ? -1 : 1;
         const edge = s.mouse || (dir === -1 ? s.top : s.bottom);
-        if (Math.abs(dy) <= Math.abs(dx) || !edge || !o.current.can(dir)) return void (s = null), false;
+        if (Math.abs(dy) <= Math.abs(dx) * 1.5 || !edge || !o.current.can(dir)) return void (s = null), false;
         s.dir = dir;
         window.getSelection()?.removeAllRanges();
       }

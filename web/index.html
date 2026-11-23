@@ -26,8 +26,6 @@
       rel="stylesheet"
     />
     <script>
-      // Тема, прозрачность и живой фон — до первой отрисовки, иначе при перезагрузке на миг мелькал тор и тёмная тема.
-      // По умолчанию: тема как в системе, стекло и живой фон выключены. Экран входа (нет токена) — тема системы, стекло и фон включены.
       try {
         var d = document.documentElement.dataset, ls = localStorage;
         var sys = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';

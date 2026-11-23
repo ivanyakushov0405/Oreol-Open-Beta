@@ -9,7 +9,7 @@ import { getPeerVolume, setPeerVolume, subscribePeerVolume } from '../voice/peer
 import { DisplayName } from './Nick';
 
 /* ---------- Открыть меню можно откуда угодно: openUserMenu(имя, x, y) ---------- */
-type Open = { name: string; x: number; y: number; mentionOnly?: boolean } | null;
+type Open = { name: string; x: number; y: number; mentionOnly?: boolean; inChat?: boolean } | null;
 let state: Open = null;
 const subs = new Set<() => void>();
 const set = (v: Open) => {
@@ -17,15 +17,16 @@ const set = (v: Open) => {
   subs.forEach((f) => f());
 };
 /** mentionOnly — короткое меню (только «Упомянуть»): кнопка «…» в полном профиле. */
-export function openUserMenu(name: string, x: number, y: number, mentionOnly?: boolean) {
-  set({ name, x, y, mentionOnly });
+export function openUserMenu(name: string, x: number, y: number, mentionOnly?: boolean, inChat?: boolean) {
+  set({ name, x, y, mentionOnly, inChat: inChat ?? mentionOnly });
 }
 /** Обработчик ПКМ для элемента с пользователем. */
 export const userMenuProps = (name: string) => ({
   onContextMenu: (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    openUserMenu(name, e.clientX, e.clientY);
+    // «Упомянуть» — только если меню открыли в чате (есть куда вставить упоминание)
+    openUserMenu(name, e.clientX, e.clientY, false, !!(e.currentTarget as Element).closest('.chat'));
   },
 });
 
@@ -45,6 +46,7 @@ function UserMenu({
   x,
   y,
   mentionOnly,
+  inChat,
   onClose,
 }: {
   app: AppState;
@@ -52,6 +54,7 @@ function UserMenu({
   x: number;
   y: number;
   mentionOnly?: boolean;
+  inChat?: boolean;
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -121,8 +124,8 @@ function UserMenu({
             />
           </label>
         )}
-        {!self && item('at', 'Упомянуть', () => window.dispatchEvent(new CustomEvent(MENTION_EVENT, { detail: name })))}
-        {!self && item('chats', 'Написать сообщение', () => app.notify('Личные сообщения — скоро будут'))}
+        {!self && inChat && item('at', 'Упомянуть', () => window.dispatchEvent(new CustomEvent(MENTION_EVENT, { detail: name })))}
+        {!self && item('chats', 'Написать сообщение', () => app.notify('Личные сообщения скоро будут'))}
         {self && item('copy', 'Копировать юзернейм', () => void navigator.clipboard?.writeText(handleOf(name)))}
         </>
         )}

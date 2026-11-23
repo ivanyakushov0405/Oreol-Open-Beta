@@ -268,6 +268,24 @@ def voice_room(server: str | None) -> str:
     return SERVERS.get(server or "rg", SERVERS["rg"])["voice"]
 MAX_NAME_LEN = 32
 MAX_MESSAGE_LEN = 2000
+# «Залго»: к букве цепляют сотни диакритических знаков, и текст расползается по ленте. Оставляем не больше двух на символ.
+MAX_MARKS_PER_CHAR = 2
+
+
+def clean_text(text: str) -> str:
+    import unicodedata
+
+    out = []
+    marks = 0
+    for ch in text:
+        if unicodedata.category(ch) in ("Mn", "Me"):
+            marks += 1
+            if marks > MAX_MARKS_PER_CHAR:
+                continue
+        else:
+            marks = 0
+        out.append(ch)
+    return "".join(out)
 
 
 def to_iso(ts: str | None) -> str | None:
@@ -454,13 +472,13 @@ def photo_info(body: bytes):
             except Exception:
                 pass
     except Image.DecompressionBombError:
-        return f"Слишком большое разрешение — максимум {MAX_PHOTO_PIXELS // 1_000_000} Мп"
+        return f"Слишком большое разрешение, максимум {MAX_PHOTO_PIXELS // 1_000_000} Мп"
     except (UnidentifiedImageError, OSError, ValueError):
         return "Файл не похож на изображение"
     if min(w, h) < MIN_PHOTO_SIDE:
         return "Пустое изображение"
     if max(w, h) > MAX_PHOTO_SIDE or w * h > MAX_PHOTO_PIXELS:
-        return f"Слишком большое разрешение — до {MAX_PHOTO_SIDE} px по стороне и {MAX_PHOTO_PIXELS // 1_000_000} Мп"
+        return f"Слишком большое разрешение: до {MAX_PHOTO_SIDE} px по стороне и {MAX_PHOTO_PIXELS // 1_000_000} Мп"
     return (*fmt, w, h)
 
 
@@ -1082,7 +1100,7 @@ async def profile_update(request: Request):
         values.append(display)
     if "bio" in data:
         fields.append("bio = ?")
-        values.append(str(data["bio"]).strip()[:MAX_BIO_LEN])
+        values.append(clean_text(str(data["bio"])).strip()[:MAX_BIO_LEN])
     conn = db()
     if fields:
         conn.execute(f"UPDATE users SET {', '.join(fields)} WHERE id = ?", (*values, row["id"]))
@@ -1478,7 +1496,7 @@ async def api_ws(websocket: WebSocket, room: str):
                 continue
             kind = data.get("type")
             if kind == "message":
-                content = str(data.get("content", "")).strip()[:MAX_MESSAGE_LEN]
+                content = clean_text(str(data.get("content", ""))).strip()[:MAX_MESSAGE_LEN]
                 reply_to = as_ids(data.get("reply_to"))[:1] if data.get("reply_to") is not None else []
                 photos = as_ids(data.get("attachments") or [])[:MAX_PHOTOS]
                 if content or photos:
@@ -1489,7 +1507,7 @@ async def api_ws(websocket: WebSocket, room: str):
                         await hub.send(room, {"type": "message", "message": msg})
             elif kind == "edit":
                 # Изменить можно только своё сообщение
-                content = str(data.get("content", "")).strip()[:MAX_MESSAGE_LEN]
+                content = clean_text(str(data.get("content", ""))).strip()[:MAX_MESSAGE_LEN]
                 found = get_message(as_ids(data.get("id"))[0]) if as_ids(data.get("id")) else None
                 if content and found and found[0]["room"] == room and found[0]["username"] == user and not found[0]["sys"]:
                     conn = chat_conn()

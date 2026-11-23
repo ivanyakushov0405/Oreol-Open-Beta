@@ -140,14 +140,19 @@ export function MemberCard({
         ref={ref}
         style={
           sheet
-            ? {
-                height: h0 === null ? undefined : expanded ? 'calc(100% - env(safe-area-inset-top) - 54px)' : h0,
-                transform: drag > 0 ? `translateY(${drag}px)` : undefined,
-              }
+            ? // Шторка всегда полной высоты, свёрнутая — сдвинута вниз так, что видна только карточка.
+              // Разворот — сдвиг (transform), а не высота: высота перекладывала всю шторку на каждом кадре — «мало кадров».
+              ((h0 === null
+                ? { transform: drag > 0 ? `translateY(${drag}px)` : undefined }
+                : {
+                    height: 'calc(100% - env(safe-area-inset-top) - 54px)',
+                    maxHeight: 'none',
+                    '--sheet-y': expanded ? `${Math.max(0, drag)}px` : `calc(100% - ${h0}px + ${Math.max(0, drag)}px)`,
+                  }) as React.CSSProperties)
             : pos
         }
         onTransitionEnd={(e) => {
-          if (sheet && e.propertyName === 'height' && !expanded) setExtras(false);
+          if (sheet && e.target === e.currentTarget && (e.propertyName === 'transform' || e.propertyName === 'height') && !expanded) setExtras(false);
         }}
         role="dialog"
         aria-label={`Профиль ${name}`}
@@ -216,7 +221,7 @@ export function MemberCard({
             <>
               <div className="mc-info">
                 <section>
-                  <div className="mc-over">Общие серверы — 1</div>
+                  <div className="mc-over">Общие серверы: 1</div>
                   <div className="mc-server">
                     <span className="mc-server-ico" style={{ background: serverIcon?.gradient }}>
                       {serverIcon?.short}
@@ -237,7 +242,7 @@ export function MemberCard({
                     className="mc-note"
                     rows={2}
                     value={note}
-                    placeholder="Нажмите, чтобы добавить заметку — её видите только вы"
+                    placeholder="Нажмите, чтобы добавить заметку. Её видите только вы"
                     onChange={(e) => saveNote(e.target.value)}
                   />
                 </section>

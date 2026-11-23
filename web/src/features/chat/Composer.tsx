@@ -2,6 +2,8 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 're
 import { api, ApiError } from '../../shared/api';
 import { Icon } from '../../shared/icons';
 import { handleOf, MAX_PHOTO_MB, MAX_PHOTOS, PHOTO_TYPES, type Attachment } from '../../shared/model';
+import { Avatar } from '../../shared/ui/Avatar';
+import { DisplayName } from '../members/Nick';
 import { MENTION_EVENT } from './mentions';
 
 export function Composer({
@@ -15,7 +17,10 @@ export function Composer({
   onDraft,
   allowPhotos = true,
   onError,
+  people = [],
 }: {
+  /** Кого можно упомянуть (юзернеймы участников сервера, без себя) — подсказки при вводе «@». */
+  people?: string[];
   placeholder: string;
   /** photos — id уже загруженных фото (по порядку выбора). */
   onSend: (text: string, photos: number[]) => boolean;
@@ -36,6 +41,38 @@ export function Composer({
 }) {
   const [text, setText] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
+  /** Позиция курсора — подсказки упоминаний смотрят на «@…» прямо перед ним. */
+  const [caret, setCaret] = useState(0);
+  const [pick, setPick] = useState(0);
+  const [mentionOff, setMentionOff] = useState<string | null>(null);
+  const before = text.slice(0, caret);
+  const at = /(^|\s)@([\p{L}\p{N}._]*)$/u.exec(before);
+  const query = at ? at[2].toLowerCase() : null;
+  const hits =
+    query === null || mentionOff === before
+      ? []
+      : people
+          .filter((n) => {
+            const h = handleOf(n).slice(1).toLowerCase();
+            return h.startsWith(query) || n.toLowerCase().startsWith(query) || (query.length > 0 && h.includes(query));
+          })
+          .slice(0, 6);
+  const sel = Math.min(pick, Math.max(0, hits.length - 1));
+  const insertMention = (n: string) => {
+    if (!at) return;
+    const start = caret - at[2].length - 1;
+    const tag = handleOf(n) + ' ';
+    const next = text.slice(0, start) + tag + text.slice(caret).replace(/^\s+/, '');
+    setText(next);
+    const pos = start + tag.length;
+    setCaret(pos);
+    setPick(0);
+    const el = inputRef.current;
+    if (el) {
+      el.focus();
+      requestAnimationFrame(() => el.setSelectionRange(pos, pos));
+    }
+  };
   const fileRef = useRef<HTMLInputElement>(null);
   /** Выбранные фото: загружаются сразу после выбора, в сообщение уходят их id. */
   const [photos, setPhotos] = useState<Pending[]>([]);
@@ -57,7 +94,7 @@ export function Composer({
     const fresh: Pending[] = [];
     for (const file of files) {
       if (!PHOTO_TYPES.includes(file.type)) {
-        onError?.(`«${file.name}»: можно прикрепить только фото — JPG, PNG, WEBP или GIF`);
+        onError?.(`«${file.name}»: можно прикрепить только фото: JPG, PNG, WEBP или GIF`);
         continue;
       }
       if (file.size > MAX_PHOTO_MB * 1024 * 1024) {
@@ -65,7 +102,7 @@ export function Composer({
         continue;
       }
       if (fresh.length >= room) {
-        onError?.(`В одном сообщении — не больше ${MAX_PHOTOS} фото`);
+        onError?.(`В одном сообщении не больше ${MAX_PHOTOS} фото`);
         break;
       }
       fresh.push({ key: `${Date.now()}-${Math.random()}`, preview: URL.createObjectURL(file) });
@@ -183,6 +220,28 @@ export function Composer({
           e.target.value = '';
         }}
       />
+      {hits.length > 0 && (
+        <div className="mention-pop" role="listbox" aria-label="Кого упомянуть">
+          {hits.map((n, i) => (
+            <button
+              key={n}
+              type="button"
+              role="option"
+              aria-selected={i === sel}
+              className={'mention-opt' + (i === sel ? ' on' : '')}
+              // не уводим фокус из поля — клавиатура на телефоне не прячется
+              onPointerDown={(e) => e.preventDefault()}
+              onClick={() => insertMention(n)}
+            >
+              <Avatar name={n} size={28} />
+              <span className="mo-name">
+                <DisplayName name={n} />
+              </span>
+              <span className="mo-tag">{handleOf(n)}</span>
+            </button>
+          ))}
+        </div>
+      )}
       <div className={'field' + (bar || shownPhotos.length ? ' has-bar' : '')}>
         {bar}
         {shownPhotos.length > 0 && (
@@ -201,7 +260,25 @@ export function Composer({
         <input
           ref={inputRef}
           value={text}
+          onSelect={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
           onKeyDown={(e) => {
+            if (hits.length) {
+              if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                e.preventDefault();
+                setPick((sel + (e.key === 'ArrowDown' ? 1 : hits.length - 1)) % hits.length);
+                return;
+              }
+              if (e.key === 'Enter' || e.key === 'Tab') {
+                e.preventDefault();
+                insertMention(hits[sel]);
+                return;
+              }
+              if (e.key === 'Escape') {
+                e.preventDefault();
+                setMentionOff(before);
+                return;
+              }
+            }
             if (e.key === 'Escape' && onCancel) {
               e.preventDefault();
               onCancel();
@@ -221,6 +298,8 @@ export function Composer({
           maxLength={2000}
           onChange={(e) => {
             setText(e.target.value);
+            setCaret(e.target.selectionStart ?? e.target.value.length);
+            setPick(0);
             onTyping?.();
           }}
         />

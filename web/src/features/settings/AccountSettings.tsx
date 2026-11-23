@@ -359,7 +359,7 @@ export function AccountView({ app, onEdit }: { app: AppState; onEdit: () => void
           <button type="button" className="btn btn-primary" onClick={() => setPw(true)}>
             Сменить пароль
           </button>
-          <button type="button" className="btn btn-secondary" onClick={() => app.notify('Двухфакторная аутентификация — скоро будет')}>
+          <button type="button" className="btn btn-secondary" onClick={() => app.notify('Двухфакторная аутентификация скоро будет')}>
             Включить 2FA
           </button>
         </div>
@@ -461,7 +461,7 @@ export function AccountEdit({ app, onDone }: { app: AppState; onDone: () => void
               rows={3}
               value={form.bio}
               maxLength={MAX_BIO}
-              placeholder="Пара слов о себе — её увидят в карточке участника"
+              placeholder="Пара слов о себе для карточки участника"
               onChange={set('bio')}
             />
             <span className="field-hint">

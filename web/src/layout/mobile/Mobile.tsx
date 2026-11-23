@@ -43,7 +43,7 @@ const TABS: { id: Tab; label: string; icon: IconName }[] = [
 /** Функции текстового канала в меню «Ещё» (как кнопки в шапке канала на десктопе). */
 const CHAT_MENU: { icon: IconName; label: string; soon?: string }[] = [
   { icon: 'pin', label: 'Закреплённые' },
-  { icon: 'bell', label: 'Уведомления', soon: 'Настройка уведомлений — скоро будет' },
+  { icon: 'bell', label: 'Уведомления', soon: 'Настройка уведомлений скоро будет' },
   { icon: 'copy', label: 'Копировать название' },
 ];
 
@@ -179,12 +179,14 @@ export function Mobile({ app }: { app: AppState }) {
     out.node.querySelectorAll('[key], [id]').forEach((n) => n.removeAttribute('id'));
     stack.appendChild(out.node);
     cur.style.transition = cur.style.transform = cur.style.opacity = '';
-    const ease = 'cubic-bezier(.22, .8, .25, 1)';
-    const ms = 380;
-    const away = out.dir === 1 ? 'translateY(-104%)' : 'translateY(104%)';
-    const come = out.dir === 1 ? 'translateY(104%)' : 'translateY(-104%)';
-    out.node.animate([{ transform: from, opacity: fromOp }, { transform: away, opacity: 0.5 }], { duration: ms, easing: ease, fill: 'forwards' });
-    const a = cur.animate([{ transform: come }, { transform: 'translateY(0)' }], { duration: ms, easing: ease });
+    // Старая панель коротко уходит и растворяется, новая выплывает с той же стороны, куда вёл палец.
+    // Полёт на всю высоту панели был рваным: стекло двух панелей пересчитывало размытие на каждом кадре.
+    const ease = 'cubic-bezier(.25, .8, .3, 1)';
+    const ms = 420;
+    const away = out.dir === 1 ? 'translateY(-90px)' : 'translateY(90px)';
+    const come = out.dir === 1 ? 'translateY(120px)' : 'translateY(-120px)';
+    out.node.animate([{ transform: from, opacity: fromOp }, { transform: away, opacity: 0 }], { duration: 170, easing: 'cubic-bezier(.2, 0, .4, 1)', fill: 'forwards' });
+    const a = cur.animate([{ transform: come, opacity: 0 }, { opacity: 1, offset: 0.55 }, { transform: 'translateY(0)', opacity: 1 }], { duration: ms, easing: ease });
     const done = () => out.node.remove();
     a.onfinish = done;
     a.oncancel = done;
@@ -272,7 +274,14 @@ export function Mobile({ app }: { app: AppState }) {
   }, [inCall]);
   /** Открыт экран войса, в котором мы сейчас, — виджет уезжает вверх. Пока экран войса уезжает, виджет ещё спрятан:
    *  сначала закрывается экран, потом отдельным плавным движением сверху выезжает виджет (вместе они «спорили» — ступеньки). */
-  const onOwnVoice = !!open && open.kind === 'voice' && app.inVoiceHere;
+  // виджет начинает выезжать, когда экран войса уже почти уехал (а не после полной остановки — так он запаздывал)
+  const [voiceGoing, setVoiceGoing] = useState(false);
+  useEffect(() => {
+    if (leaving !== 'voice') return void setVoiceGoing(false);
+    const id = window.setTimeout(() => setVoiceGoing(true), Math.round(SLIDE_MS * 0.55));
+    return () => window.clearTimeout(id);
+  }, [leaving]);
+  const onOwnVoice = !!open && open.kind === 'voice' && app.inVoiceHere && !voiceGoing;
   const [callSize, setCallSize] = useState<{ h: number | null; drag: number | null }>({ h: null, drag: null });
   /** Сколько места сверху занимает виджет: развёрнутый — свою высоту, свёрнутый — полосу под пилюлей
    *  (во «Вы» пилюля лежит прямо на баннере), на экране своего войса — ничего. */
@@ -498,7 +507,7 @@ export function Mobile({ app }: { app: AppState }) {
   return (
     <div
       className={'m-app' + (app.glassChat ? ' glass-chat' : '') + (app.glassVoice ? ' glass-voice' : '') + (pillOver ? ' pill-over' : '') + (callSize.drag != null ? ' call-drag' : (callAnim || lastAnimKey.current !== animKey) && !onOwnVoice ? ' call-anim' : '')}
-      style={{ '--call-h': `${callSpace}px` } as React.CSSProperties}
+      style={{ '--call-h': `${callSpace}px`, '--call-h-to': `${callSpace}px` } as React.CSSProperties}
     >
       {/* Виджет звонка — над всеми вкладками и экранами (как плашка идущего звонка на телефоне) */}
       <MobileCall
@@ -580,7 +589,7 @@ export function Mobile({ app }: { app: AppState }) {
           <h2>Чаты</h2>
           <div className="empty-state" style={{ marginTop: 32, fontSize: 13 }}>
             <b>Личных сообщений пока нет</b>
-            Здесь будут ваши диалоги и групповые чаты. Чаты серверов — во вкладке «Серверы».
+            Здесь будут ваши диалоги и групповые чаты. Чаты серверов находятся во вкладке «Серверы».
           </div>
         </div>
       )}
@@ -663,7 +672,7 @@ export function Mobile({ app }: { app: AppState }) {
             onBack={() => close('chat', () => setOpen(null))}
             actions={
               <>
-                <button className="icon-btn" title="Поиск" aria-label="Поиск" onClick={() => app.notify('Поиск по каналу — скоро будет')}>
+                <button className="icon-btn" title="Поиск" aria-label="Поиск" onClick={() => app.notify('Поиск по каналу скоро будет')}>
                   <Icon name="search" />
                 </button>
                 <button className={'icon-btn' + (chatMenu ? ' active' : '')} title="Ещё" aria-label="Ещё" aria-expanded={chatMenu} onClick={() => setChatMenu((v) => !v)}>
@@ -777,7 +786,7 @@ export function Mobile({ app }: { app: AppState }) {
           <Hold hold={holdUnder.current}>
           <Head title="Участники" sub={app.membersReady ? `${app.server.name} · ${online.length} в сети` : app.server.name} onBack={() => close('members', () => setMembers(false))} />
           <div className="m-members-list glass">
-            <div className="section-title overline">В сети — {online.length}</div>
+            <div className="section-title overline">В сети: {online.length}</div>
             {online.map((m) => (
               <MemberRow
                 key={m.username}
@@ -785,10 +794,10 @@ export function Mobile({ app }: { app: AppState }) {
                 me={m.username === app.name}
                 status={m.status}
                 sub={app.voiceUsers.some((v) => v.identity === m.username) ? `В голосовом · ${voiceName}` : handleOf(m.username)}
-                onClick={() => setCard(m.username)}
+                onClick={() => openProfile(m.username)}
               />
             ))}
-            {app.membersOffline.length > 0 && <div className="section-title overline">Не в сети — {app.membersOffline.length}</div>}
+            {app.membersOffline.length > 0 && <div className="section-title overline">Не в сети: {app.membersOffline.length}</div>}
             {app.membersOffline.map((m) => (
               <MemberRow
                 key={m.username}
@@ -796,7 +805,7 @@ export function Mobile({ app }: { app: AppState }) {
                 me={m.username === app.name}
                 status="offline"
                 sub={handleOf(m.username)}
-                onClick={() => setCard(m.username)}
+                onClick={() => openProfile(m.username)}
               />
             ))}
           </div>
@@ -809,7 +818,7 @@ export function Mobile({ app }: { app: AppState }) {
           key={card}
           sheet
           serverIcon={{ short: app.server.short, gradient: app.server.gradient }}
-          onCall={() => app.notify('Личные звонки — скоро будут')}
+          onCall={() => app.notify('Личные звонки скоро будут')}
           name={card}
           me={card === app.name}
           at={{ x: 0, y: 0 }}

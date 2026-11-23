@@ -107,12 +107,20 @@ const micOptions = () => {
 /** Голос, в котором пользователь был, — чтобы после перезагрузки страницы вернуться в него. */
 const LS_VOICE = 'oreol.voice';
 const LS_MIC_OFF = 'oreol.micOff';
-type SavedVoice = { server: string; startedAt: number };
+/** seen — когда вкладка последний раз была жива в голосе. */
+type SavedVoice = { server: string; startedAt: number; seen?: number };
+/** Вернуться в голос можно только после перезагрузки или короткого обрыва: закрыл вкладку и пришёл позже — в голос не закидываем. */
+const VOICE_RESUME_MS = 60_000;
 
 export function savedVoice(): SavedVoice | null {
   try {
     const v = JSON.parse(localStorage.getItem(LS_VOICE) || 'null');
-    return v && typeof v.server === 'string' ? v : null;
+    if (!v || typeof v.server !== 'string') return null;
+    if (!v.seen || Date.now() - v.seen > VOICE_RESUME_MS) {
+      localStorage.removeItem(LS_VOICE);
+      return null;
+    }
+    return v;
   } catch {
     return null;
   }
@@ -120,7 +128,7 @@ export function savedVoice(): SavedVoice | null {
 
 function saveVoice(v: SavedVoice | null) {
   try {
-    if (v) localStorage.setItem(LS_VOICE, JSON.stringify(v));
+    if (v) localStorage.setItem(LS_VOICE, JSON.stringify({ ...v, seen: Date.now() }));
     else localStorage.removeItem(LS_VOICE);
   } catch {
     /* хранилище недоступно — просто не восстановим */
@@ -349,7 +357,7 @@ export function useVoice(user: string) {
       try {
         if (micWantedRef.current) await room.localParticipant.setMicrophoneEnabled(true, micOptions());
       } catch {
-        setError('Нет доступа к микрофону — вы в канале без звука');
+        setError('Нет доступа к микрофону, вы в канале без звука');
       }
       await room.startAudio().catch(() => undefined);
       // После перезагрузки браузер может не дать играть звук без жеста — включаем по первому клику/нажатию
@@ -381,6 +389,22 @@ export function useVoice(user: string) {
       setError(e instanceof Error ? e.message : 'Ошибка подключения к голосу');
     }
   }, [user, refresh]);
+
+  // Пока в голосе — отмечаем, что вкладка жива: по этой отметке после перезагрузки возвращаемся в голос,
+  // а если вкладку закрыли и пришли позже минуты — нет
+  useEffect(() => {
+    if (state !== 'connected' || !server || startedAt == null) return;
+    const mark = () => serverRef.current === server && roomRef.current && saveVoice({ server, startedAt });
+    mark();
+    const id = window.setInterval(mark, 15_000);
+    window.addEventListener('pagehide', mark);
+    document.addEventListener('visibilitychange', mark);
+    return () => {
+      window.clearInterval(id);
+      window.removeEventListener('pagehide', mark);
+      document.removeEventListener('visibilitychange', mark);
+    };
+  }, [state, server, startedAt]);
 
   const leave = useCallback(() => {
     saveVoice(null);
@@ -664,8 +688,8 @@ const rosterCache = new Map<string, RosterEntry[]>();
 
 export function useVoiceRoster(enabled: boolean, server: string, seed?: RosterEntry[]) {
   const [list, setList] = useState<{ server: string; items: RosterEntry[] } | null>(null);
-  const seedRef = useRef<{ server: string; items: RosterEntry[] }>({ server, items: NO_ROSTER });
-  if (!enabled && seed) seedRef.current = { server, items: seed };
+  const seedRef = useRef<{ server: string; items: RosterEntry[]; at: number }>({ server: '', items: NO_ROSTER, at: 0 });
+  if (!enabled && seed) seedRef.current = { server, items: seed, at: Date.now() };
   useEffect(() => {
     if (!enabled) {
       setList(null);
@@ -707,8 +731,12 @@ export function useVoiceRoster(enabled: boolean, server: string, seed?: RosterEn
     };
   }, [enabled, server]);
   if (list && list.server === server) return list.items;
-  if (enabled && seedRef.current.server === server) return seedRef.current.items;
-  return (enabled && rosterCache.get(server)) || NO_ROSTER;
+  if (!enabled) return NO_ROSTER;
+  // Состав из голоса — только сразу после выхода из него (пока не пришёл список). Раньше он держался вечно:
+  // при смене сервера на миг показывался давно вышедший («призрак»), а если состава не было — пустота вместо кэша.
+  const sd = seedRef.current;
+  if (sd.server === server && Date.now() - sd.at < 4000) return sd.items;
+  return rosterCache.get(server) ?? NO_ROSTER;
 }
 
 /** Сколько человек в голосовом канале каждого сервера — для меток над иконками серверов. */

@@ -170,6 +170,35 @@ function MessageListImpl({
   const press = useRef<{ t: number; x: number; y: number; hold: number; row: HTMLElement } | null>(null);
   /** Свайп сообщения влево для ответа. */
   const swipe = useRef<{ id: number; x: number; y: number; row: HTMLElement; m: ChatMessage; on: boolean; dx: number; ticked: boolean } | null>(null);
+  // Safari отдаёт жест прокрутке по первым движениям пальца (и шлёт pointercancel): свайп для ответа срывался,
+  // если палец шёл чуть наискосок. Пока палец идёт скорее влево, чем вверх-вниз, прокрутку не начинаем.
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    let t0: { x: number; y: number; decided: boolean } | null = null;
+    const start = (e: TouchEvent) => {
+      const t = e.touches[0];
+      t0 = e.touches.length === 1 && t ? { x: t.clientX, y: t.clientY, decided: false } : null;
+    };
+    const move = (e: TouchEvent) => {
+      const sw = swipe.current;
+      if (!sw || !t0 || e.touches.length !== 1) return;
+      if (sw.on) return void (e.cancelable && e.preventDefault());
+      if (t0.decided) return;
+      const t = e.touches[0];
+      const dx = t.clientX - t0.x;
+      const dy = t.clientY - t0.y;
+      if (Math.hypot(dx, dy) < 5) return;
+      t0.decided = true;
+      if (dx < 0 && Math.abs(dx) > Math.abs(dy) * 0.9 && e.cancelable) e.preventDefault();
+    };
+    el.addEventListener('touchstart', start, { passive: true });
+    el.addEventListener('touchmove', move, { passive: false });
+    return () => {
+      el.removeEventListener('touchstart', start);
+      el.removeEventListener('touchmove', move);
+    };
+  }, []);
   /** Открытое на весь экран фото. */
   const [viewer, setViewer] = useState<{ photos: Attachment[]; i: number } | null>(null);
   // Кнопка «вниз»: появляется, когда ушли от низа ленты; на ней — сколько новых сообщений пришло, пока смотрели выше
@@ -350,9 +379,8 @@ function MessageListImpl({
       const row = e.currentTarget as HTMLElement;
       const x = e.clientX;
       const y = e.clientY;
-      // свайп для ответа — и пальцем, и мышью (кроме нажатий на ссылки, фото и кнопки внутри)
-      const inner = (e.target as HTMLElement).closest('a, button, img, video, .msg-reply, .msg-ava');
-      if (onReply && !m.sys && !m.leaving && !(mouse && inner)) swipe.current = { id: e.pointerId, x, y, row, m, on: false, dx: 0, ticked: false };
+      // свайп для ответа — только пальцем (мышью отвечают кнопкой при наведении)
+      if (onReply && !m.sys && !m.leaving && !mouse) swipe.current = { id: e.pointerId, x, y, row, m, on: false, dx: 0, ticked: false };
       // долгое нажатие с меню — только пальцем (мышью меню открывает ПКМ)
       if (mouse || !onMenu) return;
       press.current = {
@@ -378,8 +406,8 @@ function MessageListImpl({
       const dx = e.clientX - sw.x;
       const dy = e.clientY - sw.y;
       if (!sw.on) {
-        if (Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx)) return void (swipe.current = null);
-        if (dx > -10 || Math.abs(dx) <= Math.abs(dy)) return;
+        if (Math.abs(dy) > 12 && Math.abs(dy) > Math.abs(dx) * 1.2) return void (swipe.current = null);
+        if (dx > -10 || Math.abs(dx) <= Math.abs(dy) * 0.9) return;
         sw.on = true;
         sw.x = e.clientX;
         sw.row.dataset.swiping = '';
@@ -392,7 +420,8 @@ function MessageListImpl({
       }
       // влево — за пальцем, дальше порога — с сопротивлением; вправо не едет
       const raw = Math.min(0, e.clientX - sw.x);
-      const d = raw < -SWIPE_REPLY ? -SWIPE_REPLY + (raw + SWIPE_REPLY) * 0.3 : raw;
+      // дальше порога — с сопротивлением и не больше чем на 20px сверх него
+      const d = raw < -SWIPE_REPLY ? -SWIPE_REPLY - 20 * (1 - Math.exp((raw + SWIPE_REPLY) / 40)) : raw;
       sw.dx = raw;
       sw.row.style.transform = `translateX(${d}px)`;
       sw.row.style.setProperty('--swp', String(Math.min(1, -raw / SWIPE_REPLY)));
@@ -485,7 +514,7 @@ function MessageListImpl({
           </span>
         )}
         {!mine && (
-          <span className="msg-ava" {...userMenuProps(m.user)} onClick={(e) => (e.stopPropagation(), !selecting && openProfile(m.user))}>
+          <span className="msg-ava" {...userMenuProps(m.user)} onClick={(e) => (e.stopPropagation(), !selecting && openProfile(m.user, { inChat: true }))}>
             <Avatar name={m.user} size={34} />
           </span>
         )}
@@ -497,7 +526,7 @@ function MessageListImpl({
           {/* Шапка: имя · пин · время · ответы; у своих — наоборот, без имени и с галочками в конце */}
           <div className="meta">
             {!mine && (
-              <span className="msg-nick" role="button" tabIndex={0} {...userMenuProps(m.user)} onClick={(e) => (e.stopPropagation(), !selecting && openProfile(m.user))}>
+              <span className="msg-nick" role="button" tabIndex={0} {...userMenuProps(m.user)} onClick={(e) => (e.stopPropagation(), !selecting && openProfile(m.user, { inChat: true }))}>
                 <Nick name={m.user} />
               </span>
             )}

@@ -59,8 +59,11 @@ export const MAX_PHOTO_MB = 10;
 export const PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 
 /** Короткий текст сообщения для цитат, закрепов и уведомлений: у сообщения из одних фото — «Фото». */
+/** «Залго» — сотни диакритических знаков на одной букве: оставляем не больше двух (старые сообщения до серверной очистки). */
+export const cleanText = (t: string) => t.replace(/(\p{Mn}{2})[\p{Mn}\p{Me}]+/gu, '$1');
+
 export function previewText(m: Pick<ChatMessage, 'content' | 'attachments'>) {
-  if (m.content) return m.content;
+  if (m.content) return cleanText(m.content);
   const n = m.attachments?.length ?? 0;
   return n === 1 ? 'Фото' : n ? `Фото · ${n}` : '';
 }

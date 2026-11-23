@@ -275,7 +275,8 @@ export function useStageSwipes(stage: RefObject<HTMLElement>, opts: Opts) {
       const dx = t.clientX - t0.x;
       const dy = t.clientY - t0.y;
       if (s.kind === 'back' && dx < 0) return;
-      if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 3 && e.cancelable) e.preventDefault();
+      // только явно вбок: отменённое первое движение iOS запоминает на весь жест, и списки переставали листаться
+      if (Math.abs(dx) > 6 && Math.abs(dx) > Math.abs(dy) * 1.3 && e.cancelable) e.preventDefault();
     };
     el.addEventListener('touchstart', tstart, { passive: true });
     el.addEventListener('touchmove', tmove, { passive: false });

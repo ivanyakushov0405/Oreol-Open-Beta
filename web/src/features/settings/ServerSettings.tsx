@@ -20,7 +20,7 @@ export function ServerSettingsBody({ app, section }: { app: AppState; section: S
               <input className="input" value={app.server.about} disabled />
             </label>
             <p className="hint" style={{ margin: 0 }}>
-              Редактирование — скоро будет
+              Редактирование скоро будет
             </p>
           </div>
           <div className="card profile-card">
@@ -44,7 +44,7 @@ export function ServerSettingsBody({ app, section }: { app: AppState; section: S
     case 'members':
       return (
         <div className="card">
-          <h3>Участники — {app.members.length}</h3>
+          <h3>Участники: {app.members.length}</h3>
           <p className="hint">Все, кто состоит на сервере; {app.membersOnline.length} сейчас в сети</p>
           {app.members.map((m) => (
             <div className="list-row" key={m.username}>
@@ -59,7 +59,7 @@ export function ServerSettingsBody({ app, section }: { app: AppState; section: S
         </div>
       );
     case 'channels':
-      return <Soon title="Каналы" text="Создание и редактирование каналов — скоро будет" />;
+      return <Soon title="Каналы" text="Создание и редактирование каналов скоро будет" />;
     case 'invites':
       return <Soon title="Приглашения" />;
     case 'audit':

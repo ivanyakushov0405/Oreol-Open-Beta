@@ -5329,8 +5329,11 @@ html[data-backdrop='off'] body:not(:has(.signin)) .backdrop .bd-layer.m > svg { 
    Покачивание тора (bd-sway) шло всё время, и каждое стекло над ним (шапки, таб-панель, виджет звонка, панели)
    на каждом кадре заново считало размытие того, что под ним. Неподвижный фон размывается один раз. */
 .backdrop .bd-layer.m > svg { animation: none !important; }
-/* подложка под тором плавно меняется только при включении; при выключении — сразу (вместе с гаснущим тором не спорит) */
-html[data-backdrop='off'] .backdrop .bd-layer { transition: none; }
+/* выключение тора — та же плавность, что и включение: тор гаснет и подложка темнеет одним мягким переходом
+   (раньше подложка менялась скачком, а тор гас за ней — выключение выглядело рывком) */
+.backdrop .bd-layer.m, html[data-backdrop='off'] .backdrop .bd-layer.m { transition: background-color .7s cubic-bezier(.4, 0, .2, 1) !important; }
+.backdrop .bd-layer.m > svg, html[data-backdrop='off'] body:not(:has(.signin)) .backdrop .bd-layer.m > svg { transition: opacity .7s cubic-bezier(.4, 0, .2, 1) !important; }
+html[data-vt] .backdrop .bd-layer.m, html[data-vt] .backdrop .bd-layer.m > svg { transition: none !important; }
 
 /* ===== Ползунки на телефоне: Safari ставит центр кружка прямо на край дорожки — у края кружок обрезался.
    Дорожка чуть уже поля (отступы по бокам), кружок целиком помещается внутри. */
@@ -5344,3 +5347,90 @@ html[data-backdrop='off'] .backdrop .bd-layer { transition: none; }
 .m-stage:not([data-swipe]):not([data-swiped]) > .m-settings:has(~ .m-settings.m-slide:not(.out)) > :not(.m-head) {
   visibility: hidden; transition: opacity .2s ease, visibility 0s linear .2s;
 }
+
+/* уходящая при смене сервера панель — без размытия: она растворяется, а пересчёт стекла на каждом кадре давал рывки */
+.srv-stack > .sidebar.srv-out { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+
+/* ===== Разворот/сворачивание виджета звонка без перестройки ленты на каждом кадре =====
+   Плавно едет --call-h (шапки, панели); отступ ленты сообщений берёт итоговую высоту сразу (--call-h-to не анимируется):
+   раньше лента из сотен сообщений перекладывалась на каждом кадре — анимация выглядела «мало кадров». */
+.m-stage .m-full-chat .chat-scroll { padding-top: calc(76px + var(--call-h-to, var(--call-h))); }
+.m-stage .m-full-chat .chat.with-pin .chat-scroll, .m-stage .m-full .chat.with-pin .chat-scroll { padding-top: calc(132px + var(--call-h-to, var(--call-h))); }
+.m-stage .chat-scroll > * { --call-h-to: 0px; }
+
+/* ===== Подсказки упоминаний над полем ввода («@…») ===== */
+.mention-pop {
+  position: absolute; left: 12px; right: 12px; bottom: calc(100% - 4px); z-index: 30;
+  display: flex; flex-direction: column; padding: 6px; border-radius: 18px; max-height: 260px; overflow-y: auto;
+  background: var(--g-menu-bg, #0f2036f0); backdrop-filter: var(--g-menu-blur, blur(24px)); -webkit-backdrop-filter: var(--g-menu-blur, blur(24px));
+  border: 1px solid #ffffff1f; box-shadow: 0 12px 32px #00000059;
+  animation: mention-pop-in .16s cubic-bezier(.2, .8, .2, 1);
+}
+@keyframes mention-pop-in { from { opacity: 0; transform: translateY(6px); } }
+.mention-opt { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 12px; text-align: left; color: var(--text-primary); min-width: 0; }
+.mention-opt.on, .mention-opt:active { background: #ffffff14; }
+@media (hover: hover) { .mention-opt:hover { background: #ffffff14; } }
+.mention-opt .mo-name { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.mention-opt .mo-tag { margin-left: auto; font-size: 13px; color: var(--text-secondary); flex: none; }
+[data-theme='light'] .mention-pop { border-color: #0a1a2e1a; }
+[data-theme='light'] .mention-opt.on, [data-theme='light'] .mention-opt:active { background: #0a1a2e0d; }
+
+/* ===== Выделенная строка о закрепе видна так же, как выделенное сообщение (подсветка шла внутрь плашки и перебивалась) ===== */
+.chat-scroll > .sys-row.selecting { border-radius: 16px; padding-top: 3px; padding-bottom: 3px; transition: background-color .15s ease; }
+.chat-scroll > .sys-row.selected { background: color-mix(in srgb, var(--accent-cyan) 14%, transparent); }
+.chat-scroll > .sys-row.selected .sys-note { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent-cyan) 70%, transparent) !important; }
+[data-theme='light'] .chat-scroll > .sys-row.selected { background: color-mix(in srgb, var(--accent-blue, #1e6bff) 16%, transparent); }
+
+/* ===== Долгое нажатие без блика =====
+   Поднятая копия пружинила (сжатие → 1.03 → 1) со стеклом внутри: размытие под облачком пересчитывалось на каждом кадре
+   и по пузырю «пробегал блик». Теперь копия плавно выпрямляется без перелёта и без собственного размытия (фон уже размыт). */
+@keyframes msg-lift-soft { from { transform: scale(.97); } to { transform: none; } }
+.msg-focus-host .msg, .msg-focus-host .sys-row { animation: msg-lift-soft .26s cubic-bezier(.2, .8, .2, 1) both !important; }
+.msg-focus-host .bubble, .msg-focus-host .sys-note { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+
+/* ===== Кнопка входа/регистрации: пока ждём ответ — вращающийся кружок вместо «Входим…» ===== */
+.btn-spin {
+  display: inline-block; width: 20px; height: 20px; border-radius: 50%; vertical-align: middle;
+  border: 2.5px solid currentColor; border-right-color: transparent; opacity: .9;
+  animation: spin .75s linear infinite;
+}
+.auth-submit:disabled:has(.btn-spin) { opacity: 1; }
+
+/* ===== «Удалить аккаунт»: при наведении у урны приоткрывается крышка ===== */
+.btn-danger-solid svg > path:nth-child(-n + 2) { transform-box: view-box; transform-origin: 4px 7px; transition: transform .28s cubic-bezier(.3, 1.4, .5, 1); }
+@media (hover: hover) {
+  .btn-danger-solid:hover:not(:disabled) svg > path:nth-child(-n + 2) { transform: translate(-.5px, -1.5px) rotate(-22deg); }
+}
+.btn-danger-solid:focus-visible svg > path:nth-child(-n + 2) { transform: translate(-.5px, -1.5px) rotate(-22deg); }
+
+/* ===== Наведение на телефоне не срабатывает: палец оставлял «залипший» hover (анимация карандаша у «Редактировать») ===== */
+@media (hover: none) {
+  .acc-edit-btn:hover:not(:disabled) svg { animation: none; }
+  .settings-nav .nav-item.danger:not([data-ico='trash']):hover:not([data-press]) svg { animation: none; }
+  .settings-nav .nav-item[data-ico='trash']:hover:not([data-press]):not(:focus-visible) .si svg > path:nth-of-type(-n + 2) { animation: none; }
+}
+
+/* ===== Шторка участника: разворот сдвигом, а не высотой (см. MemberCard) ===== */
+.member-card.sheet[style*='--sheet-y'] {
+  transform: translateY(var(--sheet-y)); will-change: transform;
+  transition: transform .4s cubic-bezier(.22, .9, .25, 1);
+  animation-name: sheet-up-to;
+}
+.member-card.sheet.dragging[style*='--sheet-y'] { transition: none; }
+@keyframes sheet-up-to { from { transform: translateY(100%); } to { transform: translateY(var(--sheet-y)); } }
+
+/* ===== Настройки, открытые поверх чата или участников (например, «Редактировать профиль» из своей карточки) =====
+   Экран настроек прозрачный (виден тор) — закрытый им чат просвечивал насквозь: «у окна нет фона».
+   Когда настройки выехали, экран под ними прячем; при свайпе назад или закрытии он снова виден сразу. */
+.m-stage:not([data-swipe]):not([data-swiped]) > .m-full:has(~ .m-settings.m-slide:not(.out)) {
+  visibility: hidden; transition: visibility 0s linear .24s;
+}
+
+/* смена сервера: уходящая панель — под новой (раньше лежала сверху и просвечивала сквозь приехавшую — «призрак») */
+.srv-stack > .sidebar.srv-out { z-index: 0; }
+.srv-stack:has(> .srv-out) > .sidebar:not(.srv-out) { position: relative; z-index: 1; }
+
+/* плитка с видео открывается на весь экран, подпись с ником — профиль */
+.tile:not(.novideo) { cursor: zoom-in; }
+.tile:not(.novideo) .tile-pill { cursor: pointer; }
+.tile:fullscreen .tile-pill { cursor: default; }

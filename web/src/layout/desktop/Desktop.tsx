@@ -190,7 +190,7 @@ export function Desktop({ app }: { app: AppState }) {
             <div className="sidebar-scroll">
               <div className="empty-state" style={{ marginTop: 40, fontSize: 13 }}>
                 <b>Пока пусто</b>
-                Личные сообщения — скоро будут
+                Личные сообщения скоро будут
               </div>
             </div>
           </>
@@ -266,10 +266,10 @@ export function Desktop({ app }: { app: AppState }) {
             ) : (
             <div className="actions">
               <PinnedButton chat={chat} />
-              <button className="icon-btn" title="Уведомления" onClick={() => app.notify('Настройка уведомлений — в демо недоступна')}>
+              <button className="icon-btn" title="Уведомления" onClick={() => app.notify('Настройка уведомлений недоступна в демо')}>
                 <Icon name="bell" />
               </button>
-              <button className="icon-btn" title="Поиск" onClick={() => app.notify('Поиск — скоро будет')}>
+              <button className="icon-btn" title="Поиск" onClick={() => app.notify('Поиск скоро будет')}>
                 <Icon name="search" />
               </button>
               <button className={'icon-btn' + (showMembers ? ' active' : '')} title="Участники" onClick={() => setShowMembers((s) => !s)}>
@@ -319,7 +319,7 @@ export function Desktop({ app }: { app: AppState }) {
             </span>
           </div>
           <div className="sidebar-scroll">
-            {online.length > 0 && <div className="section-title overline">В сети — {online.length}</div>}
+            {online.length > 0 && <div className="section-title overline">В сети: {online.length}</div>}
             {online.map((m) => (
               <MemberRow
                 key={m.username}
@@ -330,7 +330,7 @@ export function Desktop({ app }: { app: AppState }) {
                 onClick={openCard(m.username)}
               />
             ))}
-            {app.membersOffline.length > 0 && <div className="section-title overline">Не в сети — {app.membersOffline.length}</div>}
+            {app.membersOffline.length > 0 && <div className="section-title overline">Не в сети: {app.membersOffline.length}</div>}
             {app.membersOffline.map((m) => (
               <MemberRow
                 key={m.username}

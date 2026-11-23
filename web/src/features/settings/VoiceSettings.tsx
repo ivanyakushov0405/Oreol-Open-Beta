@@ -269,9 +269,9 @@ export function VoiceDevices() {
           const name = (e as DOMException)?.name;
           setErr(
             name === 'NotAllowedError' || name === 'SecurityError'
-              ? 'Нет доступа к микрофону — разрешите его в настройках браузера'
+              ? 'Нет доступа к микрофону. Разрешите его в настройках браузера'
               : name === 'NotFoundError'
-                ? 'Микрофон не найден — подключите устройство ввода'
+                ? 'Микрофон не найден. Подключите устройство ввода'
                 : name === 'NotReadableError'
                   ? 'Микрофон занят другим приложением'
                   : 'Не удалось запустить проверку микрофона',
@@ -301,7 +301,7 @@ export function VoiceDevices() {
       st.getTracks().forEach((t) => t.stop());
       refresh();
     } catch {
-      setErr('Нет доступа к микрофону — разрешите его в настройках браузера');
+      setErr('Нет доступа к микрофону. Разрешите его в настройках браузера');
     }
   };
 
@@ -328,7 +328,7 @@ export function VoiceDevices() {
               <DeviceSelect kind="audiooutput" devices={devices} value={prefs.outputId} onChange={(id) => setAudioPrefs({ outputId: id })} />
             ) : (
               <p className="hint" style={{ margin: '10px 0 0' }}>
-                Этот браузер не умеет выбирать динамики — звук идёт в системное устройство
+                Этот браузер не умеет выбирать динамики, звук идёт в системное устройство
               </p>
             )}
             <Slider
@@ -356,7 +356,7 @@ export function VoiceDevices() {
           <div>
             <h3>Проверка микрофона</h3>
             <p className="hint" style={{ margin: 0 }}>
-              {testing ? 'Говорите — вы слышите себя так, как вас слышат другие' : 'Скажите что-нибудь и послушайте себя в наушниках'}
+              {testing ? 'Говорите: вы слышите себя так, как вас слышат другие' : 'Скажите что-нибудь и послушайте себя в наушниках'}
             </p>
           </div>
           <button type="button" className={'btn ' + (testing ? 'btn-secondary' : 'btn-primary')} onClick={() => setTesting((t) => !t)}>
@@ -375,8 +375,8 @@ export function VoiceDevices() {
             <h3>Чувствительность ввода</h3>
             <p className="hint" style={{ margin: 0 }}>
               {prefs.autoSensitivity
-                ? 'Определяется автоматически — фоновый шум подавляет браузер'
-                : 'Звук тише порога не передаётся. Зелёная полоса — голос проходит'}
+                ? 'Определяется автоматически, фоновый шум подавляет браузер'
+                : 'Звук тише порога не передаётся. Зелёная полоса: голос проходит'}
             </p>
           </div>
           <div className="inline-toggle">
@@ -441,7 +441,7 @@ export function CameraSettings() {
       })
       .catch(() => {
         if (alive) {
-          setErr('Нет доступа к камере — разрешите её в настройках браузера');
+          setErr('Нет доступа к камере. Разрешите её в настройках браузера');
           setPreview(false);
         }
       });
