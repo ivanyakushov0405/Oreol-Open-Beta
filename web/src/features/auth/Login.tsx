@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { api, ApiError, type Me } from '../../shared/api';
 import { HaloMark, Wordmark } from '../../shared/icons';
-import { handleOf, NAME_RE, normalizeName } from '../../shared/model';
+import { handleOf, NAME_RE, normalizeName, reservedName } from '../../shared/model';
 
 type Mode = 'login' | 'signup';
 type Fields = Record<string, string>;
@@ -16,6 +16,7 @@ function usernameError(name: string) {
   if (name.length < 2) return 'Минимум 2 символа';
   if (!/^[A-Za-z]/.test(name)) return 'Должно начинаться с буквы';
   if (!NAME_RE.test(name)) return 'Допустимы буквы, цифры, пробел, точка, дефис и _';
+  if (reservedName(name)) return 'Это имя зарезервировано, выберите другое';
   return '';
 }
 

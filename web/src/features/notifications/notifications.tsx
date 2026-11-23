@@ -3,7 +3,7 @@ import { paths } from '../../app/router';
 import type { AppState } from '../../app/useAppState';
 import { playSound } from '../../shared/audio/sounds';
 import { Icon } from '../../shared/icons';
-import { handleOf, previewText } from '../../shared/model';
+import { firstPhotoUrl, handleOf, previewText } from '../../shared/model';
 import { Avatar } from '../../shared/ui/Avatar';
 import { mentionsMe } from '../chat/mentions';
 import { DisplayName } from '../members/Nick';
@@ -59,7 +59,7 @@ export function MessageAlerts({ app }: { app: AppState }) {
     const pinned = m.reply && 'content' in m.reply ? (m.reply.content || '').trim() : '';
     const text = m.sys === 'pin' ? `Закрепил(а): ${pinned || 'сообщение'}` : previewText(m).trim() || 'Вложение';
     // миниатюра: первое фото сообщения, у закрепа — фото закреплённого
-    const photo = m.sys === 'pin' ? (m.reply && 'photo' in m.reply ? m.reply.photo : null) : m.attachments?.[0]?.url;
+    const photo = m.sys === 'pin' ? (m.reply && 'photo' in m.reply ? m.reply.photo : null) : firstPhotoUrl(m.attachments);
     setAlerts((a) =>
       [...a.filter((x) => x.key !== room), { key: room, user: m.user, text, where, path: paths.channel(app.serverId, channel.id, channel.kind === 'voice'), mention, photo }].slice(-MAX),
     );

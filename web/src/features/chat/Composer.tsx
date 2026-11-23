@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { api, ApiError } from '../../shared/api';
 import { Icon } from '../../shared/icons';
-import { handleOf, MAX_PHOTO_MB, MAX_PHOTOS, PHOTO_TYPES, type Attachment } from '../../shared/model';
+import { handleOf, MENTION_ALL, MAX_PHOTO_MB, MAX_PHOTOS, MAX_VIDEO_MB, PHOTO_TYPES, VIDEO_TYPES, type Attachment } from '../../shared/model';
 import { Avatar } from '../../shared/ui/Avatar';
 import { DisplayName } from '../members/Nick';
 import { MENTION_EVENT } from './mentions';
@@ -51,17 +51,21 @@ export function Composer({
   const hits =
     query === null || mentionOff === before
       ? []
-      : people
-          .filter((n) => {
-            const h = handleOf(n).slice(1).toLowerCase();
-            return h.startsWith(query) || n.toLowerCase().startsWith(query) || (query.length > 0 && h.includes(query));
-          })
-          .slice(0, 6);
+      : [
+          ...people
+            .filter((n) => {
+              const h = handleOf(n).slice(1).toLowerCase();
+              return h.startsWith(query) || n.toLowerCase().startsWith(query) || (query.length > 0 && h.includes(query));
+            })
+            .slice(0, 6),
+          // @everyone / @here — в конце списка, чтобы случайно не позвать всех вместо человека
+          ...MENTION_ALL.filter((t) => t.slice(1).startsWith(query)),
+        ];
   const sel = Math.min(pick, Math.max(0, hits.length - 1));
   const insertMention = (n: string) => {
     if (!at) return;
     const start = caret - at[2].length - 1;
-    const tag = handleOf(n) + ' ';
+    const tag = (n.startsWith('@') ? n : handleOf(n)) + ' ';
     const next = text.slice(0, start) + tag + text.slice(caret).replace(/^\s+/, '');
     setText(next);
     const pos = start + tag.length;
@@ -93,21 +97,27 @@ export function Composer({
     const room = MAX_PHOTOS - photosRef.current.length;
     const fresh: Pending[] = [];
     for (const file of files) {
-      if (!PHOTO_TYPES.includes(file.type)) {
-        onError?.(`«${file.name}»: можно прикрепить только фото: JPG, PNG, WEBP или GIF`);
+      const video = VIDEO_TYPES.includes(file.type);
+      if (!video && !PHOTO_TYPES.includes(file.type)) {
+        onError?.(`«${file.name}»: можно прикрепить фото (JPG, PNG, WEBP, GIF) или видео (MP4, MOV, WEBM)`);
         continue;
       }
-      if (file.size > MAX_PHOTO_MB * 1024 * 1024) {
-        onError?.(`«${file.name}» больше ${MAX_PHOTO_MB} МБ`);
+      const limit = video ? MAX_VIDEO_MB : MAX_PHOTO_MB;
+      if (file.size > limit * 1024 * 1024) {
+        onError?.(`«${file.name}» больше ${limit} МБ`);
         continue;
       }
       if (fresh.length >= room) {
-        onError?.(`В одном сообщении не больше ${MAX_PHOTOS} фото`);
+        onError?.(`В одном сообщении не больше ${MAX_PHOTOS} вложений`);
         break;
       }
-      fresh.push({ key: `${Date.now()}-${Math.random()}`, preview: URL.createObjectURL(file) });
+      const preview = URL.createObjectURL(file);
+      fresh.push({ key: `${Date.now()}-${Math.random()}`, preview, video });
       const key = fresh[fresh.length - 1].key;
-      api<Attachment>('/api/attachments', { body: file }).then(
+      // у видео размер кадра узнаём сами: сервер его не разбирает, а он нужен для раскладки
+      (video ? videoSize(preview).then(([w, h]) => `/api/attachments?w=${w}&h=${h}`) : Promise.resolve('/api/attachments'))
+        .then((url) => api<Attachment>(url, { body: file }))
+        .then(
         (att) => {
           // фото успели убрать из поля, пока оно загружалось — удаляем и с сервера
           if (!photosRef.current.some((p) => p.key === key)) {
@@ -117,7 +127,7 @@ export function Composer({
           setPhotos((list) => list.map((p) => (p.key === key ? { ...p, att } : p)));
         },
         (e: unknown) => {
-          onError?.(e instanceof ApiError ? e.message : 'Не удалось загрузить фото');
+          onError?.(e instanceof ApiError ? e.message : video ? 'Не удалось загрузить видео' : 'Не удалось загрузить фото');
           setPhotos((list) => {
             const gone = list.find((p) => p.key === key);
             if (gone) URL.revokeObjectURL(gone.preview);
@@ -203,7 +213,7 @@ export function Composer({
       <button
         type="button"
         className="round"
-        title={allowPhotos ? 'Прикрепить фото' : 'Фото нельзя добавить при правке'}
+        title={allowPhotos ? 'Прикрепить фото или видео' : 'Вложения нельзя добавить при правке'}
         disabled={disabled || !allowPhotos || photos.length >= MAX_PHOTOS}
         onClick={() => fileRef.current?.click()}
       >
@@ -212,7 +222,7 @@ export function Composer({
       <input
         ref={fileRef}
         type="file"
-        accept={PHOTO_TYPES.join(',')}
+        accept={[...PHOTO_TYPES, ...VIDEO_TYPES].join(',')}
         multiple
         hidden
         onChange={(e) => {
@@ -233,11 +243,23 @@ export function Composer({
               onPointerDown={(e) => e.preventDefault()}
               onClick={() => insertMention(n)}
             >
-              <Avatar name={n} size={28} />
-              <span className="mo-name">
-                <DisplayName name={n} />
-              </span>
-              <span className="mo-tag">{handleOf(n)}</span>
+              {n.startsWith('@') ? (
+                <>
+                  <span className="mo-all">
+                    <Icon name="users" size={16} />
+                  </span>
+                  <span className="mo-name">{n === '@here' ? 'Все, кто в сети' : 'Все в чате'}</span>
+                  <span className="mo-tag">{n}</span>
+                </>
+              ) : (
+                <>
+                  <Avatar name={n} size={28} />
+                  <span className="mo-name">
+                    <DisplayName name={n} />
+                  </span>
+                  <span className="mo-tag">{handleOf(n)}</span>
+                </>
+              )}
             </button>
           ))}
         </div>
@@ -248,7 +270,8 @@ export function Composer({
           <div className="composer-photos">
             {shownPhotos.map((p) => (
               <div className={'cp-item' + (p.att ? '' : ' loading')} key={p.key}>
-                <img src={p.preview} alt="" />
+                {p.video ? <video src={p.preview} muted playsInline preload="metadata" /> : <img src={p.preview} alt="" />}
+                {p.video && <span className="cp-video"><Icon name="play" size={12} /></span>}
                 {!p.att && <span className="cp-spin" aria-label="Загружается" />}
                 <button type="button" className="cp-remove" title="Убрать фото" onClick={() => removePhoto(p.key)}>
                   <Icon name="close" size={14} />
@@ -341,4 +364,24 @@ interface Pending {
   preview: string;
   /** Загруженное фото; пока его нет — идёт загрузка. */
   att?: Attachment;
+  video?: boolean;
+}
+
+/** Размер кадра видео [w, h]; не вышло прочитать — 16:9. */
+function videoSize(src: string): Promise<[number, number]> {
+  return new Promise((done) => {
+    const v = document.createElement('video');
+    const fin = (r: [number, number]) => {
+      window.clearTimeout(t);
+      v.removeAttribute('src');
+      v.load();
+      done(r);
+    };
+    const t = window.setTimeout(() => fin([16, 9]), 4000);
+    v.preload = 'metadata';
+    v.muted = true;
+    v.onloadedmetadata = () => fin(v.videoWidth && v.videoHeight ? [v.videoWidth, v.videoHeight] : [16, 9]);
+    v.onerror = () => fin([16, 9]);
+    v.src = src;
+  });
 }

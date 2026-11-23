@@ -2,12 +2,13 @@ import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type React
 import { createPortal } from 'react-dom';
 import { haptic } from '../../shared/haptic';
 import { Icon } from '../../shared/icons';
-import { handleOf, type Attachment, type ChatMessage } from '../../shared/model';
+import { firstPhotoUrl, handleOf, type Attachment, type ChatMessage } from '../../shared/model';
 import { Avatar } from '../../shared/ui/Avatar';
 import { Nick } from '../members/Nick';
 import { userMenuProps } from '../members/userMenu';
 import { openProfile } from '../profile/profile';
-import { LONG_PRESS_MS, mentionsMe, withMentions } from './mentions';
+import { LinkPreview } from './LinkPreview';
+import { firstLink, LONG_PRESS_MS, mentionsMe, withMentions } from './mentions';
 import { PhotoGrid, PhotoViewer, photosWidth } from './Photos';
 
 const timeFmt = new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit' });
@@ -34,6 +35,8 @@ export interface MessageActions {
   onMenu?: (m: ChatMessage, x: number, y: number, row?: HTMLElement, lift?: boolean) => void;
   /** Свайп сообщения влево (телефон) — ответить на него. */
   onReply?: (m: ChatMessage) => void;
+  /** Нажали на реакцию под сообщением — поставить такую же или снять свою. */
+  onReact?: (m: ChatMessage, emoji: string) => void;
   /** Режим выделения: нажатие отмечает сообщение. */
   selecting?: boolean;
   selected?: Set<string>;
@@ -48,6 +51,10 @@ export interface MessageActions {
   readUpTo?: number;
   /** Линия «Новое» — перед первым чужим сообщением с id больше этого (что было прочитано при открытии чата). */
   newAfter?: number;
+  /** В комнате есть сообщения старше загруженных — подгружаются, когда ленту долистали к началу. */
+  more?: boolean;
+  loadingOlder?: boolean;
+  onOlder?: () => void;
 }
 
 type ListProps = { messages: ChatMessage[]; me: string; empty: ReactNode } & MessageActions;
@@ -63,9 +70,11 @@ export function MessageList(props: ListProps) {
     () => ({
       onMenu: (m: ChatMessage, x: number, y: number, row?: HTMLElement, lift?: boolean) => latest.current.onMenu?.(m, x, y, row, lift),
       onReply: (m: ChatMessage) => latest.current.onReply?.(m),
+      onReact: (m: ChatMessage, e: string) => latest.current.onReact?.(m, e),
       onToggle: (m: ChatMessage) => latest.current.onToggle?.(m),
       onJump: (id: number | string) => latest.current.onJump?.(id),
       onView: (id: number) => latest.current.onView?.(id),
+      onOlder: () => latest.current.onOlder?.(),
     }),
     [],
   );
@@ -74,9 +83,11 @@ export function MessageList(props: ListProps) {
       {...props}
       onMenu={props.onMenu && stable.onMenu}
       onReply={props.onReply && stable.onReply}
+      onReact={props.onReact && stable.onReact}
       onToggle={props.onToggle && stable.onToggle}
       onJump={props.onJump && stable.onJump}
       onView={props.onView && stable.onView}
+      onOlder={props.onOlder && stable.onOlder}
     />
   );
 }
@@ -99,6 +110,7 @@ function MessageListImpl({
   empty,
   onMenu,
   onReply,
+  onReact,
   selecting,
   selected,
   onToggle,
@@ -107,12 +119,19 @@ function MessageListImpl({
   readUpTo = 0,
   newAfter = 0,
   onView,
+  more,
+  loadingOlder,
+  onOlder,
 }: ListProps) {
   const ref = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   // «Запас» сверху ленты: в самом начале истории можно долистать дальше — первое сообщение
   // останавливается ближе к середине экрана. Появляется, только когда лента не помещается в экран.
   const head = useRef<HTMLDivElement>(null);
+  const moreRef = useRef(more);
+  moreRef.current = more;
+  /** Первое сообщение и высота ленты на прошлой отрисовке: подгрузили старые сверху — экран остаётся на месте. */
+  const prevTop = useRef<{ id: number; h: number } | null>(null);
   const rest = (el: HTMLElement) => Math.max(0, el.scrollHeight - el.clientHeight);
   // Градиент своих сообщений — один на всё окно чата: каждому облачку сообщаем, где оно в окне (--by, --bh),
   // а окну — его высоту (--vh). Раньше это делал background-attachment: fixed, но пока экран выезжал (transform),
@@ -161,7 +180,7 @@ function MessageListImpl({
     if (!t) return;
     const cur = t.offsetHeight;
     const overflow = el.scrollHeight - cur > el.clientHeight + 1;
-    const h = overflow ? Math.round(el.clientHeight * 0.4) : 0;
+    const h = overflow && !moreRef.current ? Math.round(el.clientHeight * 0.4) : 0;
     if (h === cur) return;
     // высота запаса меняется — сохраняем то, что сейчас на экране (если не прилипли к низу)
     t.style.height = h + 'px';
@@ -271,8 +290,12 @@ function MessageListImpl({
       if (fresh) setUnread((n) => n + fresh);
     }
     lastSeen.current = Math.max(lastSeen.current, last);
+    const first = messages.length ? Number(messages[0].id) || 0 : 0;
+    const was = prevTop.current;
     if (el) sizeHead(el);
+    if (el && was && first && first < was.id && !stick.current) el.scrollTop += el.scrollHeight - was.h;
     if (el && stick.current) el.scrollTop = rest(el);
+    if (el) prevTop.current = { id: first, h: el.scrollHeight };
     report();
     paintGrad(true);
   }, [messages]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -358,7 +381,10 @@ function MessageListImpl({
   const myTag = handleOf(me);
   // Первое фото сообщений ленты — миниатюра в цитате, если сервер не прислал её сам (старые ответы)
   const firstPhoto = new Map<string, string>();
-  messages.forEach((x) => x.attachments?.[0] && firstPhoto.set(String(x.id), x.attachments[0].url));
+  messages.forEach((x) => {
+    const u = firstPhotoUrl(x.attachments);
+    if (u) firstPhoto.set(String(x.id), u);
+  });
   const items: ReactNode[] = [];
   let lastDay = '';
   let newPlaced = false;
@@ -588,6 +614,30 @@ function MessageListImpl({
             <PhotoGrid photos={m.attachments} onOpen={selecting ? undefined : (i) => setViewer({ photos: m.attachments!, i })} />
           )}
           {!!m.content && <div className="text">{withMentions(m.content, myTag)}</div>}
+          {!!m.content && !m.attachments?.length && firstLink(m.content) && <LinkPreview url={firstLink(m.content)!} />}
+          {!!m.reactions?.length && (
+            <div className="reactions">
+              {m.reactions.map((r) => (
+                <button
+                  key={r.e}
+                  type="button"
+                  className={'reaction' + (r.users.includes(me) ? ' on' : '')}
+                  title={r.users.join(', ')}
+                  disabled={!onReact}
+                  // нажатие на реакцию не начинает долгое нажатие сообщения; при выделении оно отмечает сообщение
+                  onPointerDown={(e) => !selecting && e.stopPropagation()}
+                  onClick={(e) => {
+                    if (selecting) return;
+                    e.stopPropagation();
+                    onReact?.(m, r.e);
+                  }}
+                >
+                  <span className="re-e">{r.e}</span>
+                  <span className="re-n">{r.users.length}</span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>,
     );
@@ -603,12 +653,19 @@ function MessageListImpl({
         stick.current = gap < 80;
         setAway(gap > 240);
         if (stick.current) setUnread(0);
+        if (more && el.scrollTop < el.clientHeight) onOlder?.();
+        if (prevTop.current) prevTop.current.h = el.scrollHeight;
         cancelPress();
         report();
         paintGrad(true);
       }}
     >
       <div className="chat-head-room" ref={head} aria-hidden />
+      {more && messages.length > 0 && (
+        <div className="chat-older" aria-live="polite">
+          {loadingOlder ? <span className="btn-spin" role="status" aria-label="Загружаем более старые сообщения" /> : null}
+        </div>
+      )}
       {messages.length ? items : <div className="empty-state">{empty}</div>}
       {viewer && <PhotoViewer photos={viewer.photos} start={viewer.i} onClose={() => setViewer(null)} />}
       {dock &&

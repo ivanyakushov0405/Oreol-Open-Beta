@@ -65,9 +65,9 @@ export function PhotoGrid({ photos, onOpen }: { photos: Attachment[]; onOpen?: (
     <button
       type="button"
       key={a.id}
-      className="ph-tile"
       style={style}
-      aria-label={photos.length > 1 ? `Фото ${i + 1} из ${photos.length}` : 'Фото'}
+      className={'ph-tile' + (a.video ? ' is-video' : '')}
+      aria-label={(a.video ? 'Видео' : 'Фото') + (photos.length > 1 ? ` ${i + 1} из ${photos.length}` : '')}
       onClick={(e) => {
         // в режиме выделения нажатие отмечает сообщение — событие уходит дальше
         if (!onOpen) return;
@@ -75,7 +75,17 @@ export function PhotoGrid({ photos, onOpen }: { photos: Attachment[]; onOpen?: (
         onOpen(i);
       }}
     >
-      <img src={a.url} alt="" loading="lazy" decoding="async" draggable={false} />
+      {a.video ? (
+        <>
+          {/* #t — чтобы Safari показал первый кадр, а не чёрный прямоугольник */}
+          <video src={a.url + '#t=0.1'} muted playsInline preload="metadata" tabIndex={-1} />
+          <span className="ph-play">
+            <Icon name="play" size={22} />
+          </span>
+        </>
+      ) : (
+        <img src={a.url} alt="" loading="lazy" decoding="async" draggable={false} />
+      )}
     </button>
   );
   if (photos.length === 1) {
@@ -161,7 +171,7 @@ export async function savePhoto(url: string, asDialog: boolean): Promise<'ok' | 
     const picker = (window as Window & { showSaveFilePicker?: SavePicker }).showSaveFilePicker;
     if (asDialog && picker) {
       try {
-        const h = await picker({ suggestedName: name, types: [{ description: 'Изображение', accept: { [blob.type || 'image/jpeg']: ['.' + name.split('.').pop()] } }] });
+        const h = await picker({ suggestedName: name, types: [{ description: blob.type.startsWith('video/') ? 'Видео' : 'Изображение', accept: { [blob.type || 'image/jpeg']: ['.' + name.split('.').pop()] } }] });
         const w = await h.createWritable();
         await w.write(blob);
         await w.close();
@@ -201,7 +211,7 @@ export function PhotoViewer({ photos, start, onClose }: { photos: Attachment[]; 
   useEffect(() => () => window.clearTimeout(noteTimer.current), []);
   const touch = touchDevice();
   useEffect(() => {
-    if (touch) prefetchPhoto(photos[i].url);
+    if (touch && !photos[i].video) prefetchPhoto(photos[i].url);
   }, [touch, photos, i]);
   const root = useRef<HTMLDivElement>(null);
   const track = useRef<HTMLDivElement>(null);
@@ -255,6 +265,8 @@ export function PhotoViewer({ photos, start, onClose }: { photos: Attachment[]; 
     e.stopPropagation();
     if (busy.current || drag.current || (e.pointerType === 'mouse' && e.button !== 0)) return;
     if ((e.target as HTMLElement).closest('button, a')) return;
+    // по видео палец управляет плеером (перемотка, громкость) — листаем только за его пределами
+    if ((e.target as HTMLElement).closest('video') && e.pointerType === 'mouse') return;
     drag.current = { id: e.pointerId, x: e.clientX, y: e.clientY, t: e.timeStamp, axis: null, dx: 0, dy: 0 };
   };
   const onPointerMove = (e: React.PointerEvent) => {
@@ -309,7 +321,7 @@ export function PhotoViewer({ photos, start, onClose }: { photos: Attachment[]; 
       className="ph-viewer"
       role="dialog"
       aria-modal="true"
-      aria-label="Просмотр фото"
+      aria-label="Просмотр вложений"
       onClick={(e) => {
         if (swallowClick.current) return;
         // тап по фону закрывает, по самому фото и кнопкам — нет
@@ -348,7 +360,7 @@ export function PhotoViewer({ photos, start, onClose }: { photos: Attachment[]; 
       </div>
       {more && (
         <div className="phv-menu msg-menu" role="menu">
-          <button
+          {!a.video && <button
             type="button"
             role="menuitem"
             className="msg-menu-item"
@@ -359,7 +371,7 @@ export function PhotoViewer({ photos, start, onClose }: { photos: Attachment[]; 
           >
             <Icon name="copy" size={18} />
             <span>Копировать изображение</span>
-          </button>
+          </button>}
           <button
             type="button"
             role="menuitem"
@@ -380,7 +392,15 @@ export function PhotoViewer({ photos, start, onClose }: { photos: Attachment[]; 
           const p = photos[(i + k + n) % n];
           return (
             <div className="phv-slide" key={k} style={{ left: `${k * 100}%` }} aria-hidden={k !== 0 || undefined}>
-              <img className="phv-img" src={p.url} alt="" draggable={false} />
+              {p.video ? (
+                k === 0 ? (
+                  <video className="phv-img phv-video" src={p.url} controls autoPlay playsInline />
+                ) : (
+                  <video className="phv-img phv-video" src={p.url + '#t=0.1'} muted playsInline preload="metadata" />
+                )
+              ) : (
+                <img className="phv-img" src={p.url} alt="" draggable={false} />
+              )}
             </div>
           );
         })}

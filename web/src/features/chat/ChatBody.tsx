@@ -5,7 +5,7 @@ import type { AppState } from '../../app/useAppState';
 import { getToken } from '../../shared/api';
 import { Icon, type IconName } from '../../shared/icons';
 import { Avatar } from '../../shared/ui/Avatar';
-import { previewText, type Channel, type ChatMessage } from '../../shared/model';
+import { firstPhotoUrl, previewText, REACTIONS, type Channel, type ChatMessage } from '../../shared/model';
 import { DisplayName } from '../members/Nick';
 import { useOpenChat } from '../notifications/notifications';
 import { Composer } from './Composer';
@@ -112,6 +112,7 @@ function MessageMenu({
   readsOf,
   del,
   items,
+  react,
   onClose,
 }: {
   x: number;
@@ -124,6 +125,8 @@ function MessageMenu({
   readsOf?: { room: string; id: Id };
   del?: DeleteAsk;
   items: MenuItem[];
+  /** Ряд реакций сверху меню: mine — уже поставленные мной. */
+  react?: { mine: string[]; pick: (emoji: string) => void };
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -204,7 +207,8 @@ function MessageMenu({
     const left = Math.max(pad, Math.min(x, innerWidth - w - pad));
     const top = Math.max(pad, up ? y - h : y);
     setPos({ left, top, origin: `${up ? 'bottom' : 'top'} ${left < x - w / 2 ? 'right' : 'left'}` });
-  }, [x, y, row, focus]);
+    // после загрузки «кто прочитал» строка меню меняет ширину — пересчитываем место, чтобы меню не вылезло за экран
+  }, [x, y, row, focus, !!reads]);
   useEffect(() => (focus && row ? () => void row.style.removeProperty('visibility') : undefined), [row, focus]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
@@ -285,6 +289,29 @@ function MessageMenu({
       >
         {page === 'main' ? (
           <div className={'mm-page' + (width ? ' anim' : '')} key="main">
+            {react && (
+              <>
+                <div className="mm-reacts" role="group" aria-label="Реакции">
+                  {REACTIONS.map((e) => (
+                    <button
+                      key={e}
+                      type="button"
+                      className={'mm-react' + (react.mine.includes(e) ? ' on' : '')}
+                      aria-label={`Реакция ${e}`}
+                      onPointerDown={() => (armed.current = true)}
+                      onClick={() => {
+                        if (!armed.current) return;
+                        onClose();
+                        react.pick(e);
+                      }}
+                    >
+                      {e}
+                    </button>
+                  ))}
+                </div>
+                <div className="msg-menu-sep" />
+              </>
+            )}
             {readsOf && (
               <>
                 <button
@@ -556,7 +583,7 @@ export function ChatBody({ app, chat, channel, compact }: { app: AppState; chat:
   const bar = replyTarget ? (
     <div className="composer-bar">
       <Icon name={editing ? 'pencil' : 'reply'} size={18} />
-      {replyTarget.attachments?.[0] && <img className="rq-thumb" src={replyTarget.attachments[0].url} alt="" draggable={false} />}
+      {firstPhotoUrl(replyTarget.attachments) && <img className="rq-thumb" src={firstPhotoUrl(replyTarget.attachments)} alt="" draggable={false} />}
       <button type="button" className="cb-text" onClick={() => jump(replyTarget.id)}>
         <b>{editing ? 'Редактирование' : <>Ответ <DisplayName name={replyTarget.user} /></>}</b>
         <span>{previewText(replyTarget)}</span>
@@ -653,8 +680,8 @@ export function ChatBody({ app, chat, channel, compact }: { app: AppState; chat:
           ))}
         </span>
       ) : null}
-      {shownPin.attachments?.[0] && (
-        <img className="rq-thumb pb-thumb" src={shownPin.attachments[0].url} alt="" draggable={false} onClick={openPin} />
+      {firstPhotoUrl(shownPin.attachments) && (
+        <img className="rq-thumb pb-thumb" src={firstPhotoUrl(shownPin.attachments)} alt="" draggable={false} onClick={openPin} />
       )}
       <button type="button" className="pb-body" onClick={openPin} title="Перейти к сообщению">
         <b>Закреплённое сообщение</b>
@@ -676,6 +703,9 @@ export function ChatBody({ app, chat, channel, compact }: { app: AppState; chat:
         key={pinnedView ? 'pinned' : 'all'}
         messages={list}
         me={me}
+        more={!pinnedView && chat.hasMore}
+        loadingOlder={chat.loadingOlder}
+        onOlder={pinnedView ? undefined : () => void chat.loadOlder()}
         empty={
           pinnedView ? (
             <>
@@ -692,13 +722,14 @@ export function ChatBody({ app, chat, channel, compact }: { app: AppState; chat:
         onMenu={(m, x, y, row, lift) => {
           // фото, на котором держали палец / нажали ПКМ (иначе — первое в сообщении)
           const img = document.elementFromPoint(x, y)?.closest('img');
-          const urls = (m.attachments ?? []).map((a) => a.url);
+          const urls = (m.attachments ?? []).filter((a) => !a.video).map((a) => a.url);
           const hit = img ? urls.find((u) => img.src.endsWith(u) || img.src === u) : undefined;
           const photo = hit ?? urls[0];
           if (photo && touchDevice()) prefetchPhoto(photo);
           setMenu({ m, x, y, row, lift, photo });
         }}
         onReply={startReply}
+        onReact={(m, e) => !m.sys && chat.react(m.id, e)}
         selecting={!!selected}
         selected={selected ?? undefined}
         onToggle={toggle}
@@ -779,6 +810,14 @@ export function ChatBody({ app, chat, channel, compact }: { app: AppState; chat:
           }}
           readsOf={menu.m.sys ? undefined : { room: channel.room, id: menu.m.id }}
           items={menuItems(menu.m, menu.photo)}
+          react={
+            menu.m.sys
+              ? undefined
+              : {
+                  mine: (menu.m.reactions ?? []).filter((r) => r.users.includes(me)).map((r) => r.e),
+                  pick: (e) => chat.react(menu.m.id, e),
+                }
+          }
           onClose={() => setMenu(null)}
         />
       )}

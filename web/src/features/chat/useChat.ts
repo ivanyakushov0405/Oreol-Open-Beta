@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { getToken, putUser, type PublicUser } from '../../shared/api';
-import { previewText, type ChatMessage, type Status } from '../../shared/model';
+import { api, getToken, putUser, type PublicUser } from '../../shared/api';
+import { firstPhotoUrl, previewText, type ChatMessage, type Status } from '../../shared/model';
 
 type ServerEvent =
   | { type: 'history'; messages: ChatMessage[]; pinned?: ChatMessage[]; reads?: Record<string, number> }
   | { type: 'read'; user: string; id: number }
   | { type: 'message'; message: ChatMessage }
   | { type: 'update'; message: ChatMessage }
+  | { type: 'reactions'; id: number | string; reactions: ChatMessage['reactions'] }
   | { type: 'deleted'; ids: (number | string)[] }
   | { type: 'forwarded'; to: string; count: number }
   | { type: 'typing'; user: string }
@@ -21,6 +22,8 @@ export const VOICE_CHANGED = 'oreol:voice';
 let voiceSentAt = 0;
 
 const TYPING_TTL = 3500;
+/** Сколько сообщений сервер присылает за раз (история при входе и каждая подгрузка более старых). */
+const PAGE = 100;
 
 /** Реальный чат комнаты: история из SQLite, новые сообщения, «печатает», статусы подключённых. */
 /** Длительность анимации удаления сообщения (как у @keyframes msg-out). */
@@ -47,6 +50,14 @@ export function useChat(room: string | null, user: string) {
   const [loaded, setLoaded] = useState<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const lastTypingSent = useRef(0);
+  /** Есть ли в комнате сообщения старше загруженных (подгружаются при прокрутке вверх). */
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const olderBusy = useRef(false);
+  const msgsRef = useRef(messages);
+  msgsRef.current = messages;
+  const roomRef = useRef(room);
+  roomRef.current = room;
 
   useEffect(() => {
     const send = () => {
@@ -67,6 +78,7 @@ export function useChat(room: string | null, user: string) {
     setPinned(cached?.pinned ?? []);
     setReads(cached?.reads ?? {});
     setFloor(0);
+    setHasMore((cached?.messages.length ?? 0) >= PAGE);
     setLoaded(cached ? room : null);
     readSent.current = 0;
     setView('all');
@@ -88,7 +100,11 @@ export function useChat(room: string | null, user: string) {
       ws.onmessage = (e) => {
         const ev = JSON.parse(e.data) as ServerEvent;
         if (ev.type === 'history') {
-          setMessages(ev.messages);
+          // переподключение: уже подгруженные более старые сообщения не выбрасываем
+          const first = ev.messages.length ? Number(ev.messages[0].id) : Infinity;
+          const older = msgsRef.current.filter((m) => Number(m.id) < first && !m.leaving);
+          setMessages(older.length ? [...older, ...ev.messages] : ev.messages);
+          if (!older.length) setHasMore(ev.messages.length >= PAGE);
           setLoaded(room);
           setPinned(ev.pinned ?? ev.messages.filter((m) => m.pinned));
           setReads(ev.reads ?? {});
@@ -110,12 +126,16 @@ export function useChat(room: string | null, user: string) {
           }
         } else if (ev.type === 'read') {
           setReads((r) => (ev.id > (r[ev.user] ?? 0) ? { ...r, [ev.user]: ev.id } : r));
+        } else if (ev.type === 'reactions') {
+          const set = (list: ChatMessage[]) => list.map((x) => (String(x.id) === String(ev.id) ? { ...x, reactions: ev.reactions } : x));
+          setMessages(set);
+          setPinned(set);
         } else if (ev.type === 'update') {
           const m = ev.message;
           // правка/закреп: само сообщение и короткие копии в ответах на него
           const patch = (list: ChatMessage[]) =>
             list.map((x) =>
-              x.id === m.id ? m : x.reply && x.reply.id === m.id ? { ...x, reply: { id: m.id, user: m.user, content: previewText(m).slice(0, 200), photo: m.attachments?.[0]?.url ?? null } } : x,
+              x.id === m.id ? m : x.reply && x.reply.id === m.id ? { ...x, reply: { id: m.id, user: m.user, content: previewText(m).slice(0, 200), photo: firstPhotoUrl(m.attachments) ?? null } } : x,
             );
           setMessages(patch);
           setPinned((p) => {
@@ -234,6 +254,8 @@ export function useChat(room: string | null, user: string) {
   /** Удалить: у себя (любые) или у всех (только свои — проверяет сервер). */
   const remove = useCallback((ids: (number | string)[], scope: 'me' | 'all') => raw({ type: 'delete', ids, scope }), [raw]);
   const pin = useCallback((id: number | string, on: boolean) => raw({ type: 'pin', id, pinned: on }), [raw]);
+  /** Поставить или снять реакцию (сервер решает по тому, стоит ли она уже). */
+  const react = useCallback((id: number | string, emoji: string) => raw({ type: 'react', id, emoji }), [raw]);
   /** Переслать сообщения в другую комнату; ответ сервера придёт в onForwarded. */
   const onForwarded = useRef<((to: string, count: number) => void) | null>(null);
   const forward = useCallback(
@@ -262,8 +284,35 @@ export function useChat(room: string | null, user: string) {
     ws.send(JSON.stringify({ type: 'typing' }));
   }, []);
 
+  /** Подгрузить сообщения старше самого старого загруженного (прокрутили ленту к началу). */
+  const loadOlder = useCallback(async () => {
+    const r = roomRef.current;
+    if (!r || olderBusy.current || !hasMore) return;
+    const oldest = messages.find((m) => !m.leaving && Number(m.id) > 0);
+    if (!oldest) return;
+    olderBusy.current = true;
+    setLoadingOlder(true);
+    try {
+      const d = await api<{ messages: ChatMessage[]; more: boolean }>(`/api/chat/${encodeURIComponent(r)}/history?before=${oldest.id}&limit=${PAGE}`);
+      if (roomRef.current !== r) return;
+      setMessages((prev) => {
+        const have = new Set(prev.map((m) => String(m.id)));
+        return [...d.messages.filter((m) => !have.has(String(m.id))), ...prev];
+      });
+      setHasMore(d.more);
+    } catch {
+      /* нет связи — попробуем при следующей прокрутке */
+    } finally {
+      olderBusy.current = false;
+      setLoadingOlder(false);
+    }
+  }, [messages, hasMore]);
+
   return {
     messages,
+    hasMore,
+    loadingOlder,
+    loadOlder,
     /** Комната загруженной истории: пока она не совпала с открытой, в messages может быть прошлый чат. */
     room: loaded,
     pinned,
@@ -280,6 +329,7 @@ export function useChat(room: string | null, user: string) {
     edit,
     remove,
     pin,
+    react,
     forward,
     notifyTyping,
   };

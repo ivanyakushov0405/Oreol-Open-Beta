@@ -44,32 +44,59 @@ export interface ChatMessage {
   replies?: number;
   /** Фото в сообщении (размеры — для раскладки коллажа до загрузки картинки). */
   attachments?: Attachment[];
+  /** Реакции: эмодзи и кто поставил (в порядке первой реакции). */
+  reactions?: Reaction[];
 }
+
+export interface Reaction {
+  e: string;
+  users: string[];
+}
+
+/** Реакции из меню сообщения (тот же набор проверяет сервер). */
+export const REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🔥', '👎', '🤡', '🎉', '🙏'];
 
 export interface Attachment {
   id: number;
   url: string;
   w: number;
   h: number;
+  /** Видео (MP4/WebM), а не фото. */
+  video?: boolean;
 }
 
 /** Ограничения фото — те же, что проверяет сервер. */
 export const MAX_PHOTOS = 10;
 export const MAX_PHOTO_MB = 10;
 export const PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+export const VIDEO_TYPES = ['video/mp4', 'video/webm', 'video/quicktime'];
+export const MAX_VIDEO_MB = 50;
 
 /** Короткий текст сообщения для цитат, закрепов и уведомлений: у сообщения из одних фото — «Фото». */
 /** «Залго» — сотни диакритических знаков на одной букве: оставляем не больше двух (старые сообщения до серверной очистки). */
 export const cleanText = (t: string) => t.replace(/(\p{Mn}{2})[\p{Mn}\p{Me}]+/gu, '$1');
 
+/** Адрес первого фото (не видео) — для миниатюр в цитатах и уведомлениях. */
+export const firstPhotoUrl = (atts?: Attachment[]) => atts?.find((a) => !a.video)?.url;
+
 export function previewText(m: Pick<ChatMessage, 'content' | 'attachments'>) {
   if (m.content) return cleanText(m.content);
-  const n = m.attachments?.length ?? 0;
-  return n === 1 ? 'Фото' : n ? `Фото · ${n}` : '';
+  const list = m.attachments ?? [];
+  const n = list.length;
+  if (!n) return '';
+  const v = list.filter((a) => a.video).length;
+  const label = v === n ? 'Видео' : v ? 'Медиа' : 'Фото';
+  return n === 1 ? label : `${label} · ${n}`;
 }
 
 /** Имя при входе: латиница, цифры, пробел, точка, дефис, подчёркивание; 2–32 символа. */
 export const NAME_RE = /^[A-Za-z][A-Za-z0-9 ._-]{1,31}$/;
+
+/** Имена, которые нельзя занять (то же, что на сервере): @everyone и @here зовут весь чат. */
+const RESERVED_NAMES = new Set(['everyone', 'here', 'all', 'channel', 'admin', 'administrator', 'moderator', 'system', 'oreol', 'support']);
+export const reservedName = (name: string) => RESERVED_NAMES.has(name.toLowerCase().replace(/[^a-z0-9]/g, ''));
+/** Упоминания, которые зовут всех в чате. */
+export const MENTION_ALL = ['@everyone', '@here'];
 
 export function normalizeName(raw: string) {
   return raw.replace(/\s+/g, ' ').trim();

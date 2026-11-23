@@ -5434,3 +5434,72 @@ html[data-vt] .backdrop .bd-layer.m, html[data-vt] .backdrop .bd-layer.m > svg {
 .tile:not(.novideo) { cursor: zoom-in; }
 .tile:not(.novideo) .tile-pill { cursor: pointer; }
 .tile:fullscreen .tile-pill { cursor: default; }
+
+/* подгрузка более старых сообщений вверху ленты */
+.chat-older { display: flex; justify-content: center; align-items: center; min-height: 36px; flex: none; color: var(--text-secondary); }
+
+/* Видео во вложениях: плитка с кнопкой «play», плеер в просмотре */
+.ph-tile { position: relative; }
+.ph-tile video, .cp-item video { width: 100%; height: 100%; display: block; object-fit: cover; pointer-events: none; background: #000; }
+.ph-play {
+  position: absolute; left: 50%; top: 50%; width: 48px; height: 48px; margin: -24px 0 0 -24px; border-radius: 50%;
+  display: grid; place-items: center; color: #fff; background: #00000073; pointer-events: none;
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+}
+.ph-play svg { margin-left: 3px; }
+.cp-video {
+  position: absolute; left: 4px; bottom: 4px; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center;
+  color: #fff; background: #00000080; pointer-events: none;
+}
+.cp-item.loading video { opacity: .45; }
+.phv-video { background: #000; width: auto; height: auto; }
+
+/* Ссылки в тексте и карточка предпросмотра */
+.msg-link { color: var(--accent-cyan-text); text-decoration: underline; text-decoration-color: currentColor; text-underline-offset: 2px; word-break: break-all; }
+.msg.mine .msg-link { color: #fff; }
+.link-card {
+  display: flex; flex-direction: column; gap: 2px; margin: 6px 0 2px; padding: 8px 10px 8px 12px; max-width: 360px;
+  border-left: 3px solid var(--accent-cyan-text); border-radius: 8px; background: #ffffff0f; color: inherit; text-decoration: none;
+  animation: cb-in .18s cubic-bezier(.2, .8, .2, 1);
+}
+.msg.mine .link-card { background: #ffffff1f; border-left-color: #ffffffb3; }
+[data-theme='light'] .msg:not(.mine) .link-card { background: #0a1a2e0a; }
+.lc-site { font-size: 12px; font-weight: 600; color: var(--accent-cyan-text); }
+.msg.mine .lc-site { color: #ffffffd9; }
+.lc-title { font-size: 14px; font-weight: 600; line-height: 1.3; }
+.lc-desc {
+  font-size: 13px; line-height: 1.35; opacity: .8; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
+.lc-img { display: block; width: 100%; max-height: 200px; object-fit: cover; border-radius: 6px; margin-top: 6px; background: #0000001a; }
+@media (hover: hover) { .link-card:hover .lc-title { text-decoration: underline; } }
+
+/* @everyone / @here в подсказках */
+.mo-all { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; flex: none; background: var(--fill-soft); color: var(--accent-cyan-text); }
+
+/* Реакции: ряд в меню сообщения и плашки под текстом */
+/* все реакции сразу, двумя рядами по 5: листать ничего не нужно */
+.mm-reacts {
+  display: grid; grid-template-columns: repeat(5, 38px); justify-content: space-between; gap: 2px 4px; padding: 2px 4px 4px;
+  min-width: 206px;
+}
+.mm-react {
+  flex: none; width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; font-size: 22px; line-height: 1;
+  transition: transform .15s cubic-bezier(.2, .8, .2, 1), background .15s ease;
+}
+.mm-react.on { background: color-mix(in srgb, var(--accent-cyan-text) 22%, transparent); }
+.mm-react:active { transform: scale(1.25); }
+@media (hover: hover) { .mm-react:hover { transform: scale(1.18); background: #ffffff14; } }
+.reactions { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.bubble.has-photos .reactions { padding: 0 4px 2px; }
+.reaction {
+  display: inline-flex; align-items: center; gap: 4px; height: 26px; padding: 0 8px; border-radius: 13px; font-size: 13px; font-weight: 600;
+  color: inherit; background: #ffffff14; border: 1px solid transparent; cursor: pointer; animation: re-pop .22s cubic-bezier(.2, .8, .2, 1);
+  transition: background .15s ease, border-color .15s ease;
+}
+.reaction .re-e { font-size: 15px; line-height: 1; }
+.reaction.on { background: color-mix(in srgb, var(--accent-cyan-text) 22%, transparent); border-color: color-mix(in srgb, var(--accent-cyan-text) 60%, transparent); }
+.msg.mine .reaction { background: #ffffff26; }
+.msg.mine .reaction.on { background: #ffffff59; border-color: #ffffffb3; }
+[data-theme='light'] .msg:not(.mine) .reaction { background: #0a1a2e0d; }
+.reaction:disabled { cursor: default; }
+@keyframes re-pop { from { transform: scale(.6); opacity: 0; } }

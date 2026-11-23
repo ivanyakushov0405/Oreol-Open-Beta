@@ -333,6 +333,15 @@ def init_chat_features():
             PRIMARY KEY (user_id, message_id)
         )"""
     )
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS message_reactions (
+            message_id INTEGER NOT NULL,
+            username TEXT NOT NULL,
+            emoji TEXT NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (message_id, username, emoji)
+        )"""
+    )
     conn.commit()
     conn.close()
 
@@ -363,6 +372,7 @@ S3_ACCESS_KEY = os.getenv("S3_ACCESS_KEY")
 S3_SECRET_KEY = os.getenv("S3_SECRET_KEY")
 
 MAX_PHOTO_BYTES = 10 * 1024 * 1024  # 10 МБ на одно фото
+MAX_VIDEO_BYTES = 50 * 1024 * 1024  # 50 МБ на одно видео
 MAX_PHOTO_SIDE = 10_000  # по любой стороне, px
 MAX_PHOTO_PIXELS = 40_000_000  # ~40 Мп — защита от «бомб» распаковки
 MIN_PHOTO_SIDE = 1
@@ -371,7 +381,7 @@ STALE_UPLOAD_HOURS = 24  # загружено, но так и не отправ�
 Image.MAX_IMAGE_PIXELS = MAX_PHOTO_PIXELS
 # Что Pillow нашёл внутри файла → (MIME, расширение). Заголовку Content-Type не доверяем.
 PHOTO_FORMATS = {"JPEG": ("image/jpeg", "jpg"), "PNG": ("image/png", "png"), "WEBP": ("image/webp", "webp"), "GIF": ("image/gif", "gif")}
-MEDIA_KEY_RE = re.compile(r"^photos/\d{4}/\d{2}/[0-9a-f]{32}\.(?:jpg|png|webp|gif)$")
+MEDIA_KEY_RE = re.compile(r"^photos/\d{4}/\d{2}/[0-9a-f]{32}\.(?:jpg|png|webp|gif|mp4|webm)$")
 
 _s3_client = None
 
@@ -423,9 +433,16 @@ def media_url(key: str) -> str:
 
 def attachments_of(conn, message_id: int) -> list[dict]:
     rows = conn.execute(
-        "SELECT id, key, width, height FROM attachments WHERE message_id = ? ORDER BY position, id", (message_id,)
+        "SELECT id, key, mime, width, height FROM attachments WHERE message_id = ? ORDER BY position, id", (message_id,)
     ).fetchall()
-    return [{"id": a["id"], "url": media_url(a["key"]), "w": a["width"], "h": a["height"]} for a in rows]
+    return [att_json(a) for a in rows]
+
+
+def att_json(a) -> dict:
+    d = {"id": a["id"], "url": media_url(a["key"]), "w": a["width"], "h": a["height"]}
+    if a["mime"].startswith("video/"):
+        d["video"] = True
+    return d
 
 
 def purge_s3_keys(keys) -> None:
@@ -482,6 +499,20 @@ def photo_info(body: bytes):
     return (*fmt, w, h)
 
 
+def video_info(body: bytes, w: int, h: int):
+    """(MIME, расширение, ширина, высота) для MP4/MOV/WebM или None. Размеры кадра присылает браузер — нужны только для раскладки."""
+    if body[:4] == bytes.fromhex("1a45dfa3"):
+        mime, ext = "video/webm", "webm"
+    elif body[4:8] == b"ftyp":
+        # MOV с iPhone тоже отдаём как MP4: Chrome и Safari его так проигрывают
+        mime, ext = "video/mp4", "mp4"
+    else:
+        return None
+    w = max(1, min(w or 16, MAX_PHOTO_SIDE))
+    h = max(1, min(h or 9, MAX_PHOTO_SIDE))
+    return mime, ext, w, h
+
+
 def purge_stale_uploads():
     """Фото, загруженные, но так и не отправленные за сутки."""
     conn = sqlite3.connect(DB_NAME)
@@ -501,23 +532,35 @@ async def attachment_upload(request: Request):
         return unauthorized()
     if not S3_ACCESS_KEY or not S3_SECRET_KEY:
         return JSONResponse({"error": "Хранилище файлов не настроено на сервере"}, status_code=503)
-    too_big = JSONResponse({"error": f"Фото больше {MAX_PHOTO_BYTES // (1024 * 1024)} МБ"}, status_code=413)
+    mb = lambda n: n // (1024 * 1024)  # noqa: E731
+    too_big = JSONResponse({"error": f"Файл больше {mb(MAX_VIDEO_BYTES)} МБ"}, status_code=413)
     try:
-        if int(request.headers.get("content-length") or 0) > MAX_PHOTO_BYTES:
+        if int(request.headers.get("content-length") or 0) > MAX_VIDEO_BYTES:
             return too_big
     except ValueError:
         pass
     body = bytearray()
     async for chunk in request.stream():
         body += chunk
-        if len(body) > MAX_PHOTO_BYTES:
+        if len(body) > MAX_VIDEO_BYTES:
             return too_big
     if not body:
         return JSONResponse({"error": "Пустой файл"}, status_code=400)
     body = bytes(body)
-    info = await asyncio.to_thread(photo_info, body)
-    if isinstance(info, str):
-        return JSONResponse({"error": info}, status_code=415)
+
+    def num(name):
+        try:
+            return int(request.query_params.get(name) or 0)
+        except ValueError:
+            return 0
+
+    info = video_info(body, num("w"), num("h"))
+    if not info:
+        if len(body) > MAX_PHOTO_BYTES:
+            return JSONResponse({"error": f"Фото больше {mb(MAX_PHOTO_BYTES)} МБ"}, status_code=413)
+        info = await asyncio.to_thread(photo_info, body)
+        if isinstance(info, str):
+            return JSONResponse({"error": info.replace("Поддерживаются JPG, PNG, WEBP и GIF", "Поддерживаются JPG, PNG, WEBP, GIF, MP4, MOV и WEBM")}, status_code=415)
     mime, ext, w, h = info
     now = datetime.now(timezone.utc)
     key = f"photos/{now:%Y}/{now:%m}/{uuid.uuid4().hex}.{ext}"
@@ -541,7 +584,7 @@ async def attachment_upload(request: Request):
     conn.commit()
     conn.close()
     asyncio.create_task(asyncio.to_thread(purge_stale_uploads))
-    return {"id": cur.lastrowid, "url": media_url(key), "w": w, "h": h}
+    return att_json({"id": cur.lastrowid, "key": key, "mime": mime, "width": w, "height": h})
 
 
 @app.delete("/api/attachments/{att_id}")
@@ -558,8 +601,11 @@ async def attachment_cancel(att_id: int, request: Request):
     return {"ok": True}
 
 
+RANGE_RE = re.compile(r"^bytes=(\d*)-(\d*)$")
+
+
 @app.get("/api/media/{key:path}")
-async def media(key: str):
+async def media(key: str, request: Request):
     # Отдаём только то, что записано в базе: по этому адресу нельзя прочитать произвольный объект бакета
     if not MEDIA_KEY_RE.match(key):
         return JSONResponse({"error": "not found"}, status_code=404)
@@ -568,22 +614,35 @@ async def media(key: str):
     conn.close()
     if not att or not S3_ACCESS_KEY:
         return JSONResponse({"error": "not found"}, status_code=404)
+    # Видео браузер (особенно Safari) читает кусками по Range — без этого не проигрывает
+    rng = RANGE_RE.match(request.headers.get("range", "").strip())
+    if rng and not (rng[1] or rng[2]):
+        rng = None
+    get = {"Bucket": S3_BUCKET, "Key": key}
+    if rng:
+        get["Range"] = f"bytes={rng[1]}-{rng[2]}"
     try:
-        obj = await asyncio.to_thread(s3().get_object, Bucket=S3_BUCKET, Key=key)
+        obj = await asyncio.to_thread(lambda: s3().get_object(**get))
     except ClientError as e:
         code = e.response.get("Error", {}).get("Code", "")
         if code in ("NoSuchKey", "404"):
             return JSONResponse({"error": "not found"}, status_code=404)
+        if code == "InvalidRange":
+            return Response(status_code=416)
         print(f"s3 get: {e}")
         return Response(status_code=502)
     except BotoCoreError as e:
         print(f"s3 get: {e}")
         return Response(status_code=502)
-    headers = {"Cache-Control": "public, max-age=31536000, immutable"}
+    headers = {"Cache-Control": "public, max-age=31536000, immutable", "Accept-Ranges": "bytes"}
     if obj.get("ContentLength") is not None:
         headers["Content-Length"] = str(obj["ContentLength"])
-    # Тело читается кусками в пуле потоков — большие фото не держим в памяти целиком
-    return StreamingResponse(obj["Body"].iter_chunks(64 * 1024), media_type=att["mime"], headers=headers)
+    status = 200
+    if rng and obj.get("ContentRange"):
+        headers["Content-Range"] = obj["ContentRange"]
+        status = 206
+    # Тело читается кусками в пуле потоков — большие файлы не держим в памяти целиком
+    return StreamingResponse(obj["Body"].iter_chunks(64 * 1024), status_code=status, media_type=att["mime"], headers=headers)
 
 
 MSG_COLS = "id, room, username, content, timestamp, reply_to, edited_at, pinned, fwd_user, fwd_ts, sys"
@@ -593,16 +652,38 @@ def reply_text(conn, q) -> str:
     """Короткий текст для цитаты/закрепа: сам текст, а у сообщения из одних фото — «Фото»."""
     if q["content"]:
         return q["content"][:200]
-    n = conn.execute("SELECT COUNT(*) FROM attachments WHERE message_id = ?", (q["id"],)).fetchone()[0]
-    return "Фото" if n == 1 else f"Фото · {n}" if n else ""
+    n, v = conn.execute(
+        "SELECT COUNT(*), SUM(mime LIKE 'video/%') FROM attachments WHERE message_id = ?", (q["id"],)
+    ).fetchone()
+    if not n:
+        return ""
+    label = "Видео" if v == n else "Фото" if not v else "Медиа"
+    return label if n == 1 else f"{label} · {n}"
 
 
 def first_photo(conn, message_id: int) -> str | None:
     """Адрес первого фото сообщения — миниатюра в цитате ответа."""
     a = conn.execute(
-        "SELECT key FROM attachments WHERE message_id = ? ORDER BY position, id LIMIT 1", (message_id,)
+        "SELECT key FROM attachments WHERE message_id = ? AND mime NOT LIKE 'video/%' ORDER BY position, id LIMIT 1",
+        (message_id,),
     ).fetchone()
     return media_url(a[0]) if a else None
+
+
+# Реакции — только из этого набора (как в меню сообщения)
+REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🔥", "👎", "🤡", "🎉", "🙏"]
+MAX_REACTIONS_PER_USER = 3  # разных реакций одного человека на одно сообщение
+
+
+def reactions_of(conn, message_id: int) -> list[dict]:
+    """[{e, users}] в порядке первой поставленной реакции."""
+    rows = conn.execute(
+        "SELECT emoji, username FROM message_reactions WHERE message_id = ? ORDER BY created_at, rowid", (message_id,)
+    ).fetchall()
+    out: dict[str, list[str]] = {}
+    for e, u in rows:
+        out.setdefault(e, []).append(u)
+    return [{"e": e, "users": us} for e, us in out.items()]
 
 
 def msg_json(conn, r) -> dict:
@@ -625,6 +706,7 @@ def msg_json(conn, r) -> dict:
         "fwd": {"user": r["fwd_user"], "ts": to_iso(r["fwd_ts"])} if r["fwd_user"] else None,
         "sys": r["sys"],
         "attachments": attachments_of(conn, r["id"]),
+        "reactions": reactions_of(conn, r["id"]),
         # Сколько раз на сообщение ответили
         "replies": conn.execute(
             "SELECT COUNT(*) FROM messages WHERE reply_to = ? AND sys IS NULL", (r["id"],)
@@ -638,12 +720,19 @@ def chat_conn():
     return conn
 
 
-def get_history_v2(room: str, limit: int = 100, user_id: int | None = None):
+def get_history_v2(room: str, limit: int = 100, user_id: int | None = None, before: int | None = None):
+    """Последние limit сообщений комнаты; before — только старше этого id (подгрузка истории при прокрутке вверх)."""
     conn = chat_conn()
     hidden = "AND id NOT IN (SELECT message_id FROM message_hidden WHERE user_id = ?)" if user_id else ""
-    args = (room, user_id, limit) if user_id else (room, limit)
+    older = "AND id < ?" if before else ""
+    args = [room]
+    if user_id:
+        args.append(user_id)
+    if before:
+        args.append(before)
+    args.append(limit)
     rows = conn.execute(
-        f"SELECT {MSG_COLS} FROM messages WHERE room = ? {hidden} ORDER BY id DESC LIMIT ?", args
+        f"SELECT {MSG_COLS} FROM messages WHERE room = ? {hidden} {older} ORDER BY id DESC LIMIT ?", args
     ).fetchall()
     out = [msg_json(conn, r) for r in reversed(rows)]
     conn.close()
@@ -777,6 +866,15 @@ def as_ids(value) -> list[int]:
 
 
 NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9 ._-]{1,31}$")
+
+
+# Имена, которые нельзя занять: @everyone и @here зовут весь чат, остальные выдают себя за систему
+RESERVED_NAMES = {"everyone", "here", "all", "channel", "admin", "administrator", "moderator", "system", "oreol", "support"}
+RESERVED_MSG = "Это имя зарезервировано, выберите другое"
+
+
+def reserved_name(name: str) -> bool:
+    return re.sub(r"[^a-z0-9]", "", name.lower()) in RESERVED_NAMES
 
 
 def clean_name(value: str) -> str:
@@ -1020,6 +1118,8 @@ async def auth_register(request: Request):
         errors["email"] = "Введите корректный email"
     if not username:
         errors["username"] = "Латиница, цифры, пробел, точка, дефис и _; начинается с буквы, 2–32 символа"
+    elif reserved_name(username):
+        errors["username"] = RESERVED_MSG
     if len(password) < MIN_PASSWORD_LEN:
         errors["password"] = f"Минимум {MIN_PASSWORD_LEN} символов"
     if errors:
@@ -1215,7 +1315,10 @@ async def account_update(request: Request):
         if not username:
             errors["username"] = "Латиница, цифры, пробел, точка, дефис и _; начинается с буквы, 2–32 символа"
         elif username != row["username"]:
-            updates["username"] = username
+            if reserved_name(username):
+                errors["username"] = RESERVED_MSG
+            else:
+                updates["username"] = username
     if "email" in data:
         email = str(data["email"]).strip().lower()
         if not EMAIL_RE.match(email):
@@ -1247,6 +1350,7 @@ async def account_update(request: Request):
         # История сообщений переезжает на новое имя пользователя
         if "username" in updates:
             conn.execute("UPDATE messages SET username = ? WHERE username = ?", (updates["username"], row["username"]))
+            conn.execute("UPDATE OR IGNORE message_reactions SET username = ? WHERE username = ?", (updates["username"], row["username"]))
         conn.commit()
     fresh = conn.execute("SELECT * FROM users WHERE id = ?", (row["id"],)).fetchone()
     conn.close()
@@ -1294,6 +1398,7 @@ async def account_delete(request: Request):
         (row["username"], row["id"]),
     )
     conn.execute("DELETE FROM messages WHERE username = ?", (row["username"],))
+    conn.execute("DELETE FROM message_reactions WHERE username = ?", (row["username"],))
     conn.execute("DELETE FROM chat_reads WHERE user_id = ?", (row["id"],))
     conn.execute("DELETE FROM message_hidden WHERE user_id = ?", (row["id"],))
     conn.execute("DELETE FROM users WHERE id = ?", (row["id"],))
@@ -1518,6 +1623,35 @@ async def api_ws(websocket: WebSocket, room: str):
                     conn.commit()
                     conn.close()
                     await hub.send(room, {"type": "update", "message": get_message(found[0]["id"])[1]})
+            elif kind == "react":
+                # Поставить или снять реакцию (повторное нажатие снимает)
+                emoji = str(data.get("emoji", ""))
+                found = get_message(as_ids(data.get("id"))[0]) if as_ids(data.get("id")) else None
+                if emoji in REACTIONS and found and found[0]["room"] == room and not found[0]["sys"]:
+                    mid = found[0]["id"]
+                    conn = chat_conn()
+                    had = conn.execute(
+                        "SELECT 1 FROM message_reactions WHERE message_id = ? AND username = ? AND emoji = ?", (mid, user, emoji)
+                    ).fetchone()
+                    if had:
+                        conn.execute(
+                            "DELETE FROM message_reactions WHERE message_id = ? AND username = ? AND emoji = ?", (mid, user, emoji)
+                        )
+                    else:
+                        mine = conn.execute(
+                            "SELECT emoji FROM message_reactions WHERE message_id = ? AND username = ? ORDER BY created_at, rowid",
+                            (mid, user),
+                        ).fetchall()
+                        # лимит: самая старая своя реакция уступает место новой
+                        for (old,) in mine[: max(0, len(mine) - MAX_REACTIONS_PER_USER + 1)]:
+                            conn.execute(
+                                "DELETE FROM message_reactions WHERE message_id = ? AND username = ? AND emoji = ?", (mid, user, old)
+                            )
+                        conn.execute("INSERT INTO message_reactions (message_id, username, emoji) VALUES (?, ?, ?)", (mid, user, emoji))
+                    conn.commit()
+                    reactions = reactions_of(conn, mid)
+                    conn.close()
+                    await hub.send(room, {"type": "reactions", "id": mid, "reactions": reactions})
             elif kind == "pin":
                 found = get_message(as_ids(data.get("id"))[0]) if as_ids(data.get("id")) else None
                 if found and found[0]["room"] == room and not found[0]["sys"]:
@@ -1545,6 +1679,7 @@ async def api_ws(websocket: WebSocket, room: str):
                         m2 = ",".join("?" * len(mine))
                         conn.execute(f"DELETE FROM messages WHERE id IN ({m2})", mine)
                         conn.execute(f"DELETE FROM message_hidden WHERE message_id IN ({m2})", mine)
+                        conn.execute(f"DELETE FROM message_reactions WHERE message_id IN ({m2})", mine)
                         orphans = drop_attachments(conn, f"message_id IN ({m2})", tuple(mine))
                         conn.commit()
                         purge_s3_keys(orphans)
@@ -1634,6 +1769,177 @@ async def servers_list(request: Request):
     out = [server_json(conn, r) for r in rows]
     conn.close()
     return {"servers": out}
+
+
+# =====================================================================
+# Предпросмотр ссылок: заголовок, описание и картинка страницы (Open Graph).
+# Сервер сам ходит по ссылке, поэтому пускаем только в публичный интернет:
+# адреса локальной сети, localhost и служебные диапазоны отсекаются, и на каждом редиректе тоже.
+# =====================================================================
+import html as html_lib
+import ipaddress
+import socket
+import urllib.error
+import urllib.parse
+import urllib.request
+from html.parser import HTMLParser
+
+LINK_MAX_BYTES = 512 * 1024  # дальше <head> обычно не нужен
+LINK_TIMEOUT = 5
+LINK_CACHE_SEC = 3600
+LINK_CACHE_MAX = 500
+_link_cache: dict[str, tuple[float, dict | None]] = {}
+
+
+def public_url(url: str) -> bool:
+    try:
+        u = urllib.parse.urlsplit(url)
+    except ValueError:
+        return False
+    if u.scheme not in ("http", "https") or not u.hostname or u.username or u.password:
+        return False
+    try:
+        port = u.port or (443 if u.scheme == "https" else 80)
+    except ValueError:
+        return False
+    if port not in (80, 443, 8080, 8443):
+        return False
+    try:
+        infos = socket.getaddrinfo(u.hostname, port, type=socket.SOCK_STREAM)
+    except (socket.gaierror, UnicodeError):
+        return False
+    return bool(infos) and all(ipaddress.ip_address(i[4][0].split("%")[0]).is_global for i in infos)
+
+
+class _SafeRedirect(urllib.request.HTTPRedirectHandler):
+    max_redirections = 4
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if not public_url(newurl):
+            raise urllib.error.URLError("redirect to a private address")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+_link_opener = urllib.request.build_opener(_SafeRedirect)
+
+
+class _MetaParser(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.meta: dict[str, str] = {}
+        self.title = ""
+        self.icon = ""
+        self._in_title = False
+        self.done = False
+
+    def handle_starttag(self, tag, attrs):
+        a = {k.lower(): (v or "") for k, v in attrs}
+        if tag == "meta":
+            key = (a.get("property") or a.get("name") or "").lower()
+            if key and "content" in a and key not in self.meta:
+                self.meta[key] = a["content"]
+        elif tag == "title":
+            self._in_title = True
+        elif tag == "link" and not self.icon and "icon" in a.get("rel", "").lower().split():
+            self.icon = a.get("href", "")
+        elif tag == "body":
+            self.done = True
+
+    def handle_endtag(self, tag):
+        if tag == "title":
+            self._in_title = False
+        elif tag == "head":
+            self.done = True
+
+    def handle_data(self, data):
+        if self._in_title and len(self.title) < 300:
+            self.title += data
+
+
+def _clip(s: str, n: int) -> str:
+    s = " ".join(html_lib.unescape(s or "").split())
+    return s if len(s) <= n else s[: n - 1].rstrip() + "…"
+
+
+def fetch_link_preview(url: str) -> dict | None:
+    if not public_url(url):
+        return None
+    req = urllib.request.Request(
+        url,
+        headers={
+            # многие сайты (YouTube, соцсети) отдают Open Graph только «ботам превью»
+            "User-Agent": "Mozilla/5.0 (compatible; OreolBot/1.0; link preview)",
+            "Accept": "text/html,application/xhtml+xml;q=0.9,*/*;q=0.5",
+            "Accept-Language": "ru,en;q=0.8",
+        },
+    )
+    try:
+        with _link_opener.open(req, timeout=LINK_TIMEOUT) as r:
+            final = r.geturl()
+            ctype = r.headers.get("Content-Type", "")
+            if "html" not in ctype.lower():
+                return None
+            raw = r.read(LINK_MAX_BYTES)
+            charset = r.headers.get_content_charset() or "utf-8"
+    except Exception:
+        return None
+    p = _MetaParser()
+    try:
+        p.feed(raw.decode(charset, errors="replace"))
+    except Exception:
+        pass
+    m = p.meta
+    title = _clip(m.get("og:title") or m.get("twitter:title") or p.title, 160)
+    if not title:
+        return None
+    desc = _clip(m.get("og:description") or m.get("twitter:description") or m.get("description"), 300)
+    image = m.get("og:image") or m.get("og:image:url") or m.get("twitter:image") or ""
+    image = urllib.parse.urljoin(final, image.strip()) if image else ""
+    if not image.startswith("https://"):
+        image = ""
+    host = urllib.parse.urlsplit(final).hostname or ""
+    site = _clip(m.get("og:site_name") or (host[4:] if host.startswith("www.") else host), 60)
+    return {"url": url, "title": title, "description": desc, "image": image or None, "site": site}
+
+
+def link_preview_cached(url: str) -> dict | None:
+    now = time.time()
+    hit = _link_cache.get(url)
+    if hit and now - hit[0] < LINK_CACHE_SEC:
+        return hit[1]
+    data = fetch_link_preview(url)
+    if len(_link_cache) >= LINK_CACHE_MAX:
+        for k in sorted(_link_cache, key=lambda k: _link_cache[k][0])[: LINK_CACHE_MAX // 5]:
+            _link_cache.pop(k, None)
+    _link_cache[url] = (now, data)
+    return data
+
+
+@app.get("/api/link-preview")
+async def link_preview(url: str, request: Request):
+    if not current_user(request):
+        return unauthorized()
+    url = url.strip()[:2048]
+    data = await asyncio.to_thread(link_preview_cached, url)
+    if not data:
+        return JSONResponse({"error": "Нет предпросмотра"}, status_code=404)
+    return data
+
+
+@app.get("/api/chat/{room}/history")
+async def chat_history(room: str, request: Request, before: int, limit: int = 100):
+    """Более старые сообщения комнаты (до before), по limit за раз."""
+    row = current_user(request)
+    if not row:
+        return unauthorized()
+    conn = db()
+    ok = member_channel(conn, row["id"], room)
+    conn.close()
+    if not ok:
+        return JSONResponse({"error": "Нет доступа к этому чату"}, status_code=403)
+    limit = max(1, min(limit, 200))
+    msgs = get_history_v2(room, limit=limit, user_id=row["id"], before=before)
+    return {"messages": msgs, "more": len(msgs) == limit}
 
 
 @app.get("/api/chat/{room}/reads/{msg_id}")
