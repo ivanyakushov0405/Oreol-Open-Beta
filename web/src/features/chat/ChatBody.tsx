@@ -497,10 +497,13 @@ export function ChatBody({ app, chat, channel, compact }: { app: AppState; chat:
       { icon: 'download', label: t('Сохранить как…'), run: () => void savePhoto(url, true).then(saved) },
     ];
   };
+  // Pin notes and the pinned list are not selectable: no multi-select there.
+  const selectItem = (m: ChatMessage): MenuItem[] =>
+    pinnedView || m.sys ? [] : [{ icon: 'check', label: t('Выделить'), run: () => setSelected(new Set([String(m.id)])) }];
   const menuItems = (m: ChatMessage, photo?: string): MenuItem[] => {
     if (m.sys) {
       return [
-        { icon: 'check', label: t('Выделить'), run: () => setSelected(new Set([String(m.id)])) },
+        ...selectItem(m),
         { icon: 'trash', label: t('Удалить'), danger: true, tail: true, page: 'delete', run: () => setDel([m.id]) },
       ];
     }
@@ -512,7 +515,7 @@ export function ChatBody({ app, chat, channel, compact }: { app: AppState; chat:
       ...(photo ? photoItems(photo) : []),
       { icon: m.pinned ? 'pin-off' : 'pin', label: m.pinned ? t('Открепить') : t('Закрепить'), run: () => chat.pin(m.id, !m.pinned) },
       { icon: 'reply', label: t('Переслать'), flip: true, run: () => setFwd([m.id]) },
-      { icon: 'check', label: t('Выделить'), run: () => setSelected(new Set([String(m.id)])) },
+      ...selectItem(m),
       { icon: 'trash', label: t('Удалить'), danger: true, tail: true, page: 'delete', run: () => setDel([m.id]) },
     );
     return items;
@@ -585,6 +588,10 @@ export function ChatBody({ app, chat, channel, compact }: { app: AppState; chat:
     document.addEventListener('visibilitychange', mark);
     return () => document.removeEventListener('visibilitychange', mark);
   }, [chat.markRead]); // eslint-disable-line react-hooks/exhaustive-deps
+  // A mark made while the socket was reconnecting was dropped: send it once the socket is back.
+  useEffect(() => {
+    if (chat.connected && seen.current && document.visibilityState === 'visible') chat.markRead(seen.current);
+  }, [chat.connected]); // eslint-disable-line react-hooks/exhaustive-deps
   const readUpTo = Object.entries(chat.reads).reduce((acc, [u, id]) => (u !== me && id > acc ? id : acc), 0);
   // The "New" divider: what was read when the chat opened, fixed once when history arrives.
   // Computed during render, not in an effect: otherwise the list first rendered without the divider
@@ -693,7 +700,7 @@ export function ChatBody({ app, chat, channel, compact }: { app: AppState; chat:
           ) : (
             <>
               <b>{chat.connected ? t('Добро пожаловать в {0}', { 0: title }) : t('Подключаемся к чату…')}</b>
-              {chat.connected ? t('Сообщений пока нет. Напишите первым') : t('Нет связи с сервером')}
+              {chat.connected && t('Сообщений пока нет. Напишите первым')}
             </>
           )
         }

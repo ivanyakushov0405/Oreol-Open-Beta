@@ -1,31 +1,11 @@
-import { useEffect, useState, type PointerEvent as RPointerEvent } from 'react';
+import { useState, type PointerEvent as RPointerEvent } from 'react';
 import { createPortal } from 'react-dom';
 import type { AppState } from '../../app/useAppState';
 import { Icon, LogoPeople } from '../../shared/icons';
 import type { ServerId } from '../../shared/model';
 import { useVoiceCounts } from '../voice/useVoice';
 import { t } from '../../shared/i18n';
-import { api } from '../../shared/api';
 import { chatUnread, UnreadBadge } from '../chat/unread';
-
-type Unread = Record<string, { count: number; mentions: number }>;
-
-/** Unread counts of the other servers; the open one is counted live from its loaded chats. */
-function useServerUnread(app: AppState): Unread {
-  const [data, setData] = useState<Unread>({});
-  const mark = `${app.serverId}:${app.general.myRead}:${app.lobby.myRead}`;
-  useEffect(() => {
-    let off = false;
-    const load = () => void api<{ servers: Unread }>('/api/unread').then((r) => !off && setData(r.servers), () => undefined);
-    load();
-    const id = window.setInterval(load, 20000);
-    return () => {
-      off = true;
-      window.clearInterval(id);
-    };
-  }, [mark]);
-  return data;
-}
 
 export function Rail({
   app,
@@ -42,7 +22,7 @@ export function Rail({
 }) {
   const inVoice = app.voice.state === 'connected';
   const counts = useVoiceCounts(app.servers.map((s) => s.id));
-  const unread = useServerUnread(app);
+  const unread = app.serverUnread;
   const here = chatUnread(app, app.general) + chatUnread(app, app.lobby);
   const [tip, setTip] = useState<{ text: string; x: number; y: number } | null>(null);
   const hover = (text: string) => ({

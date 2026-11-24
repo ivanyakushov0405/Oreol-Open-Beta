@@ -16,10 +16,13 @@ export function useServerSwipe(stage: RefObject<HTMLElement>, opts: { can: (dir:
     type S = { panel: HTMLElement; y: number; x: number; t: number; top: boolean; bottom: boolean; dir: -1 | 1 | 0; decided: boolean; dy: number; mouse: boolean };
     let s: S | null = null;
     let swallow = false;
+    // The content follows the finger, the glass panel stays: a moving, fading glass layer lost its tint in Safari.
     const set = (panel: HTMLElement, dy: number, tr = 'none') => {
-      panel.style.transition = tr;
-      panel.style.transform = dy ? `translateY(${dy}px)` : '';
-      panel.style.opacity = dy ? String(Math.max(0.4, 1 - Math.abs(dy) / 360)) : '';
+      for (const c of panel.children as HTMLCollectionOf<HTMLElement>) {
+        c.style.transition = tr;
+        c.style.transform = dy ? `translateY(${dy}px)` : '';
+        c.style.opacity = dy ? String(Math.max(0.4, 1 - Math.abs(dy) / 360)) : '';
+      }
     };
     const begin = (target: EventTarget | null, x: number, y: number, t: number, mouse: boolean) => {
       const p = (target as HTMLElement | null)?.closest<HTMLElement>('.m-servers .sidebar');

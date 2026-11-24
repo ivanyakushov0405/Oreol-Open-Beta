@@ -2438,7 +2438,7 @@ input, textarea { font: inherit; color: inherit; }
 .m-slide > .m-head { animation: head-hold-in .34s cubic-bezier(.2, .8, .2, 1); }
 .m-slide.out > .m-head { animation: head-hold-still .22s cubic-bezier(.4, 0, .7, .2) forwards; }
 /* Hide the lower settings header while the next one is open on top, otherwise the plates double up. */
-.m-settings:has(~ .m-settings.m-slide:not(.out)) > .m-head { visibility: hidden; }
+.m-settings:has(~ .m-settings.m-slide:not(.out)) > .m-head > * { opacity: .001; pointer-events: none; }
 
 .channel.mine svg, .channel.mine.live svg { color: var(--accent-cyan); }
 
@@ -2486,7 +2486,11 @@ input, textarea { font: inherit; color: inherit; }
 .m-settings:has(~ .m-settings.m-slide:not(.out)) > :not(.m-head) { pointer-events: none; }
 /* the cards fade, not their container: under a semi-transparent parent the glass loses its blur until the fade ends */
 .m-settings > :not(.m-head) > * { transition: opacity .2s ease; }
-.m-settings:has(~ .m-settings.m-slide:not(.out)) > :not(.m-head) > * { opacity: 0; }
+/*
+  Covered cards keep a hair of opacity instead of 0 or visibility: hidden: Safari drops the layer of a hidden glass element
+  and, when it shows again, paints it untinted for a moment before the blur is back.
+*/
+.m-settings:has(~ .m-settings.m-slide:not(.out)) > :not(.m-head) > * { opacity: .001; }
 
 .m-full-voice.with-chat .m-voice { opacity: 0; transition: opacity .18s ease; }
 
@@ -4146,7 +4150,7 @@ html:not([data-glows='on']) .backdrop .bd-glow { opacity: 0; }
 }
 .m-stage[data-swipe='back'] .m-under.dim, .m-stage[data-swipe='back'] .m-under.dim * { transition: none !important; }
 .m-stage[data-swipe='cancel'] .m-under.dim, .m-stage[data-swipe='cancel'] .m-under.dim * { transition: opacity .26s ease !important; }
-.m-stage:is([data-swipe='back'], [data-swipe='cancel']) > .m-settings:has(~ .m-settings.m-slide:not(.out)) > :not(.m-head) > * { opacity: var(--swipe-p, 0) !important; }
+.m-stage:is([data-swipe='back'], [data-swipe='cancel']) > .m-settings:has(~ .m-settings.m-slide:not(.out)) > :not(.m-head) > * { opacity: max(var(--swipe-p, 0), .001) !important; }
 /* No filter: blur here: Safari blurs whole panels on the CPU every frame (slow, heats the phone). */
 @keyframes m-tab-in { from { opacity: 0; transform: scale(.985); } to { opacity: 1; transform: none; } }
 .m-stage[data-tab-in] > .m-under:not(.tabbar) > :not(.m-servers-row),
@@ -4596,11 +4600,9 @@ html[data-vt] .backdrop .bd-layer.m, html[data-vt] .backdrop .bd-layer.m > svg {
   .range { padding: 0 12px; box-sizing: border-box; }
 }
 
-.m-stage:not([data-swipe]):not([data-swiped]) > .m-settings:has(~ .m-settings.m-slide:not(.out)) > :not(.m-head) {
-  visibility: hidden; transition: opacity .2s ease, visibility 0s linear .2s;
-}
 
-.srv-stack > .sidebar.srv-out { backdrop-filter: none !important; }
+/* The outgoing copy carries only the content: the glass panel itself stays in place and never fades. */
+.srv-stack > .sidebar.srv-out { backdrop-filter: none !important; background: none !important; border-color: transparent !important; box-shadow: none !important; }
 
 .m-stage .m-full-chat .chat-scroll { padding-top: calc(76px + var(--call-h-to, var(--call-h))); }
 .m-stage .m-full-chat .chat.with-pin .chat-scroll, .m-stage .m-full .chat.with-pin .chat-scroll { padding-top: calc(132px + var(--call-h-to, var(--call-h))); }
@@ -4910,6 +4912,7 @@ html[data-theme='light'][data-glass='on'] :is(.ci-pop, .ci-more, .ci-full) { --g
 
 /* floating day label over the chat feed (MessageList dayFloat) */
 .date-pill.day-float { position: absolute; z-index: 3; left: 50%; transform: translateX(-50%); margin: 0; pointer-events: none; white-space: nowrap; animation: day-float-in .2s ease; }
+.chat-scroll > .day-pill.stuck { visibility: hidden; }
 @keyframes day-float-in { from { opacity: 0; } }
 
 /* server settings open from the arrow only, not the whole header */

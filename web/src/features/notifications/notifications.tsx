@@ -7,8 +7,10 @@ import { displayNameOf } from '../../shared/api';
 import { firstPhotoUrl, handleOf, previewText } from '../../shared/model';
 import { Avatar } from '../../shared/ui/Avatar';
 import { mentionsMe } from '../chat/mentions';
+import { chatUnread } from '../chat/unread';
 import { DisplayName } from '../members/Nick';
 import { isMuted } from './mute';
+import { NEW_MESSAGE, type NewMessage } from '../chat/useChat';
 import { BRAND, t } from '../../shared/i18n';
 
 const openChats = new Map<string, number>();
@@ -25,27 +27,43 @@ export function useOpenChat(room: string | null | undefined) {
 }
 const isWatching = (room: string) => openChats.has(room) && document.visibilityState === 'visible';
 
-/** While the tab is hidden the title counts new messages and alternates with the latest one. */
+/**
+ * The title always carries the real number of unread messages; while the tab is hidden it alternates with the latest
+ * message.
+ */
 const tabTitle = { count: 0, line: '', timer: 0 };
-function titleAlert(line: string) {
-  if (document.visibilityState === 'visible') return;
-  tabTitle.count++;
-  tabTitle.line = line;
-  const counted = () => `(${tabTitle.count}) ${BRAND}`;
-  document.title = counted();
+function paintTitle() {
+  const counted = tabTitle.count > 0 ? `(${tabTitle.count > 99 ? '99+' : tabTitle.count}) ${BRAND}` : BRAND;
+  if (!tabTitle.line || document.visibilityState === 'visible') {
+    window.clearInterval(tabTitle.timer);
+    tabTitle.timer = 0;
+    tabTitle.line = '';
+    document.title = counted;
+    return;
+  }
   if (tabTitle.timer) return;
+  document.title = counted;
   let showLine = false;
   tabTitle.timer = window.setInterval(() => {
     showLine = !showLine;
-    document.title = showLine ? tabTitle.line : counted();
+    const n = tabTitle.count > 0 ? `(${tabTitle.count > 99 ? '99+' : tabTitle.count}) ${BRAND}` : BRAND;
+    document.title = showLine && tabTitle.line ? tabTitle.line : n;
   }, 1500);
 }
-document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState !== 'visible') return;
-  window.clearInterval(tabTitle.timer);
-  Object.assign(tabTitle, { count: 0, line: '', timer: 0 });
-  document.title = BRAND;
-});
+function titleAlert(line: string) {
+  if (document.visibilityState === 'visible') return;
+  tabTitle.line = line;
+  paintTitle();
+}
+document.addEventListener('visibilitychange', paintTitle);
+
+/** Keeps the title count equal to the unread total of all my servers. */
+export function useTitleCount(n: number) {
+  useEffect(() => {
+    tabTitle.count = n;
+    paintTitle();
+  }, [n]);
+}
 
 type Alert = { key: string; user: string; text: string; where: string; path: string; mention: boolean; photo?: string | null };
 const SHOW_MS = 6000;
@@ -53,43 +71,41 @@ const MAX = 3;
 
 export function MessageAlerts({ app }: { app: AppState }) {
   const [alerts, setAlerts] = useState<Alert[]>([]);
-  const last = useRef(new Map<string, number>());
-  const myTag = handleOf(app.name);
+  // The open server is counted live from its loaded chats, the others come from the server.
+  const here = chatUnread(app, app.general) + chatUnread(app, app.lobby);
+  useTitleCount(app.servers.reduce((n, s) => n + (s.id === app.serverId ? here : app.serverUnread[s.id]?.count ?? 0), 0));
+  const seen = useRef(new Set<string>());
+  const appRef = useRef(app);
+  appRef.current = app;
 
-  const watch = (chat: AppState['general'], channel: AppState['textChannel']) => {
-    if (!channel) return;
-    const room = channel.room;
-    const msgs = chat.messages;
-    // Until history arrives the chat is empty, which is not "all read"; otherwise all loaded history counted as new.
-    if (!msgs.length) return;
-    const top = Number(msgs[msgs.length - 1].id) || 0;
-    const prev = last.current.get(room);
-    last.current.set(room, Math.max(prev ?? 0, top));
-    if (prev === undefined || top <= prev) return;
-    // Only what just arrived, not history loaded again when returning to the server.
-    const now = Date.now();
-    const fresh = msgs.filter(
-      (m) => Number(m.id) > prev && (!m.sys || m.sys === 'pin') && m.user !== app.name && (!m.ts || now - new Date(m.ts).getTime() < 30_000),
-    );
-    if (!fresh.length || isWatching(room)) return;
-    const mention = fresh.some((m) => mentionsMe(m.content || '', myTag));
-    if (!mention && isMuted(room)) return;
-    playSound(mention ? 'mention' : 'message');
-    const m = fresh[fresh.length - 1];
-    const where = (channel.kind === 'voice' ? t('Чат «{0}»', { 0: channel.name }) : `#${channel.name}`) + ' · ' + app.server.name;
-    const pinned = m.reply && 'content' in m.reply ? (m.reply.content || '').trim() : '';
-    const text = m.sys === 'pin' ? t('Закрепил(а): {0}', { 0: pinned || t('сообщение') }) : previewText(m).trim() || t('Вложение');
-    const photo = m.sys === 'pin' ? (m.reply && 'photo' in m.reply ? m.reply.photo : null) : firstPhotoUrl(m.attachments);
-    titleAlert(`${displayNameOf(m.user)}: ${text}`);
-    setAlerts((a) =>
-      [...a.filter((x) => x.key !== room), { key: room, user: m.user, text, where, path: paths.channel(app.serverId, channel.id, channel.kind === 'voice'), mention, photo }].slice(-MAX),
-    );
-  };
-
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => watch(app.general, app.textChannel), [app.general.messages]);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => watch(app.lobby, app.voiceChannel), [app.lobby.messages]);
+  useEffect(() => {
+    const onNew = (e: Event) => {
+      const { room, message: m } = (e as CustomEvent<NewMessage>).detail;
+      const app = appRef.current;
+      const id = String(m.id);
+      // Each message comes over both sockets of the open server.
+      if (seen.current.has(id)) return;
+      seen.current.add(id);
+      if (seen.current.size > 500) seen.current = new Set([...seen.current].slice(-200));
+      if ((m.sys && m.sys !== 'pin') || m.user === app.name || isWatching(room)) return;
+      const server = app.servers.find((x) => x.channels.some((c) => c.room === room));
+      const channel = server?.channels.find((c) => c.room === room);
+      if (!server || !channel) return;
+      const mention = mentionsMe(m.content || '', handleOf(app.name));
+      if (!mention && isMuted(room)) return;
+      playSound(mention ? 'mention' : 'message');
+      const where = (channel.kind === 'voice' ? t('Чат «{0}»', { 0: channel.name }) : `#${channel.name}`) + ' · ' + server.name;
+      const pinned = m.reply && 'content' in m.reply ? (m.reply.content || '').trim() : '';
+      const text = m.sys === 'pin' ? t('Закрепил(а): {0}', { 0: pinned || t('сообщение') }) : previewText(m).trim() || t('Вложение');
+      const photo = m.sys === 'pin' ? (m.reply && 'photo' in m.reply ? m.reply.photo : null) : firstPhotoUrl(m.attachments);
+      titleAlert(`${displayNameOf(m.user)}: ${text}`);
+      setAlerts((a) =>
+        [...a.filter((x) => x.key !== room), { key: room, user: m.user, text, where, path: paths.channel(server.id, channel.id, channel.kind === 'voice'), mention, photo }].slice(-MAX),
+      );
+    };
+    window.addEventListener(NEW_MESSAGE, onNew);
+    return () => window.removeEventListener(NEW_MESSAGE, onNew);
+  }, []);
 
   const close = (key: string) => setAlerts((a) => a.filter((x) => x.key !== key));
   const open = (al: Alert) => {

@@ -169,25 +169,32 @@ export function Mobile({ app }: { app: AppState }) {
     const stack = stackRef.current;
     const cur = stack?.querySelector<HTMLElement>(':scope > .sidebar');
     if (!out || !stack || !cur) return;
-    const from = out.node.style.transform || 'translateY(0)';
-    const fromOp = out.node.style.opacity || '1';
-    out.node.style.transition = out.node.style.transform = out.node.style.opacity = '';
+    // The swipe offset sits on the panel's children (see useServerSwipe): the copy leaves from there as a whole.
+    const lead = out.node.firstElementChild as HTMLElement | null;
+    const from = lead?.style.transform || 'translateY(0)';
+    const fromOp = lead?.style.opacity || '1';
+    for (const n of [out.node, ...(out.node.children as HTMLCollectionOf<HTMLElement>)]) n.style.transition = n.style.transform = n.style.opacity = '';
     out.node.classList.add('srv-out');
     out.node.setAttribute('aria-hidden', 'true');
     out.node.querySelectorAll('[key], [id]').forEach((n) => n.removeAttribute('id'));
     stack.appendChild(out.node);
-    cur.style.transition = cur.style.transform = cur.style.opacity = '';
-    // The old panel briefly moves away and fades, the new one floats in from the side the finger moved to.
-    // A full-height flight was choppy: the glass of both panels recomputed its blur every frame.
+    for (const n of [cur, ...(cur.children as HTMLCollectionOf<HTMLElement>)]) n.style.transition = n.style.transform = n.style.opacity = '';
+    // The glass panel stays put and only its content moves: the old content briefly moves away and fades, the new one
+    // floats in from the side the finger moved to. Fading the glass itself left it untinted in Safari until the end.
     const ease = 'cubic-bezier(.25, .8, .3, 1)';
     const ms = 420;
     const away = out.dir === 1 ? 'translateY(-90px)' : 'translateY(90px)';
     const come = out.dir === 1 ? 'translateY(120px)' : 'translateY(-120px)';
     out.node.animate([{ transform: from, opacity: fromOp }, { transform: away, opacity: 0 }], { duration: 170, easing: 'cubic-bezier(.2, 0, .4, 1)', fill: 'forwards' });
-    const a = cur.animate([{ transform: come, opacity: 0 }, { opacity: 1, offset: 0.55 }, { transform: 'translateY(0)', opacity: 1 }], { duration: ms, easing: ease });
+    const parts = [...cur.children] as HTMLElement[];
+    const anims = parts.map((p) => p.animate([{ transform: come, opacity: 0 }, { opacity: 1, offset: 0.55 }, { transform: 'translateY(0)', opacity: 1 }], { duration: ms, easing: ease }));
     const done = () => out.node.remove();
-    a.onfinish = done;
-    a.oncancel = done;
+    const a = anims[0];
+    if (!a) done();
+    else {
+      a.onfinish = done;
+      a.oncancel = done;
+    }
     const id = window.setTimeout(done, ms + 120);
     return () => window.clearTimeout(id);
   }, [app.server.id]);

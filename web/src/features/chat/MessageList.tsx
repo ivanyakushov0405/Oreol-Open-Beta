@@ -220,6 +220,8 @@ function MessageListImpl({
   moreRef.current = !!more || hidden > 0;
   /** First message and list height on the previous render: loading older messages keeps the viewport in place. */
   const prevTop = useRef<{ id: number; h: number } | null>(null);
+  /** Scroll speed (px per ms, negative upwards) and whether a finger is on the list: see glide(). */
+  const motion = useRef({ top: 0, t: 0, v: 0, touch: false });
   const rest = (el: HTMLElement) => Math.max(0, el.scrollHeight - el.clientHeight);
   // One own-message gradient for the whole chat window: each bubble gets its position (--by, --bh) and the window
   // its height (--vh). background-attachment: fixed used to do this, but it broke while the screen slid in
@@ -331,31 +333,36 @@ function MessageListImpl({
   const onSeenRef = useRef(onSeen);
   onSeenRef.current = onSeen;
   /**
-   * Floating date under the header (or the pinned banner): the day of the topmost visible message. It hides while
-   * a real date divider sits at its spot, so the divider takes over and scrolls on with the feed.
+   * Date under the header (or the pinned banner), like a sticky section header: it shows the day at the top of the
+   * feed. A real divider coming up pushes it out and stays in its place; scrolling back, the divider leaves its place
+   * and the previous day slides back in above it. Dividers at or above the spot are hidden: the floating one is them.
    */
-  const [dayFloat, setDayFloat] = useState<{ label: string; top: number } | null>(null);
+  const [dayFloat, setDayFloat] = useState<{ label: string; top: number; shift: number } | null>(null);
   const floatDay = (el: HTMLElement, box: DOMRect, top: number) => {
-    const dayOf = (row: HTMLElement) => {
-      const m = winRef.current.all.find((x) => String(x.id) === row.dataset.mid);
-      return m ? dayLabel(m.ts ? new Date(m.ts) : new Date()) : '';
-    };
+    const spot = top + 6;
+    const GAP = 32;
     let label = '';
-    let passed = '';
-    for (const row of el.querySelectorAll<HTMLElement>(':scope > [data-mid], :scope > .day-pill')) {
-      const r = row.getBoundingClientRect();
-      const pill = row.classList.contains('day-pill');
-      if (r.bottom <= top) {
-        if (!pill) passed = dayOf(row);
-        continue;
-      }
-      // a divider at the floating spot replaces it; one lower down still leaves the previous day on top
-      if (pill) label = r.top < top + r.height + 12 ? '' : passed;
-      else label = dayOf(row);
-      break;
+    let shift = 0;
+    let next: DOMRect | null = null;
+    for (const pill of el.querySelectorAll<HTMLElement>(':scope > .day-pill')) {
+      const r = pill.getBoundingClientRect();
+      const stuck = r.top <= spot;
+      pill.classList.toggle('stuck', stuck && el.scrollTop > 8);
+      if (stuck) label = pill.textContent || '';
+      else if (!next) next = r;
     }
-    const next = label && el.scrollTop > 8 ? { label, top: top - box.top + el.offsetTop + 6 } : null;
-    setDayFloat((cur) => (cur?.label === next?.label && cur?.top === next?.top ? cur : next));
+    if (!label) {
+      // no divider above the spot in the rendered window: the day of the first message there
+      for (const row of el.querySelectorAll<HTMLElement>(':scope > [data-mid]')) {
+        if (row.getBoundingClientRect().bottom <= spot) continue;
+        const m = winRef.current.all.find((x) => String(x.id) === row.dataset.mid);
+        label = m ? dayLabel(m.ts ? new Date(m.ts) : new Date()) : '';
+        break;
+      }
+    }
+    if (next) shift = Math.min(0, next.top - spot - GAP);
+    const nextFloat = label && el.scrollTop > 8 && shift > -GAP ? { label, top: spot - box.top + el.offsetTop, shift: Math.round(shift) } : null;
+    setDayFloat((cur) => (cur?.label === nextFloat?.label && cur?.top === nextFloat?.top && cur?.shift === nextFloat?.shift ? cur : nextFloat));
   };
   const raf = useRef(0);
   const report = () => {
@@ -371,12 +378,12 @@ function MessageListImpl({
       const bottom = box.bottom - parseFloat(cs.paddingBottom || '0');
       // not before the first screen is placed: it may flash at the end and would mark everything read
       if (onSeenRef.current && placed.current === room && box.height > 0) {
-        // the lowest message whose first lines are in view; rows render oldest first
+        // the lowest message that shows on screen at all; rows render oldest first
         const rows = el.querySelectorAll<HTMLElement>(':scope > [data-mid]');
         for (let i = rows.length - 1; i >= 0; i--) {
           const r = rows[i].getBoundingClientRect();
           const id = Number(rows[i].dataset.mid);
-          if (r.top + Math.min(r.height, 40) > bottom || !Number.isFinite(id)) continue;
+          if (r.top + Math.min(r.height, 12) > bottom || !Number.isFinite(id)) continue;
           if (r.bottom > top) onSeenRef.current(id);
           break;
         }
@@ -419,6 +426,8 @@ function MessageListImpl({
       const fresh = all.filter((m) => Number(m.id) > lastSeen.current && m.user !== me && !m.sys).length;
       if (fresh) setUnread((n) => n + fresh);
     }
+    const prevLast = lastSeen.current;
+    const wasStuck = stick.current;
     lastSeen.current = Math.max(lastSeen.current, last);
     const first = messages.length ? Number(messages[0].id) || 0 : 0;
     const was = prevTop.current;
@@ -428,7 +437,11 @@ function MessageListImpl({
     const row = an && el && !stick.current ? el.querySelector<HTMLElement>(`:scope > [data-mid="${CSS.escape(an.id)}"]`) : null;
     if (el && row) {
       el.scrollTop += row.getBoundingClientRect().top - el.getBoundingClientRect().top - an!.top;
-    } else if (el && was && first && first < was.id && !stick.current) el.scrollTop += el.scrollHeight - was.h;
+      glide(el, motion.current);
+    } else if (el && was && first && first < was.id && !stick.current) {
+      el.scrollTop += el.scrollHeight - was.h;
+      glide(el, motion.current);
+    }
     if (el && cur && placed.current !== room && messages.length) {
       placed.current = room;
       const line = el.querySelector<HTMLElement>(':scope > .new-line');
@@ -443,6 +456,7 @@ function MessageListImpl({
       }
     }
     if (el && stick.current) el.scrollTop = rest(el);
+    if (el && wasStuck && was && prevLast && last > prevLast && placed.current === room) riseNew(el, el.scrollHeight - was.h, prevLast);
     if (el) prevTop.current = { id: first, h: el.scrollHeight };
     report();
     paintGrad(true);
@@ -639,13 +653,12 @@ function MessageListImpl({
       items.push(
         <button
           type="button"
-          className={'sys-row' + (gone ? ' gone' : '') + (m.leaving ? ' msg-out' : '') + (selecting ? ' selecting' : '') + (sel ? ' selected' : '')}
+          className={'sys-row' + (gone ? ' gone' : '') + (m.leaving ? ' msg-out' : '') + (sel ? ' selected' : '')}
           key={m.id}
           data-mid={m.id}
-          aria-disabled={(!selecting && gone) || undefined}
+          aria-disabled={selecting || gone || undefined}
           onClick={() => {
-            if (selecting) onToggle?.(m);
-            else if (!gone) onJump?.(reply.id);
+            if (!selecting && !gone) onJump?.(reply.id);
           }}
           {...pressProps(m)}
         >
@@ -793,8 +806,17 @@ function MessageListImpl({
     <div
       className="chat-scroll"
       ref={ref}
+      onTouchStart={() => void (motion.current.touch = true)}
+      onTouchEnd={(e) => void (motion.current.touch = e.touches.length > 0)}
+      onTouchCancel={() => void (motion.current.touch = false)}
       onScroll={(e) => {
         const el = e.currentTarget;
+        const mo = motion.current;
+        const now = performance.now();
+        if (now - mo.t < 100) mo.v = mo.v * 0.5 + ((el.scrollTop - mo.top) / Math.max(1, now - mo.t)) * 0.5;
+        else mo.v = 0;
+        mo.top = el.scrollTop;
+        mo.t = now;
         const gap = rest(el) - el.scrollTop;
         stick.current = gap < 80 && below === 0;
         setAway(gap > 240 || below > 0);
@@ -842,11 +864,46 @@ function MessageListImpl({
       {dock &&
         dayFloat &&
         createPortal(
-          <div className="date-pill day-float" style={{ top: dayFloat.top }} aria-hidden>
+          <div className="date-pill day-float" style={{ top: dayFloat.top, transform: `translate(-50%, ${dayFloat.shift}px)` }} aria-hidden>
             {dayFloat.label}
           </div>,
           dock,
         )}
     </div>
   );
+}
+
+/**
+ * A message arrived while the feed sits at the bottom: the rows on screen slide up by the added height instead of
+ * jumping, and the new ones rise from under the composer. Transform only, so glass bubbles keep their blur.
+ */
+function riseNew(el: HTMLElement, grow: number, after: number) {
+  if (grow <= 0 || grow > el.clientHeight) return;
+  const box = el.getBoundingClientRect();
+  for (const row of el.children as HTMLCollectionOf<HTMLElement>) {
+    const r = row.getBoundingClientRect();
+    if (r.bottom < box.top - grow || r.top > box.bottom || !r.height) continue;
+    const fresh = Number(row.dataset.mid) > after;
+    row.animate(
+      fresh
+        ? [
+            { transform: `translateY(${grow}px) scale(.94)`, transformOrigin: row.classList.contains('mine') ? 'right bottom' : 'left bottom' },
+            { transform: 'none', transformOrigin: row.classList.contains('mine') ? 'right bottom' : 'left bottom' },
+          ]
+        : [{ transform: `translateY(${grow}px)` }, { transform: 'none' }],
+      { duration: fresh ? 420 : 340, easing: 'cubic-bezier(.2, .9, .25, 1)' },
+    );
+  }
+}
+
+/**
+ * Older rows were inserted above and scrollTop was shifted to keep the view in place. Safari cancels the momentum on
+ * that write and the feed stopped dead; instead it coasts on smoothly, a capped distance, so it neither halts nor races.
+ */
+function glide(el: HTMLElement, mo: { t: number; v: number; touch: boolean; top: number }) {
+  mo.top = el.scrollTop;
+  if (mo.touch || mo.v > -0.4 || performance.now() - mo.t > 80) return;
+  const dist = Math.min(-mo.v * 160, el.clientHeight * 0.7);
+  mo.v = 0;
+  el.scrollBy({ top: -dist, behavior: 'smooth' });
 }

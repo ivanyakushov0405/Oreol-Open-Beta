@@ -5,6 +5,7 @@ import { api, putUser, refreshUsers, type Me, type Member } from '../shared/api'
 import type { Server, ServerId, Status } from '../shared/model';
 import { useToast, type ToastKind } from '../shared/ui/Toast';
 import { t } from '../shared/i18n';
+import { useServerUnread } from '../features/servers/serverUnread';
 
 export type Theme = 'dark' | 'light';
 export type ThemePref = 'system' | Theme;
@@ -157,6 +158,7 @@ export function useAppState(
   const voice = useVoice(name);
   const general = useChat(textChannel?.room ?? null, name);
   const lobby = useChat(voiceChannel?.room ?? null, name);
+  const serverUnread = useServerUnread(serverId, general.myRead, lobby.myRead);
   // A freshly opened socket has no presence yet: keep the last known one instead of showing everyone offline.
   const lastStatuses = useRef<Record<string, Status>>({});
   const statuses = useMemo(() => {
@@ -339,6 +341,7 @@ export function useAppState(
     server,
     serverById,
     serverId,
+    serverUnread,
     setServerId,
     textChannel,
     voiceChannel,

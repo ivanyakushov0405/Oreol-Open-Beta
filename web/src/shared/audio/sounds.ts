@@ -77,9 +77,24 @@ function unlock() {
  * appeared only after joining voice. "transient" is meant for short notification sounds. A session already set
  * (by a call) is left alone.
  */
+const session = () => (navigator as Navigator & { audioSession?: { type: string } }).audioSession;
+let captured = false;
 function setSession() {
-  const s = (navigator as Navigator & { audioSession?: { type: string } }).audioSession;
-  if (s && s.type === 'auto') s.type = 'transient';
+  const s = session();
+  if (s && s.type === 'auto' && !captured) s.type = 'transient';
+}
+
+// A "transient" session cannot record: iOS denied the microphone in every browser. Any capture (LiveKit, the mic test)
+// goes through getUserMedia, so the session goes back to "auto" right before it and stays there.
+if (typeof navigator !== 'undefined' && navigator.mediaDevices && 'getUserMedia' in navigator.mediaDevices) {
+  const md = navigator.mediaDevices;
+  const gum = md.getUserMedia.bind(md);
+  md.getUserMedia = (c?: MediaStreamConstraints) => {
+    captured = true;
+    const s = session();
+    if (s && s.type === 'transient') s.type = 'auto';
+    return gum(c);
+  };
 }
 
 function context() {

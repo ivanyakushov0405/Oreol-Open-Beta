@@ -3,6 +3,7 @@ import { api, putUser, type PublicUser } from '../../shared/api';
 import { firstPhotoUrl, previewText, type ChatMessage, type Status } from '../../shared/model';
 
 type ServerEvent =
+  | { type: 'unread'; room?: string; message?: ChatMessage | null }
   | { type: 'history'; messages: ChatMessage[]; pinned?: ChatMessage[]; reads?: Record<string, number> }
   | { type: 'read'; user: string; id: number }
   | { type: 'message'; message: ChatMessage }
@@ -29,6 +30,14 @@ const PAGE = 100;
 const MSG_OUT_MS = 450;
 
 const chatCache = new Map<string, { messages: ChatMessage[]; pinned: ChatMessage[]; reads: Record<string, number> }>();
+
+/** Fired when a message lands in another chat of one of my servers: the rail refreshes its badges. */
+export const UNREAD_CHANGED = 'oreol:unread';
+/** Every live message of any of my chats, from whichever socket got it first (alerts dedupe by id). */
+export const NEW_MESSAGE = 'oreol:new-message';
+export type NewMessage = { room: string; message: ChatMessage };
+const announce = (room: string, message: ChatMessage) =>
+  window.dispatchEvent(new CustomEvent<NewMessage>(NEW_MESSAGE, { detail: { room, message } }));
 
 export function useChat(room: string | null, user: string) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -155,6 +164,7 @@ export function useChat(room: string | null, user: string) {
           onForwarded.current?.(ev.to, ev.count);
         } else if (ev.type === 'message') {
           const nm = ev.message;
+          announce(room, nm);
           const bump = (list: ChatMessage[]) =>
             nm.reply && !nm.sys ? list.map((x) => (String(x.id) === String(nm.reply!.id) ? { ...x, replies: (x.replies ?? 0) + 1 } : x)) : list;
           setMessages((m) => [...bump(m), nm]);
@@ -168,6 +178,10 @@ export function useChat(room: string | null, user: string) {
         else if (ev.type === 'presence') setStatuses(ev.statuses);
         else if (ev.type === 'profile') putUser(ev.user);
         else if (ev.type === 'voice') window.dispatchEvent(new Event(VOICE_CHANGED));
+        else if (ev.type === 'unread') {
+          window.dispatchEvent(new Event(UNREAD_CHANGED));
+          if (ev.room && ev.message) announce(ev.room, ev.message);
+        }
       };
       ws.onclose = () => {
         // An old socket already replaced by a new one (see wake) must not touch state.

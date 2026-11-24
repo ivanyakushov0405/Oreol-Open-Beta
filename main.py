@@ -1723,6 +1723,28 @@ class ChatHub:
         for room in list(self.rooms):
             await self.send(room, payload)
 
+    async def nudge_unread(self, room: str, message: dict | None = None):
+        """Hands a new message to members of the room's server connected elsewhere: their badges, alerts and sound."""
+        conn = db()
+        names = {
+            r["username"]
+            for r in conn.execute(
+                "SELECT u.username FROM channels c JOIN server_members m ON m.server_id = c.server_id "
+                "JOIN users u ON u.id = m.user_id WHERE c.room = ?",
+                (room,),
+            )
+        }
+        conn.close()
+        for other, socks in list(self.rooms.items()):
+            if other == room:
+                continue
+            for ws, name in list(socks):
+                if name in names:
+                    try:
+                        await ws.send_json({"type": "unread", "room": room, "message": message})
+                    except Exception:
+                        pass
+
     async def broadcast_presence(self):
         await self.broadcast_all({"type": "presence", "statuses": self.statuses()})
 
@@ -1781,6 +1803,7 @@ async def api_ws(websocket: WebSocket, room: str):
                     )
                     if msg:
                         await hub.send(room, {"type": "message", "message": msg})
+                        await hub.nudge_unread(room, msg)
             elif kind == "edit":
                 content = clean_text(str(data.get("content", ""))).strip()[:MAX_MESSAGE_LEN]
                 found = get_message(as_ids(data.get("id"))[0]) if as_ids(data.get("id")) else None
@@ -1887,6 +1910,7 @@ async def api_ws(websocket: WebSocket, room: str):
                         )
                         if msg:
                             await hub.send(target, {"type": "message", "message": msg})
+                    await hub.nudge_unread(target)
                     await websocket.send_json({"type": "forwarded", "to": target, "count": len(rows)})
             elif kind == "read":
                 ids = as_ids(data.get("id"))
