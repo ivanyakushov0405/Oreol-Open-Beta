@@ -8,6 +8,30 @@ function dotStyle(size: number): CSSProperties {
   return { width: d + 4, height: d + 4, borderWidth: 2, right: -2, bottom: -2 };
 }
 
+/** Avatar images already loaded (true) or broken (false); unknown ones show the letter until they load. */
+const loaded = new Map<string, boolean>();
+function useLoaded(url?: string | null) {
+  const [ok, setOk] = useState(() => (url ? loaded.get(url) === true : false));
+  useEffect(() => {
+    if (!url) return setOk(false);
+    const known = loaded.get(url);
+    if (known !== undefined) return setOk(known);
+    setOk(false);
+    let alive = true;
+    const img = new Image();
+    img.onload = () => {
+      loaded.set(url, true);
+      if (alive) setOk(true);
+    };
+    img.onerror = () => loaded.set(url, false);
+    img.src = url;
+    return () => {
+      alive = false;
+    };
+  }, [url]);
+  return ok;
+}
+
 export function Avatar({
   name,
   size = 34,
@@ -19,7 +43,9 @@ export function Avatar({
   status?: Status;
   speaking?: boolean;
 }) {
-  const img = useUser(name)?.avatar;
+  const url = useUser(name)?.avatar;
+  // Until the picture loads, or if it fails, the generated letter on a gradient shows instead of an empty circle.
+  const img = useLoaded(url) ? url : null;
   // The status dot pops only when the status changes, not on first show
   // (the class stays after the first change; the dot is re-keyed only on a new status, so re-renders do not replay it).
   const prevStatus = useRef(status);

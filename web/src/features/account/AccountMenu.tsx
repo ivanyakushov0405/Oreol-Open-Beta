@@ -7,10 +7,10 @@ import { Avatar, Banner } from '../../shared/ui/Avatar';
 import { t } from '../../shared/i18n';
 
 export const STATUS_ITEMS: { id: Status; label: string }[] = [
-  { id: 'online', label: t('В сети') },
-  { id: 'idle', label: t('Не активен') },
-  { id: 'dnd', label: t('Не беспокоить') },
-  { id: 'offline', label: t('Невидимый') },
+  { id: 'online', get label() { return t('В сети'); } },
+  { id: 'idle', get label() { return t('Не активен'); } },
+  { id: 'dnd', get label() { return t('Не беспокоить'); } },
+  { id: 'offline', get label() { return t('Невидимый'); } },
 ];
 
 export function AccountMenu({

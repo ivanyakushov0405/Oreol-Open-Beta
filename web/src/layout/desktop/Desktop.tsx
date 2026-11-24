@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { parseRoute, paths, useUrlSync } from '../../app/router';
 import type { AppState } from '../../app/useAppState';
 import { UserPanel } from '../../features/account/UserPanel';
-import { STATUS_LABEL } from '../../features/account/status';
+import { presenceLine } from '../../features/account/status';
 import { ChatBody, PinnedButton } from '../../features/chat/ChatBody';
 import { ChatInfo } from '../../features/chat/ChatInfo';
 import { setMuted, useMuted } from '../../features/notifications/mute';
@@ -21,7 +21,7 @@ import { isServerSection, isUserSection, SERVER_NAV, USER_NAV, userNavOf, userSe
 import { VoiceStage } from '../../features/voice/VoiceStage';
 import { Elapsed, VoiceStatus } from '../../features/voice/VoiceStatus';
 import { Icon } from '../../shared/icons';
-import { handleOf, type Channel, type ServerId } from '../../shared/model';
+import { type Channel, type ServerId } from '../../shared/model';
 import { plural, t } from '../../shared/i18n';
 
 type Overlay = { kind: 'user'; section: UserSection } | { kind: 'server'; section: ServerSection } | null;
@@ -203,10 +203,18 @@ export function Desktop({ app }: { app: AppState }) {
           </>
         ) : (
           <>
-            <button className="sidebar-head" onClick={() => setOverlay({ kind: 'server', section: 'overview' })} title={t('Настройки сервера')}>
+            <div className="sidebar-head">
               <span>{app.server.name}</span>
-              <Icon name="chevron-down" size={18} />
-            </button>
+              <button
+                type="button"
+                className="icon-btn srv-arrow"
+                title={t('Настройки сервера')}
+                aria-label={t('Настройки сервера')}
+                onClick={() => setOverlay({ kind: 'server', section: 'overview' })}
+              >
+                <Icon name="chevron-down" size={18} />
+              </button>
+            </div>
             <div className="sidebar-scroll">
               <ChannelList app={app} active={channel.id} onOpen={openChannel} />
             </div>
@@ -345,7 +353,7 @@ export function Desktop({ app }: { app: AppState }) {
                 name={m.username}
                 me={m.username === app.name}
                 status={m.status}
-                sub={app.voiceUsers.some((v) => v.identity === m.username) ? t('В голосовом · {0}', { 0: voiceName }) : handleOf(m.username)}
+                sub={app.voiceUsers.some((v) => v.identity === m.username) ? t('В голосовом · {0}', { 0: voiceName }) : presenceLine(m.status, m.lastSeen)}
                 onClick={openCard(m.username)}
               />
             ))}
@@ -356,7 +364,7 @@ export function Desktop({ app }: { app: AppState }) {
                 name={m.username}
                 me={m.username === app.name}
                 status="offline"
-                sub={handleOf(m.username)}
+                sub={presenceLine('offline', m.lastSeen)}
                 onClick={openCard(m.username)}
               />
             ))}
@@ -370,7 +378,7 @@ export function Desktop({ app }: { app: AppState }) {
           me={card.name === app.name}
           at={{ x: card.x, y: card.y }}
           status={app.statusOf(card.name)}
-          activity={app.voiceUsers.some((v) => v.identity === card.name) ? t('В голосовом · {0}', { 0: voiceName }) : STATUS_LABEL[app.statusOf(card.name)]}
+          activity={app.voiceUsers.some((v) => v.identity === card.name) ? t('В голосовом · {0}', { 0: voiceName }) : presenceLine(app.statusOf(card.name), app.lastSeenOf(card.name))}
           serverName={app.server.name}
           since={cardMember?.joinedAt ? new Date(cardMember.joinedAt) : new Date()}
           onClose={() => setCard(null)}

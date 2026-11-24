@@ -1,3 +1,4 @@
+import { springPress } from '../../shared/ui/press';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Icon, type IconName } from '../../shared/icons';
 import { t } from '../../shared/i18n';
@@ -53,7 +54,7 @@ export function Head({
   const swapIn = bump > 1 || ghost ? ' sw-in' : '';
   return (
     <div className={'m-head' + (pop ? ' pop' : '')} ref={ref}>
-      <button className={'pill-btn glass' + bumpCls} onClick={onBack} title={t('Назад')}>
+      <button className={'pill-btn glass' + bumpCls} onClick={(e) => (springPress(e.currentTarget), onBack())} title={t('Назад')}>
         <Icon name="back" />
       </button>
       <div

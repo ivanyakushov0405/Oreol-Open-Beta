@@ -4,9 +4,9 @@ import { Icon } from '../../shared/icons';
 import { handleOf, nameColor, type Status } from '../../shared/model';
 import { Avatar, Banner } from '../../shared/ui/Avatar';
 import { Modal } from '../../shared/ui/Modal';
-import { locale, t } from '../../shared/i18n';
+import { dateFormat, t } from '../../shared/i18n';
 
-const sinceFmt = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'long', year: 'numeric' });
+const sinceFmt = dateFormat({ day: 'numeric', month: 'long', year: 'numeric' });
 
 export function MemberCard({
   name,
@@ -167,9 +167,7 @@ export function MemberCard({
           </span>
           <div className="mc-identity">
             <h3 style={{ color: nameColor(name) }}>{display}</h3>
-            <span className="mc-handle">
-              {name} · {handleOf(name)}
-            </span>
+            <span className="mc-handle">{handleOf(name)}</span>
             <span className="mc-activity">
               <i className={`status-${status}`} />
               {activity}

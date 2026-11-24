@@ -1,14 +1,15 @@
+import { presenceLine } from '../account/status';
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import { paths } from '../../app/router';
 import type { AppState } from '../../app/useAppState';
 import { api, useUser, type Member } from '../../shared/api';
 import { Icon } from '../../shared/icons';
-import { handleOf, nameColor, type Server, type Status } from '../../shared/model';
+import { handleOf, nameColor, type Server } from '../../shared/model';
 import { Avatar, Banner } from '../../shared/ui/Avatar';
 import { MENTION_EVENT } from '../chat/mentions';
 import { openUserMenu } from '../members/userMenu';
-import { locale, t } from '../../shared/i18n';
+import { dateFormat, t } from '../../shared/i18n';
 
 let state: string | null = null;
 const subs = new Set<() => void>();
@@ -29,8 +30,7 @@ export const openProfile = (name: string, opts?: { inChat?: boolean }) => {
 };
 export const EDIT_PROFILE_EVENT = 'oreol:edit-profile';
 
-const LABEL: Record<Status, string> = { online: t('В сети'), idle: t('Не активен'), dnd: t('Не беспокоить'), offline: t('Не в сети') };
-const dateFmt = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'long', year: 'numeric' });
+const dateFmt = dateFormat({ day: 'numeric', month: 'long', year: 'numeric' });
 const fmt = (iso: string | null | undefined) => (iso ? dateFmt.format(new Date(iso)).replace(t(' г.'), '') : null);
 
 export function ProfileHost({ app }: { app: AppState }) {
@@ -87,7 +87,7 @@ export function ProfileDetails({ app, name, onClose }: { app: AppState; name: st
   const me = name === app.name;
   const status = app.statusOf(name);
   const inVoice = app.voiceUsers.some((v) => v.identity === name);
-  const activity = inVoice ? t('В голосовом · {0}', { 0: app.voiceChannel?.name ?? t('Голосовой') }) : LABEL[status];
+  const activity = inVoice ? t('В голосовом · {0}', { 0: app.voiceChannel?.name ?? t('Голосовой') }) : presenceLine(status, app.lastSeenOf(name));
   const since = fmt(member?.joinedAt);
   const created = fmt(profile?.createdAt);
   const later = (what: string) => () => app.notify(t('{0} скоро будут', { 0: what }));

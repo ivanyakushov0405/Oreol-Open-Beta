@@ -6,7 +6,8 @@ const S = 'stroke="currentColor" stroke-width="1.6" stroke-linecap="round" strok
 const F = 'fill="currentColor"';
 
 export const ICONS: Record<string, string> = {
-  'speaker-off': `<path d="M4 9.5H7L11.5 5.5V18.5L7 14.5H4Z" ${S}/><path d="M15.5 9.5L20.5 14.5M20.5 9.5L15.5 14.5" ${S}/>`,
+  globe: `<circle cx="12" cy="12" r="8.5" ${S}/><path d="M3.5 12H20.5M12 3.5C14.3 6 15.4 8.9 15.4 12C15.4 15.1 14.3 18 12 20.5C9.7 18 8.6 15.1 8.6 12C8.6 8.9 9.7 6 12 3.5Z" ${S}/>`,
+  'speaker-off': `<path d="M3.5 9.25C3.5 8.56 4.06 8 4.75 8H7.4L11.2 4.7C11.85 4.14 12.85 4.6 12.85 5.45V18.55C12.85 19.4 11.85 19.86 11.2 19.3L7.4 16H4.75C4.06 16 3.5 15.44 3.5 14.75Z" ${F}/><path d="M16 9.5L21 14.5M21 9.5L16 14.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>`,
   check: `<path d="M5 12.5L10 17.5L19 7" ${S}/>`,
   'check-double': `<path d="M2.5 12.5L7 17L15.5 7.5" ${S}/><path d="M11.5 16L12.5 17L21 7.5" ${S}/>`,
   'reply-fill': `<path d="M10 9V5.5L3 12L10 18.5V14.9C15 14.9 18.5 16.5 21 20C20 15 17 10 10 9Z" ${F}/>`,

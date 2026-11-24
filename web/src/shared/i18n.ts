@@ -13,12 +13,22 @@ function initialLang(): Lang {
   return (navigator.languages?.[0] || navigator.language || '').toLowerCase().startsWith('ru') ? 'ru' : 'en';
 }
 
-/** Fixed for the page's lifetime: switching reloads, so module-level constants can call t() too. */
-export const lang: Lang = initialLang();
-export const locale = lang === 'ru' ? 'ru-RU' : 'en-US';
+/**
+ * Switches live, without a reload: the app re-renders through onLang listeners. So text must be translated when it
+ * renders; a module-level constant holds the Russian key or a getter, and dates go through dateFormat().
+ */
+export let lang: Lang = initialLang();
+export let locale = lang === 'ru' ? 'ru-RU' : 'en-US';
 document.documentElement.lang = lang;
 export const BRAND = 'Oreol Web';
 document.title = BRAND;
+
+const listeners = new Set<() => void>();
+/** The listener must update the DOM synchronously (flushSync), so the switch lands in one frame. */
+export function onLang(fn: () => void) {
+  listeners.add(fn);
+  return () => void listeners.delete(fn);
+}
 
 export function setLang(next: Lang) {
   if (next === lang) return;
@@ -27,7 +37,26 @@ export function setLang(next: Lang) {
   } catch {
     /* storage blocked */
   }
-  location.reload();
+  const root = document.documentElement;
+  lang = next;
+  locale = next === 'ru' ? 'ru-RU' : 'en-US';
+  root.lang = next;
+  // The app re-renders in place within this frame: no remount, so nothing animates in again
+  // and the glass stays as it is (a crossfade snapshot showed it untinted).
+  for (const fn of listeners) fn();
+}
+
+const formats = new Map<string, Intl.DateTimeFormat>();
+/** A DateTimeFormat that follows the current language. */
+export function dateFormat(opts: Intl.DateTimeFormatOptions) {
+  const key = JSON.stringify(opts);
+  return {
+    format(d?: Date | number) {
+      let f = formats.get(locale + key);
+      if (!f) formats.set(locale + key, (f = new Intl.DateTimeFormat(locale, opts)));
+      return f.format(d);
+    },
+  };
 }
 
 const fill = (s: string, vars?: Record<string, string | number>) =>

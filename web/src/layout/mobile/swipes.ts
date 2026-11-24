@@ -34,7 +34,7 @@ const shift = (list: Iterable<HTMLElement>, v: string | null, tr = 'none') => {
     else (n.style.setProperty('transform', v, 'important'), n.style.setProperty('transition', tr, 'important'));
   }
 };
-const SKIP = 'input, textarea, select, [contenteditable], .tabbar, .m-call, .m-call-pill, .member-card, .popover-backdrop, .msg-menu, .m-menu, .dialog';
+const SKIP = 'input, textarea, select, [contenteditable], .ci-full, .tabbar, .m-call, .m-call-pill, .member-card, .popover-backdrop, .msg-menu, .m-menu, .dialog';
 
 export function useStageSwipes(stage: RefObject<HTMLElement>, opts: Opts) {
   const o = useRef(opts);

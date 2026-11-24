@@ -1054,6 +1054,8 @@ def init_servers_db():
         conn.execute("ALTER TABLE users ADD COLUMN status TEXT NOT NULL DEFAULT 'online'")
     if "phone" not in cols:
         conn.execute("ALTER TABLE users ADD COLUMN phone TEXT")
+    if "last_seen" not in cols:
+        conn.execute("ALTER TABLE users ADD COLUMN last_seen DATETIME")
     if not conn.execute("SELECT 1 FROM servers LIMIT 1").fetchone():
         for pos, (sid, short, name, about, grad) in enumerate(SEED_SERVERS):
             conn.execute(
@@ -1128,6 +1130,8 @@ def public_user(row) -> dict:
         "avatar": upload_url("avatars", row["avatar"]),
         "banner": upload_url("banners", row["banner"]),
         "createdAt": to_iso(row["created_at"]),
+        # invisible users keep their last visit hidden as well
+        "lastSeen": to_iso(row["last_seen"]) if row["status"] != "offline" else None,
     }
 
 
@@ -1644,6 +1648,9 @@ async def api_voice_participants(request: Request, server: str = "rg"):
 
 class ChatHub:
 
+    # A user whose last socket closed stays online this long: switching channels reopens the socket at once.
+    OFFLINE_GRACE = 8.0
+
     def __init__(self):
         self.rooms: dict[str, list[tuple[WebSocket, str]]] = {}
 
@@ -1667,9 +1674,21 @@ class ChatHub:
         await self.broadcast_presence()
 
     async def leave(self, ws: WebSocket, room: str):
+        user = next((n for w, n in self.rooms.get(room, []) if w is ws), None)
         self.rooms[room] = [(w, n) for w, n in self.rooms.get(room, []) if w is not ws]
         if not self.rooms[room]:
             del self.rooms[room]
+        if user and user not in self.all_users():
+            asyncio.create_task(self.went_offline(user))
+
+    async def went_offline(self, user: str):
+        await asyncio.sleep(self.OFFLINE_GRACE)
+        if user in self.all_users():
+            return
+        conn = db()
+        conn.execute("UPDATE users SET last_seen = CURRENT_TIMESTAMP WHERE username = ? AND status != 'offline'", (user,))
+        conn.commit()
+        conn.close()
         await self.broadcast_presence()
 
     async def send(self, room: str, payload: dict, skip: WebSocket | None = None):
@@ -1914,6 +1933,37 @@ async def servers_list(request: Request):
         (row["id"],),
     ).fetchall()
     out = [server_json(conn, r) for r in rows]
+    conn.close()
+    return {"servers": out}
+
+
+@app.get("/api/unread")
+async def unread_counts(request: Request):
+    """Unread messages per server for the rail badges: others' messages past the user's read mark."""
+    row = current_user(request)
+    if not row:
+        return unauthorized()
+    conn = db()
+    rooms = conn.execute(
+        "SELECT c.server_id, c.room FROM channels c JOIN server_members m ON m.server_id = c.server_id WHERE m.user_id = ?",
+        (row["id"],),
+    ).fetchall()
+    conn.close()
+    out: dict[str, dict] = {}
+    me = row["username"]
+    mention = f"%@{me}%"
+    conn = chat_conn()
+    for r in rooms:
+        got = conn.execute(
+            "SELECT COUNT(*) AS n, SUM(content LIKE ? OR content LIKE '%@everyone%') AS at FROM messages "
+            "WHERE room = ? AND sys IS NULL AND username != ? "
+            "AND id > COALESCE((SELECT last_id FROM chat_reads WHERE user_id = ? AND room = ?), 0) "
+            "AND id NOT IN (SELECT message_id FROM message_hidden WHERE user_id = ?)",
+            (mention, r["room"], me, row["id"], r["room"], row["id"]),
+        ).fetchone()
+        cur = out.setdefault(r["server_id"], {"count": 0, "mentions": 0})
+        cur["count"] += got["n"] or 0
+        cur["mentions"] += got["at"] or 0
     conn.close()
     return {"servers": out}
 

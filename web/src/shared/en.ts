@@ -222,6 +222,11 @@ export const EN: Record<string, string> = {
   'Уведомления включены': 'Notifications on',
   'Уведомления выключены, кроме упоминаний': 'Muted, except mentions',
   'Уведомления выключены': 'Notifications muted',
+  'был(а) в сети только что': 'last seen just now',
+  'был(а) в сети {0} мин назад': 'last seen {0} min ago',
+  'был(а) в сети сегодня в {0}': 'last seen today at {0}',
+  'был(а) в сети вчера в {0}': 'last seen yesterday at {0}',
+  'был(а) в сети {0}': 'last seen {0}',
   'Включить уведомления': 'Unmute notifications',
   'Выключить уведомления': 'Mute notifications',
   'Информация о чате': 'Chat info',
@@ -374,7 +379,7 @@ export const EN: Record<string, string> = {
 
   // user settings
   'Язык': 'Language',
-  'Интерфейс перезагрузится на выбранном языке': 'The app reloads in the selected language',
+  'Язык интерфейса': 'Interface language',
   'Как в системе': 'System',
   'Тёмная': 'Dark',
   'Светлая': 'Light',

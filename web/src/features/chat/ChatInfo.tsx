@@ -1,7 +1,8 @@
+import { springPress } from '../../shared/ui/press';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { AppState } from '../../app/useAppState';
 import { api } from '../../shared/api';
-import { lang, locale, plural, t } from '../../shared/i18n';
+import { lang, dateFormat, plural, t } from '../../shared/i18n';
 import { Icon, type IconName } from '../../shared/icons';
 import { fileSize, type Attachment, type Channel, type ChatMessage } from '../../shared/model';
 import { Avatar } from '../../shared/ui/Avatar';
@@ -18,15 +19,15 @@ type Page<T> = { items: T[]; next: number | null; loading: boolean; error: boole
 
 // Russian uses the same word for one item and for the tab; English tabs are plural.
 const TABS: { id: Kind; label: string }[] = [
-  { id: 'photo', label: lang === 'en' ? 'Photos' : 'Фото' },
-  { id: 'video', label: lang === 'en' ? 'Videos' : 'Видео' },
-  { id: 'gif', label: t('GIF') },
-  { id: 'file', label: t('Файлы') },
-  { id: 'link', label: t('Ссылки') },
+  { id: 'photo', get label() { return lang === 'en' ? 'Photos' : 'Фото'; } },
+  { id: 'video', get label() { return lang === 'en' ? 'Videos' : 'Видео'; } },
+  { id: 'gif', get label() { return t('GIF'); } },
+  { id: 'file', get label() { return t('Файлы'); } },
+  { id: 'link', get label() { return t('Ссылки'); } },
 ];
 
-const dayFmt = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short' });
-const yearFmt = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', year: 'numeric' });
+const dayFmt = dateFormat({ day: 'numeric', month: 'short' });
+const yearFmt = dateFormat({ day: 'numeric', month: 'short', year: 'numeric' });
 function when(iso: string | null) {
   if (!iso) return '';
   const d = new Date(iso);
@@ -124,11 +125,12 @@ const CLOSE_MS = 340;
 const MORPH_EASE = 'cubic-bezier(.32, .72, 0, 1)';
 /** Header parts hidden while the panel is open: the panel draws its own copy of the header in the same place. */
 const HEAD_PARTS = '.pill-btn, .title-pill, .group';
-// the swipe header motion from styles.css: head-bump-a, sw-in, sw-out, .group.gone, head-pop-in, head-pop-out
+// the swipe header motion from styles.css: head-bump-a, sw-in, sw-out, head-pop-in, head-pop-out
 const BUMP: Keyframe[] = [{ transform: 'none' }, { transform: 'scale(.97)', offset: 0.45 }, { transform: 'none' }];
 const SW_IN: Keyframe[] = [{ opacity: 0, transform: 'translateY(5px)' }, { opacity: 1, transform: 'none' }];
 const SW_OUT: Keyframe[] = [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(-5px)' }];
-const GONE: Keyframe[] = [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'scale(.8)' }];
+/** Keyframes played backwards with their offsets mirrored, so closing keeps its own (forward) easing. */
+const flip = (frames: Keyframe[]): Keyframe[] => [...frames].reverse().map((f) => ({ ...f, offset: 1 - (f.offset as number) }));
 const POP_IN: Keyframe[] = [{ opacity: 0, transform: 'translateY(4px)' }, { opacity: 1, transform: 'none' }];
 const POP_OUT: Keyframe[] = [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(-4px)' }];
 
@@ -149,7 +151,8 @@ function ghost(of: HTMLElement, into: HTMLElement): HTMLElement {
 
 /**
  * The panel unrolls from the chat header, whose copy it draws in the same place, and the header changes the way
- * it does on a swipe: the back button and the title bump, the title text swaps, the button group shrinks away.
+ * it does on a swipe: the back button and the title bump, the title text swaps, and the title and the button group
+ * stretch toward each other and merge into one plate.
  * The rest pops in one by one. Only transform, clip-path and opacity animate.
  */
 function morph(panel: HTMLElement, open: boolean): Promise<void> {
@@ -168,10 +171,40 @@ function morph(panel: HTMLElement, open: boolean): Promise<void> {
 
   const srcPill = head.querySelector<HTMLElement>('.title-pill');
   const dstPill = own.querySelector<HTMLElement>('.title-pill');
+  const group = head.querySelector<HTMLElement>('.group');
   if (srcPill && dstPill) {
     const r = getComputedStyle(dstPill).borderRadius;
-    const dw = Math.max(0, dstPill.getBoundingClientRect().width - srcPill.getBoundingClientRect().width);
-    play(dstPill, { clipPath: `inset(0 ${dw}px 0 0 round ${r})` }, { clipPath: `inset(0 0 0 0 round ${r})` });
+    const pill = dstPill.getBoundingClientRect();
+    const from = srcPill.getBoundingClientRect().right;
+    const g = group?.getBoundingClientRect();
+    // The title's right edge and the button group's left edge run toward each other, meet halfway and
+    // fuse into one plate: the title takes over at the meeting point while the group's plate fades under it.
+    const meet = g ? (from + g.left) / 2 : pill.right;
+    const cut = (x: number) => `inset(0 ${Math.max(0, pill.right - x)}px 0 0 round ${r})`;
+    const pillFrames: Keyframe[] = [
+      { clipPath: cut(from), offset: 0 },
+      { clipPath: cut(meet), offset: 0.62 },
+      { clipPath: cut(pill.right), offset: 0.66 },
+      { clipPath: cut(pill.right), offset: 1 },
+    ];
+    anims.push(dstPill.animate(open ? pillFrames : flip(pillFrames), opts));
+    if (group && g) {
+      const plate = ghost(group, own);
+      ghosts.push(plate);
+      const box = own.getBoundingClientRect();
+      Object.assign(plate.style, { left: `${meet - box.left}px`, width: `${g.right - meet}px`, justifyContent: 'flex-end' });
+      const gr = getComputedStyle(group).borderRadius;
+      const plateFrames: Keyframe[] = [
+        { clipPath: `inset(0 0 0 ${g.left - meet}px round ${gr})`, opacity: 1, offset: 0 },
+        { clipPath: `inset(0 0 0 0 round ${gr})`, opacity: 1, offset: 0.62 },
+        { clipPath: `inset(0 0 0 0 round ${gr})`, opacity: 1, offset: 0.68 },
+        { clipPath: `inset(0 0 0 0 round ${gr})`, opacity: 0, offset: 0.86 },
+        { clipPath: `inset(0 0 0 0 round ${gr})`, opacity: 0, offset: 1 },
+      ];
+      anims.push(plate.animate(open ? plateFrames : flip(plateFrames), opts));
+      const icons: Keyframe[] = [{ opacity: 1, offset: 0 }, { opacity: 0, offset: 0.35 }, { opacity: 0, offset: 1 }];
+      for (const b of plate.children) anims.push((b as HTMLElement).animate(open ? icons : flip(icons), opts));
+    }
     // like the swipe header, only lines whose text changes swap; an unchanged name stays still
     for (const sel of ['.t', '.s']) {
       const oldLine = srcPill.querySelector<HTMLElement>(sel);
@@ -181,12 +214,6 @@ function morph(panel: HTMLElement, open: boolean): Promise<void> {
       ghosts.push(g);
       anims.push(g.animate(open ? SW_OUT : SW_IN, swap), newLine.animate(open ? SW_IN : SW_OUT, swap));
     }
-  }
-  const group = head.querySelector<HTMLElement>('.group');
-  if (group) {
-    const g = ghost(group, own);
-    ghosts.push(g);
-    anims.push(g.animate(open ? GONE : [...GONE].reverse(), { duration: 380, easing: 'cubic-bezier(.3, .7, .4, 1)', fill: 'both' }));
   }
   for (const el of own.querySelectorAll<HTMLElement>(':scope > :is(.pill-btn, .title-pill)')) el.animate(BUMP, { duration: 380, easing: 'ease-in-out' });
 
@@ -226,6 +253,41 @@ export function ChatInfo({
 }) {
   const room = channel.room;
   const [tab, setTab] = useState<Kind>('photo');
+  /** Side the new tab's content comes from, for the slide-in. */
+  const [dir, setDir] = useState<'l' | 'r' | ''>('');
+  const pick = (next: Kind) => {
+    const a = TABS.findIndex((x) => x.id === tab);
+    const b = TABS.findIndex((x) => x.id === next);
+    if (a === b) return;
+    setDir(b > a ? 'r' : 'l');
+    setTab(next);
+  };
+  // horizontal swipe (finger or mouse drag) over the content switches to the neighbouring tab
+  const swipe = useRef<{ id: number; x: number; y: number } | null>(null);
+  const swiped = useRef(false);
+  const onPointerDown = (e: React.PointerEvent) => {
+    if (!e.isPrimary || e.button !== 0) return;
+    swipe.current = { id: e.pointerId, x: e.clientX, y: e.clientY };
+    swiped.current = false;
+  };
+  const onPointerUp = (e: React.PointerEvent) => {
+    const s0 = swipe.current;
+    swipe.current = null;
+    if (!s0 || s0.id !== e.pointerId || search) return;
+    const dx = e.clientX - s0.x;
+    if (Math.abs(dx) < 56 || Math.abs(dx) < Math.abs(e.clientY - s0.y) * 1.5) return;
+    const i = TABS.findIndex((x) => x.id === tab) + (dx < 0 ? 1 : -1);
+    if (i < 0 || i >= TABS.length) return;
+    // a mouse drag ends with a click on whatever is under it; that click must not open a photo
+    swiped.current = true;
+    pick(TABS[i].id);
+  };
+  const onClickCapture = (e: React.MouseEvent) => {
+    if (!swiped.current) return;
+    swiped.current = false;
+    e.stopPropagation();
+    e.preventDefault();
+  };
   const [search, setSearch] = useState(!!startSearch);
   const [q, setQ] = useState('');
   const [query, setQuery] = useState('');
@@ -319,7 +381,7 @@ export function ChatInfo({
     <div ref={root} className={'ci' + (full ? ' ci-full' : ' ci-pop glass')} role="dialog" aria-label={t('Информация о чате')}>
       {full ? (
         <div className="m-head ci-head">
-          <button type="button" className="pill-btn glass ci-back" title={t('Назад')} aria-label={t('Назад')} onClick={close}>
+          <button type="button" className="pill-btn glass ci-back" title={t('Назад')} aria-label={t('Назад')} onClick={(e) => (springPress(e.currentTarget), close())}>
             <Icon name="back" />
           </button>
           <div className="title-pill glass ci-titlecard">
@@ -406,14 +468,22 @@ export function ChatInfo({
       ) : (
         <div className="ci-tabs" role="tablist">
           {TABS.map((x) => (
-            <button key={x.id} role="tab" type="button" aria-selected={tab === x.id} className={tab === x.id ? 'on' : ''} onClick={() => setTab(x.id)}>
+            <button key={x.id} role="tab" type="button" aria-selected={tab === x.id} className={tab === x.id ? 'on' : ''} onClick={() => pick(x.id)}>
               {x.label}
             </button>
           ))}
         </div>
       )}
 
-      <div className="ci-body" ref={body}>
+      <div
+        className="ci-body"
+        ref={body}
+        onPointerDown={onPointerDown}
+        onPointerUp={onPointerUp}
+        onPointerCancel={() => (swipe.current = null)}
+        onClickCapture={onClickCapture}
+        onDragStart={(e) => e.preventDefault()}
+      >
         {search ? (
           <>
             {query && (
@@ -437,7 +507,7 @@ export function ChatInfo({
             {query && <Status page={found} empty={t('Ничего не найдено')} />}
           </>
         ) : (
-          <>
+          <div key={tab} className={'ci-pane' + (dir ? ' from-' + dir : '')}>
             {visual && (
               <div className="ci-grid">
                 {items.map((a, i) => (
@@ -493,7 +563,7 @@ export function ChatInfo({
                 </div>
               ))}
             <Status page={media} empty={t('Здесь пока пусто')} />
-          </>
+          </div>
         )}
         {list.next != null && list.items.length > 0 && <div ref={sentinel} className="ci-sentinel" />}
       </div>

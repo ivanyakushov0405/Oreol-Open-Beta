@@ -107,14 +107,7 @@ export function normalizeName(raw: string) {
 }
 
 export function handleOf(name: string) {
-  return (
-    '@' +
-    name
-      .toLowerCase()
-      .replace(/[\s-]+/g, '.')
-      .replace(/[^a-z0-9._]/g, '')
-      .replace(/\.{2,}/g, '.')
-  );
+  return '@' + name.replace(/\s+/g, '.');
 }
 
 const AVATAR_GRADS = [

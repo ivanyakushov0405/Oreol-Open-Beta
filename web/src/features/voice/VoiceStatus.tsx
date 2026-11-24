@@ -4,9 +4,9 @@ import { Icon } from '../../shared/icons';
 import { t } from '../../shared/i18n';
 
 const QUALITY = {
-  good: { title: t('Подключено'), icon: 'wifi' },
-  medium: { title: t('Связь нестабильна'), icon: 'wifi' },
-  bad: { title: t('Плохое соединение'), icon: 'wifi' },
+  good: { get title() { return t('Подключено'); }, icon: 'wifi' },
+  medium: { get title() { return t('Связь нестабильна'); }, icon: 'wifi' },
+  bad: { get title() { return t('Плохое соединение'); }, icon: 'wifi' },
 } as const;
 
 export const HIGH_PING = 200;
@@ -16,7 +16,7 @@ export function pingClass(_rtt: number | null, quality: 'good' | 'medium' | 'bad
   return `q-${quality}`;
 }
 
-export const QUALITY_TITLE = { good: t('Подключено'), medium: t('Связь нестабильна'), bad: t('Плохое соединение') } as const;
+export const QUALITY_TITLE = { get good() { return t('Подключено'); }, get medium() { return t('Связь нестабильна'); }, get bad() { return t('Плохое соединение'); } } as const;
 
 export function useElapsed(from: number | null) {
   const [, tick] = useState(0);

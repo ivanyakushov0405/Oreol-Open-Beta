@@ -481,15 +481,16 @@ export function CameraSettings() {
   );
 }
 
+// Russian keys, translated when rendered so a live language switch picks them up.
 const SOUND_LIST = [
-  ['join', t('Вход')],
-  ['leave', t('Выход')],
-  ['mic-on', t('Микрофон вкл.')],
-  ['mic-off', t('Микрофон выкл.')],
-  ['undeafen', t('Звук вкл.')],
-  ['deafen', t('Звук выкл.')],
-  ['share-on', t('Демонстрация')],
-  ['share-off', t('Конец демонстрации')],
+  ['join', 'Вход'],
+  ['leave', 'Выход'],
+  ['mic-on', 'Микрофон вкл.'],
+  ['mic-off', 'Микрофон выкл.'],
+  ['undeafen', 'Звук вкл.'],
+  ['deafen', 'Звук выкл.'],
+  ['share-on', 'Демонстрация'],
+  ['share-off', 'Конец демонстрации'],
 ] as const;
 
 export function SoundSettings() {
@@ -524,7 +525,7 @@ export function SoundSettings() {
           {SOUND_LIST.map(([id, label]) => (
             <button key={id} type="button" className="btn btn-secondary btn-sm" disabled={!prefs.sounds} onClick={() => playSound(id)}>
               <Icon name="voice" size={16} />
-              {label}
+              {t(label)}
             </button>
           ))}
         </div>

@@ -2483,8 +2483,10 @@ input, textarea { font: inherit; color: inherit; }
 .m-voice.covered { opacity: 0; visibility: hidden; transition: opacity .2s ease, visibility 0s linear .2s; }
 
 .m-settings { background: transparent; }
-.m-settings > :not(.m-head) { transition: opacity .2s ease; }
-.m-settings:has(~ .m-settings.m-slide:not(.out)) > :not(.m-head) { opacity: 0; pointer-events: none; }
+.m-settings:has(~ .m-settings.m-slide:not(.out)) > :not(.m-head) { pointer-events: none; }
+/* the cards fade, not their container: under a semi-transparent parent the glass loses its blur until the fade ends */
+.m-settings > :not(.m-head) > * { transition: opacity .2s ease; }
+.m-settings:has(~ .m-settings.m-slide:not(.out)) > :not(.m-head) > * { opacity: 0; }
 
 .m-full-voice.with-chat .m-voice { opacity: 0; transition: opacity .18s ease; }
 
@@ -2703,7 +2705,7 @@ svg.flip path { stroke-width: 2.3; }
   position: absolute; z-index: 4; left: 12px; right: 12px; top: 8px; height: 48px;
   display: flex; align-items: center; gap: 10px; padding: 0 4px 0 12px; border-radius: 16px;
   background: color-mix(in srgb, #fff 6%, var(--bg-chat)); box-shadow: var(--glass-el-shadow, 0 6px 18px #00000040);
-  animation: cb-in .2s cubic-bezier(.2, .8, .2, 1);
+  animation: cb-in .2s cubic-bezier(.2, .8, .2, 1); -webkit-user-select: none; user-select: none;
 }
 .pin-banner::after {
   content: ''; position: absolute; inset: 0; border-radius: inherit; padding: 1px; pointer-events: none;
@@ -2755,11 +2757,11 @@ body.m-chat-open[data-theme='light'] .backdrop .bd-ring.m { opacity: .7; }
 
 .m-call-wrap {
   flex: none; overflow: hidden; position: relative; z-index: 8;
-  transition: height .38s cubic-bezier(.22, .9, .25, 1);
-  animation: m-call-in .32s cubic-bezier(.2, .8, .2, 1);
+  transition: height .5s cubic-bezier(.32, .72, 0, 1);
+  animation: m-call-in .45s cubic-bezier(.32, .72, 0, 1);
 }
 .m-call-wrap.dragging { transition: none; }
-.m-call-box { padding: calc(var(--sat) + 8px) 8px 0; transition: opacity .3s ease, transform .38s cubic-bezier(.22, .9, .25, 1); }
+.m-call-box { padding: calc(var(--sat) + 8px) 8px 0; transition: opacity .4s ease, transform .5s cubic-bezier(.32, .72, 0, 1); }
 .m-call-wrap.shut .m-call-box { opacity: 0; transform: translateY(-28px) scale(.97); pointer-events: none; }
 .m-call-wrap.dragging .m-call-box { transition: none; }
 
@@ -2845,7 +2847,7 @@ body.m-chat-open[data-theme='light'] .backdrop .bd-ring.m { opacity: .7; }
 .m-call-back { align-self: center; }
 
 @property --call-h { syntax: '<length>'; inherits: true; initial-value: 0px; }
-.m-app.call-anim { transition: --call-h .38s cubic-bezier(.22, .9, .25, 1); }
+.m-app.call-anim { transition: --call-h .5s cubic-bezier(.32, .72, 0, 1); }
 .m-app.call-drag { transition: none; }
 .m-call-wrap { position: absolute; top: 0; left: 0; right: 0; height: auto; overflow: visible; transition: none; }
 .m-call-wrap.shut { pointer-events: none; }
@@ -3119,7 +3121,7 @@ html.boot *:not(.backdrop *), html.boot *:not(.backdrop *)::before, html.boot *:
 .m-call-box > * { opacity: var(--drag-op, 1); transition: opacity .3s ease; }
 .m-call-wrap.shut .m-call-box > * { opacity: 0; }
 .m-call-wrap.dragging .m-call-box > * { transition: none; }
-.m-call-box > .m-call { animation: m-call-in .32s cubic-bezier(.2, .8, .2, 1); }
+.m-call-box > .m-call { animation: m-call-in .45s cubic-bezier(.32, .72, 0, 1); }
 
 .chat { position: relative; }
 .to-bottom {
@@ -3552,7 +3554,7 @@ html[data-theme='light'] .pin-banner, html[data-theme='light'][data-glass] .pin-
 [data-theme='light'] .mention { color: var(--accent-cyan-text); }
 
 .channel .ch-badge, .channel .ch-badges { margin-left: auto; flex: none; }
-.channel .ch-muted { flex: none; display: grid; place-items: center; color: var(--text-secondary); opacity: .75; }
+.channel .ch-muted { flex: none; display: grid; place-items: center; color: var(--text-secondary); }
 .channel:has(.ch-badges) { color: var(--text-primary); font-weight: 500; }
 
 .m-stage:has(> .tabbar.m-under.back)::after { animation: you-shade-in .35s ease both; }
@@ -4144,7 +4146,7 @@ html:not([data-glows='on']) .backdrop .bd-glow { opacity: 0; }
 }
 .m-stage[data-swipe='back'] .m-under.dim, .m-stage[data-swipe='back'] .m-under.dim * { transition: none !important; }
 .m-stage[data-swipe='cancel'] .m-under.dim, .m-stage[data-swipe='cancel'] .m-under.dim * { transition: opacity .26s ease !important; }
-.m-stage:is([data-swipe='back'], [data-swipe='cancel']) > .m-settings:has(~ .m-settings.m-slide:not(.out)) > :not(.m-head) { opacity: var(--swipe-p, 0) !important; }
+.m-stage:is([data-swipe='back'], [data-swipe='cancel']) > .m-settings:has(~ .m-settings.m-slide:not(.out)) > :not(.m-head) > * { opacity: var(--swipe-p, 0) !important; }
 /* No filter: blur here: Safari blurs whole panels on the CPU every frame (slow, heats the phone). */
 @keyframes m-tab-in { from { opacity: 0; transform: scale(.985); } to { opacity: 1; transform: none; } }
 .m-stage[data-tab-in] > .m-under:not(.tabbar) > :not(.m-servers-row),
@@ -4542,6 +4544,8 @@ html[data-land] .m-full .msg { max-width: min(560px, 70%); }
 }
 
 .m-servers .rail .server-icon .voice-badge { right: -5px; top: -5px; }
+.server-icon .server-unread { position: absolute; right: -6px; bottom: -4px; z-index: 2; min-width: 18px; height: 18px; font-size: 11px; padding: 0 5px; box-shadow: 0 0 0 2px var(--bg-elevated); }
+.m-servers .rail .server-icon .server-unread { right: -5px; bottom: -5px; }
 
 .m-call-text .t :is(b.st, .ping).q-good { color: var(--status-online); }
 .m-call-text .t :is(b.st, .ping).q-medium { color: var(--status-idle); }
@@ -4669,7 +4673,13 @@ html[data-vt] .backdrop .bd-layer.m, html[data-vt] .backdrop .bd-layer.m > svg {
 .tile:not(.novideo) .tile-pill { cursor: pointer; }
 .tile:fullscreen .tile-pill { cursor: default; }
 
-.chat-older { display: flex; justify-content: center; align-items: center; min-height: 36px; flex: none; color: var(--text-secondary); }
+.chat-older { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 8px 0 14px; flex: none; color: var(--text-secondary); }
+.skel-msg { display: block; height: 38px; border-radius: 18px; }
+.skel-msg.mine { align-self: flex-end; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+/* skeleton placeholders: an opacity pulse only (cheap on phones) */
+.skel { background: var(--fill-soft); animation: skel-pulse 1.4s ease-in-out infinite; }
+@keyframes skel-pulse { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
 
 .ph-tile { position: relative; }
 .ph-tile video, .cp-item video { width: 100%; height: 100%; display: block; object-fit: cover; pointer-events: none; background: #000; }
@@ -4820,7 +4830,10 @@ html[data-vt] .backdrop .bd-layer.m, html[data-vt] .backdrop .bd-layer.m > svg {
 .ci-search .input { width: 100%; padding-left: 38px; padding-right: 36px; }
 .ci-clear { position: absolute; right: 6px; width: 28px; height: 28px; border: 0; border-radius: 8px; background: none; color: var(--text-muted); display: grid; place-items: center; cursor: pointer; }
 
-.ci-body { flex: 1; min-height: 120px; overflow-y: auto; padding: 0 14px 14px; overscroll-behavior: contain; }
+.ci-body { flex: 1; min-height: 120px; overflow-y: auto; overflow-x: hidden; padding: 0 14px 14px; overscroll-behavior: contain; touch-action: pan-y; }
+/* the chat menu is all controls and media: no text selection or image callout, a drag switches tabs */
+:is(.ci-pop, .ci-full) { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+:is(.ci-pop, .ci-full) :is(input, textarea) { -webkit-user-select: text; user-select: text; }
 .ci-full .ci-body { min-height: 0; }
 .ci-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; }
 .ci-full .ci-grid { margin: 0 -14px; gap: 2px; }
@@ -4873,3 +4886,51 @@ html[data-theme][data-glass='on'] :is(.member-card, .profile-modal, .ci-pop, .ci
 html[data-theme='light'][data-glass='on'] :is(.member-card, .profile-modal, .ci-pop, .ci-more, .ci-full) { --g3-bg: #ffffffdb; }
 html[data-theme][data-glass='on'] :is(.ci-pop, .ci-more, .ci-full) { --g3-bg: color-mix(in srgb, #0b1b30 88%, transparent); }
 html[data-theme='light'][data-glass='on'] :is(.ci-pop, .ci-more, .ci-full) { --g3-bg: #ffffffeb; }
+
+.lang-list { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
+.lang-opt {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border: 0; border-radius: 14px;
+  background: var(--fill-soft); color: var(--text-primary); font: inherit; text-align: left; cursor: pointer; transition: background .15s ease;
+}
+.lang-opt span { display: flex; flex-direction: column; gap: 2px; }
+.lang-opt small { color: var(--text-secondary); font-size: 12px; }
+.lang-opt.on { background: color-mix(in srgb, var(--accent-cyan) 16%, transparent); }
+.lang-opt.on svg { color: var(--accent-cyan); }
+
+/* back button: grows elastically under the finger while the screen already closes */
+/* `scale`, not transform: the header bump animates transform and would cancel the press (see springPress) */
+.m-head .pill-btn { transition: scale .38s cubic-bezier(.34, 1.56, .64, 1); }
+.m-head .pill-btn:active { scale: 1.12; transition-duration: .2s; }
+
+/* chat menu tabs: the new tab's content slides in from the side it was swiped from */
+.ci-pane.from-r { animation: ci-pane-r .3s cubic-bezier(.32, .72, 0, 1); }
+.ci-pane.from-l { animation: ci-pane-l .3s cubic-bezier(.32, .72, 0, 1); }
+@keyframes ci-pane-r { from { opacity: 0; transform: translateX(28px); } }
+@keyframes ci-pane-l { from { opacity: 0; transform: translateX(-28px); } }
+
+/* floating day label over the chat feed (MessageList dayFloat) */
+.date-pill.day-float { position: absolute; z-index: 3; left: 50%; transform: translateX(-50%); margin: 0; pointer-events: none; white-space: nowrap; animation: day-float-in .2s ease; }
+@keyframes day-float-in { from { opacity: 0; } }
+
+/* server settings open from the arrow only, not the whole header */
+.sidebar-head > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-head .srv-arrow { flex: none; width: 32px; height: 32px; border-radius: 50%; color: var(--text-secondary); transition: transform .32s cubic-bezier(.34, 1.56, .64, 1), background .15s ease; }
+.sidebar-head .srv-arrow:active { transform: scale(1.12); }
+.m-servers .sidebar-head .srv-name { gap: 2px; }
+
+/* boot skeleton (shared/ui/Skeleton.tsx): the page background with the layout's shapes pulsing in place */
+.skel-app { position: fixed; inset: 0; display: flex; gap: 12px; padding: 12px; }
+.skel-app .skel-rail { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 12px 8px; flex: none; }
+.skel-app .skel-circle { width: 48px; height: 48px; border-radius: 50%; }
+.skel-app .skel-panel { display: flex; flex-direction: column; gap: 14px; padding: 20px 16px; border-radius: 22px; background: color-mix(in srgb, var(--fill-soft) 50%, transparent); }
+.skel-app .skel-line { display: block; height: 14px; border-radius: 8px; }
+.skel-desktop .skel-panel { width: 240px; flex: none; }
+.skel-desktop .skel-main { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; gap: 12px; padding: 20px; border-radius: 22px; background: color-mix(in srgb, var(--fill-soft) 35%, transparent); }
+.skel-app .skel-composer { display: block; height: 52px; border-radius: 26px; margin-top: 8px; }
+.skel-mobile { flex-direction: column; padding: calc(env(safe-area-inset-top, 0px) + 10px) 12px calc(env(safe-area-inset-bottom, 0px) + 12px); }
+.skel-mobile .skel-head { height: 44px; display: flex; align-items: center; }
+.skel-mobile .skel-title { display: block; width: 140px; height: 28px; border-radius: 14px; }
+.skel-mobile .skel-row-list { flex: 1; display: flex; gap: 10px; min-height: 0; }
+.skel-mobile .skel-rail { border-radius: 24px; background: color-mix(in srgb, var(--fill-soft) 50%, transparent); }
+.skel-mobile .skel-panel { flex: 1; }
+.skel-mobile .skel-tabbar { height: 64px; border-radius: 32px; flex: none; }

@@ -10,7 +10,7 @@ import { useOpenChat } from '../notifications/notifications';
 import { Composer } from './Composer';
 import { MessageList } from './MessageList';
 import { copyPhoto, prefetchPhoto, savePhoto, touchDevice } from './Photos';
-import { locale, plural, t } from '../../shared/i18n';
+import { dateFormat, plural, t } from '../../shared/i18n';
 
 type Chat = AppState['general'];
 type Id = number | string;
@@ -45,8 +45,8 @@ interface DeleteAsk {
   run: (scope: 'me' | 'all') => void;
 }
 
-const readTimeFmt = new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit' });
-const readDayFmt = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short' });
+const readTimeFmt = dateFormat({ hour: '2-digit', minute: '2-digit' });
+const readDayFmt = dateFormat({ day: 'numeric', month: 'short' });
 function readWhen(iso: string | null) {
   if (!iso) return '';
   const d = new Date(iso);
@@ -570,12 +570,21 @@ export function ChatBody({ app, chat, channel, compact }: { app: AppState; chat:
   const list = pinnedView ? chat.pinned : chat.messages;
 
   const lastId = chat.messages.length ? chat.messages[chat.messages.length - 1].id : 0;
+  // Read up to the newest message that has been on screen, so leaving halfway keeps the rest unread.
+  const seen = useRef(0);
+  const onSeen = (id: number) => {
+    if (id <= seen.current) return;
+    seen.current = id;
+    if (document.visibilityState === 'visible') chat.markRead(id);
+  };
   useEffect(() => {
-    const mark = () => document.visibilityState === 'visible' && lastId && chat.markRead(lastId);
-    mark();
+    seen.current = 0;
+  }, [channel.room]);
+  useEffect(() => {
+    const mark = () => document.visibilityState === 'visible' && seen.current && chat.markRead(seen.current);
     document.addEventListener('visibilitychange', mark);
     return () => document.removeEventListener('visibilitychange', mark);
-  }, [lastId, chat.markRead]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [chat.markRead]); // eslint-disable-line react-hooks/exhaustive-deps
   const readUpTo = Object.entries(chat.reads).reduce((acc, [u, id]) => (u !== me && id > acc ? id : acc), 0);
   // The "New" divider: what was read when the chat opened, fixed once when history arrives.
   // Computed during render, not in an effect: otherwise the list first rendered without the divider
@@ -706,6 +715,7 @@ export function ChatBody({ app, chat, channel, compact }: { app: AppState; chat:
         readUpTo={readUpTo}
         newAfter={pinnedView ? 0 : newAfter}
         onView={setViewPin}
+        onSeen={pinnedView ? undefined : onSeen}
       />
       {selected ? (
         <div className="composer select-bar">

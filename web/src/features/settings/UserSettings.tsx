@@ -1,3 +1,4 @@
+import { Icon } from '../../shared/icons';
 import { flushSync } from 'react-dom';
 import { systemTheme, type AppState, type ThemePref } from '../../app/useAppState';
 import { AccountEdit, AccountView } from './AccountSettings';
@@ -7,12 +8,13 @@ import type { UserSection } from './nav';
 import { lang, setLang, t, type Lang } from '../../shared/i18n';
 
 // Each language is named in itself so it can be found from either one.
-const LANGS: { id: Lang; label: string }[] = [
-  { id: 'ru', label: 'Русский' },
-  { id: 'en', label: 'English' },
+const LANGS: { id: Lang; label: string; hint: string }[] = [
+  // each name in its own language, plus the name in the current interface language when it differs
+  { id: 'ru', label: 'Русский', get hint() { return lang === 'ru' ? '' : 'Russian'; } },
+  { id: 'en', label: 'English', get hint() { return lang === 'en' ? '' : 'Английский'; } },
 ];
 
-const THEME_LABEL: Record<ThemePref, string> = { system: t('Как в системе'), dark: t('Тёмная'), light: t('Светлая') };
+const THEME_LABEL: Record<ThemePref, string> = { get system() { return t('Как в системе'); }, get dark() { return t('Тёмная'); }, get light() { return t('Светлая'); } };
 const THEME_PREVIEW: Record<ThemePref, string> = {
   dark: 'linear-gradient(135deg,#040a14,#0e2238 60%,#2f7bff)',
   light: 'linear-gradient(135deg,#ffffff,#eef4fb 60%,#9fc2ff)',
@@ -129,20 +131,27 @@ export function UserSettingsBody({
         <SoundSettings />
         </>
       );
+    case 'language':
+      return (
+        <div className="card">
+          <h3>{t('Язык интерфейса')}</h3>
+          <p className="hint">{t('Сохраняется на этом устройстве')}</p>
+          <div className="lang-list" role="radiogroup" aria-label={t('Язык')}>
+            {LANGS.map((l) => (
+              <button key={l.id} type="button" role="radio" aria-checked={lang === l.id} className={'lang-opt' + (lang === l.id ? ' on' : '')} onClick={() => setLang(l.id)}>
+                <span>
+                  <b>{l.label}</b>
+                  {l.hint && <small>{l.hint}</small>}
+                </span>
+                {lang === l.id && <Icon name="check" size={20} />}
+              </button>
+            ))}
+          </div>
+        </div>
+      );
     case 'appearance':
       return (
         <>
-          <div className="card">
-            <h3>{t('Язык')}</h3>
-            <p className="hint">{t('Интерфейс перезагрузится на выбранном языке')}</p>
-            <div className="seg" role="radiogroup" aria-label={t('Язык')}>
-              {LANGS.map((l) => (
-                <button key={l.id} type="button" role="radio" aria-checked={lang === l.id} className={lang === l.id ? 'on' : ''} onClick={() => setLang(l.id)}>
-                  {l.label}
-                </button>
-              ))}
-            </div>
-          </div>
           <div className="card">
             <h3>{t('Тема')}</h3>
             <p className="hint">{t('Сохраняется на этом устройстве')}</p>

@@ -1,4 +1,6 @@
+import { AppSkeleton } from '../shared/ui/Skeleton';
 import { useCallback, useEffect, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { Login } from '../features/auth/Login';
 import { UserMenuHost } from '../features/members/userMenu';
 import { MessageAlerts } from '../features/notifications/notifications';
@@ -10,7 +12,7 @@ import type { Server } from '../shared/model';
 import { ConnBanner } from '../shared/ui/Toast';
 import { Backdrop } from './Backdrop';
 import { animateSurfaces, LS_NAME, LS_THEME, lsGet, lsSet, useAppState, useIsMobile, useSystemTheme, type Theme, type ThemePref } from './useAppState';
-import { t } from '../shared/i18n';
+import { lang, onLang, t } from '../shared/i18n';
 
 function Shell(props: {
   me: Me;
@@ -23,6 +25,9 @@ function Shell(props: {
 }) {
   const app = useAppState(props.me, props.servers, props.setMe, props.logout, props.theme, props.themePref, props.setTheme);
   const mobile = useIsMobile();
+  // A language switch re-renders everything below in place, so every label is read again.
+  const [, setShownLang] = useState(lang);
+  useEffect(() => onLang(() => flushSync(() => setShownLang(lang))), []);
   return (
     <>
       {mobile ? <Mobile app={app} /> : <Desktop app={app} />}
@@ -68,6 +73,7 @@ export default function App() {
 }
 
 function AppScreens() {
+  const mobile = useIsMobile();
   const [me, setMe] = useState<Me | null>(null);
   // Hold the login screen while the stored session is being checked, so it does not flash.
   const [checking, setChecking] = useState(() => hasSession());
@@ -153,7 +159,7 @@ function AppScreens() {
     setMe(null);
   };
 
-  if (checking) return null;
+  if (checking) return <AppSkeleton mobile={mobile} />;
   if (bootError && !me) {
     return (
       <ErrorScreen
@@ -168,7 +174,7 @@ function AppScreens() {
   }
   if (!me) return <Login onLogin={login} />;
   if (serversError) return <ErrorScreen text={serversError} retry={() => setServersTry((n) => n + 1)} onLogout={logout} />;
-  if (!servers) return null;
+  if (!servers) return <AppSkeleton mobile={mobile} />;
   if (!servers.length) {
     return (
       <>

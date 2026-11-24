@@ -46,13 +46,40 @@ function wake(recreate = false) {
 if (typeof window !== 'undefined') {
   let stuck = 0;
   const onGesture = () => {
-    if (!ctx || ctx.state === 'running') return void (stuck = 0);
+    // The context is created inside the first gesture: one made later by an incoming message starts suspended,
+    // and on phones sounds stayed silent until a voice call unlocked audio.
+    if (!ctx) return unlock();
+    if (ctx.state === 'running') return void (stuck = 0);
     // Two gestures in a row did not help: the context is stuck, create a new one (the next sound opens it).
     wake(++stuck > 2);
   };
   for (const ev of ['pointerdown', 'touchend', 'keydown']) window.addEventListener(ev, onGesture, { capture: true, passive: true });
   document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && wake());
   window.addEventListener('pageshow', () => wake());
+}
+
+/** Creates and starts the context inside a gesture; a one-sample silent buffer is what iOS counts as unlocking. */
+function unlock() {
+  try {
+    setSession();
+    const ac = context();
+    const src = ac.createBufferSource();
+    src.buffer = ac.createBuffer(1, 1, 22050);
+    src.connect(ac.destination);
+    src.start(0);
+  } catch {
+    /* WebAudio unavailable */
+  }
+}
+
+/**
+ * Safari puts WebAudio in the "ambient" session, which the silent switch mutes; a voice call switched it and sounds
+ * appeared only after joining voice. "transient" is meant for short notification sounds. A session already set
+ * (by a call) is left alone.
+ */
+function setSession() {
+  const s = (navigator as Navigator & { audioSession?: { type: string } }).audioSession;
+  if (s && s.type === 'auto') s.type = 'transient';
 }
 
 function context() {

@@ -6,11 +6,11 @@ import { t } from '../../shared/i18n';
 
 const ROLE_SWATCHES = ['#00e5ff', '#ff5c7a', '#7a5cff', '#3ddc97', '#ffb840', '#548fff', '#fa78d9', '#5c7590'];
 const PERMISSIONS = [
-  { id: 'channels', title: t('Управлять каналами'), text: t('Создавать, менять и удалять каналы') },
-  { id: 'messages', title: t('Удалять сообщения'), text: t('Чужие сообщения в любом канале') },
-  { id: 'kick', title: t('Выгонять участников'), text: t('Можно вернуться по приглашению') },
-  { id: 'ban', title: t('Банить участников'), text: t('Блокировка без возможности войти') },
-  { id: 'everyone', title: t('Упоминать @everyone'), text: t('Уведомление всем участникам') },
+  { id: 'channels', get title() { return t('Управлять каналами'); }, get text() { return t('Создавать, менять и удалять каналы'); } },
+  { id: 'messages', get title() { return t('Удалять сообщения'); }, get text() { return t('Чужие сообщения в любом канале'); } },
+  { id: 'kick', get title() { return t('Выгонять участников'); }, get text() { return t('Можно вернуться по приглашению'); } },
+  { id: 'ban', get title() { return t('Банить участников'); }, get text() { return t('Блокировка без возможности войти'); } },
+  { id: 'everyone', get title() { return t('Упоминать @everyone'); }, get text() { return t('Уведомление всем участникам'); } },
 ] as const;
 type PermId = (typeof PERMISSIONS)[number]['id'];
 interface RoleState {
@@ -21,10 +21,10 @@ interface RoleState {
 }
 const allPerms = (on: boolean): Record<PermId, boolean> => ({ channels: on, messages: on, kick: on, ban: on, everyone: on });
 const INITIAL_ROLES: RoleState[] = [
-  { id: 'admin', name: t('Админ'), color: '#ff5c7a', perms: allPerms(true) },
-  { id: 'mod', name: t('Модератор'), color: '#00e5ff', perms: { channels: true, messages: true, kick: true, ban: false, everyone: false } },
-  { id: 'raid', name: t('Рейд-лид'), color: '#7a5cff', perms: { channels: false, messages: false, kick: false, ban: false, everyone: true } },
-  { id: 'healer', name: t('Хилер'), color: '#3ddc97', perms: allPerms(false) },
+  { id: 'admin', get name() { return t('Админ'); }, color: '#ff5c7a', perms: allPerms(true) },
+  { id: 'mod', get name() { return t('Модератор'); }, color: '#00e5ff', perms: { channels: true, messages: true, kick: true, ban: false, everyone: false } },
+  { id: 'raid', get name() { return t('Рейд-лид'); }, color: '#7a5cff', perms: { channels: false, messages: false, kick: false, ban: false, everyone: true } },
+  { id: 'healer', get name() { return t('Хилер'); }, color: '#3ddc97', perms: allPerms(false) },
   { id: 'everyone', name: '@everyone', color: '#5c7590', perms: allPerms(false) },
 ];
 

@@ -157,7 +157,23 @@ export function useAppState(
   const voice = useVoice(name);
   const general = useChat(textChannel?.room ?? null, name);
   const lobby = useChat(voiceChannel?.room ?? null, name);
-  const statuses = useMemo(() => ({ ...lobby.statuses, ...general.statuses }), [general.statuses, lobby.statuses]);
+  // A freshly opened socket has no presence yet: keep the last known one instead of showing everyone offline.
+  const lastStatuses = useRef<Record<string, Status>>({});
+  const statuses = useMemo(() => {
+    const next = { ...lobby.statuses, ...general.statuses };
+    if (!Object.keys(next).length) return lastStatuses.current;
+    return (lastStatuses.current = next);
+  }, [general.statuses, lobby.statuses]);
+  // Who went offline while we watched: their last visit is now, until the member list reloads.
+  const prevStatuses = useRef(statuses);
+  const [seenNow, setSeenNow] = useState<Record<string, string>>({});
+  useEffect(() => {
+    const gone = Object.keys(prevStatuses.current).filter((n) => !statuses[n]);
+    prevStatuses.current = statuses;
+    if (!gone.length) return;
+    const at = new Date().toISOString();
+    setSeenNow((s) => ({ ...s, ...Object.fromEntries(gone.map((n) => [n, at])) }));
+  }, [statuses]);
   // Show the last known member list when switching servers, otherwise "n online" shows 0 for a moment.
   const memberCache = useRef(new Map<string, Member[]>());
   const [memberRows, setMemberRows] = useState<Member[]>([]);
@@ -181,7 +197,11 @@ export function useAppState(
     if (memberRows.length && Object.keys(statuses).some((n) => !memberRows.some((m) => m.username === n))) void loadMembers();
   }, [statuses]); // eslint-disable-line react-hooks/exhaustive-deps
   const statusOf = useCallback((n: string): Status => (n === name ? status : statuses[n] ?? 'offline'), [name, status, statuses]);
-  const members = useMemo(() => memberRows.map((m) => ({ ...m, status: statusOf(m.username) })), [memberRows, statusOf]);
+  const members = useMemo(
+    () => memberRows.map((m) => ({ ...m, status: statusOf(m.username), lastSeen: seenNow[m.username] ?? m.lastSeen })),
+    [memberRows, statusOf, seenNow],
+  );
+  const lastSeenOf = useCallback((n: string) => members.find((m) => m.username === n)?.lastSeen ?? null, [members]);
   const membersOnline = members.filter((m) => m.status !== 'offline');
   const membersOffline = members.filter((m) => m.status === 'offline');
   const membersReady = memberCache.current.has(serverId);
@@ -324,6 +344,7 @@ export function useAppState(
     voiceChannel,
     members,
     membersOnline,
+    lastSeenOf,
     membersReady,
     membersOffline,
     inVoiceHere,

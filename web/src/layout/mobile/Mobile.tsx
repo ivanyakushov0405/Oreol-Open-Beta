@@ -2,7 +2,7 @@ import { memo, useEffect, useLayoutEffect, useRef, useState, type ReactNode } fr
 import { markForward, markReturn, parseRoute, paths, useUrlSync } from '../../app/router';
 import type { AppState } from '../../app/useAppState';
 import { STATUS_ITEMS } from '../../features/account/AccountMenu';
-import { STATUS_LABEL } from '../../features/account/status';
+import { presenceLine } from '../../features/account/status';
 import { ChatBody, PinnedButton } from '../../features/chat/ChatBody';
 import { ChatInfo } from '../../features/chat/ChatInfo';
 import { setMuted, useMuted } from '../../features/notifications/mute';
@@ -37,15 +37,15 @@ const SLIDE_MS = 220;
 export const SLIDE_IN_MS = 340;
 
 const TABS: { id: Tab; label: string; icon: IconName }[] = [
-  { id: 'servers', label: t('Серверы'), icon: 'servers' },
-  { id: 'chats', label: t('Чаты'), icon: 'oreol' },
-  { id: 'you', label: t('Вы'), icon: 'users' },
+  { id: 'servers', get label() { return t('Серверы'); }, icon: 'servers' },
+  { id: 'chats', get label() { return t('Чаты'); }, icon: 'oreol' },
+  { id: 'you', get label() { return t('Вы'); }, icon: 'users' },
 ];
 
 const CHAT_MENU: { icon: IconName; label: string }[] = [
-  { icon: 'pin', label: t('Закреплённые') },
-  { icon: 'bell', label: t('Уведомления') },
-  { icon: 'copy', label: t('Копировать название') },
+  { icon: 'pin', get label() { return t('Закреплённые'); } },
+  { icon: 'bell', get label() { return t('Уведомления'); } },
+  { icon: 'copy', get label() { return t('Копировать название'); } },
 ];
 
 /**
@@ -305,7 +305,7 @@ export function Mobile({ app }: { app: AppState }) {
     if (lastAnimKey.current === animKey) return;
     lastAnimKey.current = animKey;
     setCallAnim(true);
-    const id = window.setTimeout(() => setCallAnim(false), 420);
+    const id = window.setTimeout(() => setCallAnim(false), 560);
     return () => window.clearTimeout(id);
   }, [animKey]);
   const callSpace = !inCall || onOwnVoice ? 0 : callSize.drag != null ? Math.max(pillSpace, callH + callSize.drag) : callMin ? pillSpace : callH;
@@ -550,10 +550,12 @@ export function Mobile({ app }: { app: AppState }) {
           <aside className={'sidebar glass' + (srvSwitch ? ' srv-switch' : '')} data-srv-dir={srvDir.current === 1 ? 'next' : 'prev'}>
             <div key={app.server.id} className="srv-body">
             <div className="sidebar-head">
-              <button className="grow srv-name" title={t('Настройки сервера')} onClick={() => setServerHome(true)}>
+              <div className="grow srv-name">
                 <span key={app.server.id}>{app.server.name}</span>
-                <Icon name="chevron-down" size={18} />
-              </button>
+                <button type="button" className="icon-btn srv-arrow" title={t('Настройки сервера')} aria-label={t('Настройки сервера')} onClick={() => setServerHome(true)}>
+                  <Icon name="chevron-down" size={18} />
+                </button>
+              </div>
               <button className="icon-btn srv-members" title={t('Участники')} aria-label={t('Участники')} onClick={() => setMembers(true)}>
                 <Icon key={app.server.id} name="users" />
               </button>
@@ -790,7 +792,7 @@ export function Mobile({ app }: { app: AppState }) {
                 name={m.username}
                 me={m.username === app.name}
                 status={m.status}
-                sub={app.voiceUsers.some((v) => v.identity === m.username) ? t('В голосовом · {0}', { 0: voiceName }) : handleOf(m.username)}
+                sub={app.voiceUsers.some((v) => v.identity === m.username) ? t('В голосовом · {0}', { 0: voiceName }) : presenceLine(m.status, m.lastSeen)}
                 onClick={() => openProfile(m.username)}
               />
             ))}
@@ -801,7 +803,7 @@ export function Mobile({ app }: { app: AppState }) {
                 name={m.username}
                 me={m.username === app.name}
                 status="offline"
-                sub={handleOf(m.username)}
+                sub={presenceLine('offline', m.lastSeen)}
                 onClick={() => openProfile(m.username)}
               />
             ))}
@@ -820,7 +822,7 @@ export function Mobile({ app }: { app: AppState }) {
           me={card === app.name}
           at={{ x: 0, y: 0 }}
           status={app.statusOf(card)}
-          activity={app.voiceUsers.some((v) => v.identity === card) ? t('В голосовом · {0}', { 0: voiceName }) : STATUS_LABEL[app.statusOf(card)]}
+          activity={app.voiceUsers.some((v) => v.identity === card) ? t('В голосовом · {0}', { 0: voiceName }) : presenceLine(app.statusOf(card), app.lastSeenOf(card))}
           serverName={app.server.name}
           since={cardMember?.joinedAt ? new Date(cardMember.joinedAt) : new Date()}
           onClose={() => setCard(null)}

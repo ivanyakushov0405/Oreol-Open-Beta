@@ -10,10 +10,10 @@ import { openProfile } from '../profile/profile';
 import { LinkPreview } from './LinkPreview';
 import { firstLink, LONG_PRESS_MS, mentionsMe, withMentions } from './mentions';
 import { FileList, PhotoGrid, PhotoViewer, photosWidth } from './Photos';
-import { locale, t } from '../../shared/i18n';
+import { dateFormat, lang, t } from '../../shared/i18n';
 
-const timeFmt = new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit' });
-const dayFmt = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'long' });
+const timeFmt = dateFormat({ hour: '2-digit', minute: '2-digit' });
+const dayFmt = dateFormat({ day: 'numeric', month: 'long' });
 
 function fwdTime(orig: Date, msg: Date) {
   const t = timeFmt.format(orig);
@@ -39,6 +39,8 @@ export interface MessageActions {
   onJump?: (id: number | string) => void;
   focus?: { id: number | string; n: number } | null;
   onView?: (pinId: number) => void;
+  /** The newest message that has been on screen: the read mark follows it, not the newest loaded one. */
+  onSeen?: (id: number) => void;
   readUpTo?: number;
   newAfter?: number;
   more?: boolean;
@@ -46,7 +48,8 @@ export interface MessageActions {
   onOlder?: () => void;
 }
 
-type ListProps = { messages: ChatMessage[]; me: string; empty: ReactNode; room?: string } & MessageActions;
+// lang is passed only so the memoized list re-renders on a language switch
+type ListProps = { messages: ChatMessage[]; me: string; empty: ReactNode; room?: string; lang?: string } & MessageActions;
 
 /**
  * Messages rendered at once and added per step when scrolled to the top. The rest of loaded history stays
@@ -56,6 +59,7 @@ const WINDOW = 60;
 const STEP = 40;
 /** Never keep more rows than this in the DOM; rows far from the viewport go back to memory. */
 const MAX_ROWS = 140;
+const SKELETON_ROWS = ['58%', '42%', '66%', '36%', '52%', '62%', '40%', '48%'];
 
 /**
  * The list re-renders only when what it shows changes. Previously any app update (someone speaking, typing,
@@ -74,6 +78,7 @@ export function MessageList(props: ListProps) {
       onJump: (id: number | string) => latest.current.onJump?.(id),
       onView: (id: number) => latest.current.onView?.(id),
       onOlder: () => latest.current.onOlder?.(),
+      onSeen: (id: number) => latest.current.onSeen?.(id),
     }),
     [],
   );
@@ -87,6 +92,8 @@ export function MessageList(props: ListProps) {
       onJump={props.onJump && stable.onJump}
       onView={props.onView && stable.onView}
       onOlder={props.onOlder && stable.onOlder}
+      onSeen={props.onSeen && stable.onSeen}
+      lang={lang}
     />
   );
 }
@@ -118,6 +125,8 @@ function MessageListImpl({
   readUpTo = 0,
   newAfter = 0,
   onView,
+  onSeen,
+  lang: shownLang,
   more,
   loadingOlder,
   onOlder,
@@ -153,9 +162,15 @@ function MessageListImpl({
     const list = winRef.current.all;
     setWin({ room, floor: idAt(list, a), ceil: b >= list.length ? null : idAt(list, b - 1) });
   };
+  // Unread messages older than the default window: start the window a little above the first of them.
+  const firstNew = newAfter > 0 ? all.findIndex((m) => !m.sys && m.user !== me && Number(m.id) > newAfter) : -1;
   useEffect(() => {
-    if (!cur && all.length) setWin({ room, floor: idAt(all, Math.max(0, all.length - WINDOW)), ceil: null });
-  }, [all, cur, room]);
+    if (cur || !all.length) return;
+    const from = firstNew >= 0 && firstNew < all.length - WINDOW ? Math.max(0, firstNew - 10) : Math.max(0, all.length - WINDOW);
+    setWin({ room, floor: idAt(all, from), ceil: from + MAX_ROWS < all.length ? idAt(all, from + MAX_ROWS - 1) : null });
+  }, [all, cur, room]); // eslint-disable-line react-hooks/exhaustive-deps
+  /** Room whose first screen is placed: with unread messages it opens at the "New" divider, not at the end. */
+  const placed = useRef<string | null>(null);
   /** The row at the top of the viewport and its offset: after the window changes it is put back in place. */
   const anchor = useRef<{ id: string; top: number } | null>(null);
   const keepAnchor = () => {
@@ -313,17 +328,60 @@ function MessageListImpl({
   // so the first pin is chosen at the very top and the last one at the very bottom.
   const onViewRef = useRef(onView);
   onViewRef.current = onView;
+  const onSeenRef = useRef(onSeen);
+  onSeenRef.current = onSeen;
+  /**
+   * Floating date under the header (or the pinned banner): the day of the topmost visible message. It hides while
+   * a real date divider sits at its spot, so the divider takes over and scrolls on with the feed.
+   */
+  const [dayFloat, setDayFloat] = useState<{ label: string; top: number } | null>(null);
+  const floatDay = (el: HTMLElement, box: DOMRect, top: number) => {
+    const dayOf = (row: HTMLElement) => {
+      const m = winRef.current.all.find((x) => String(x.id) === row.dataset.mid);
+      return m ? dayLabel(m.ts ? new Date(m.ts) : new Date()) : '';
+    };
+    let label = '';
+    let passed = '';
+    for (const row of el.querySelectorAll<HTMLElement>(':scope > [data-mid], :scope > .day-pill')) {
+      const r = row.getBoundingClientRect();
+      const pill = row.classList.contains('day-pill');
+      if (r.bottom <= top) {
+        if (!pill) passed = dayOf(row);
+        continue;
+      }
+      // a divider at the floating spot replaces it; one lower down still leaves the previous day on top
+      if (pill) label = r.top < top + r.height + 12 ? '' : passed;
+      else label = dayOf(row);
+      break;
+    }
+    const next = label && el.scrollTop > 8 ? { label, top: top - box.top + el.offsetTop + 6 } : null;
+    setDayFloat((cur) => (cur?.label === next?.label && cur?.top === next?.top ? cur : next));
+  };
   const raf = useRef(0);
   const report = () => {
-    if (!onViewRef.current || raf.current) return;
+    if (raf.current) return;
     raf.current = requestAnimationFrame(() => {
       raf.current = 0;
       const el = ref.current;
-      if (!el || !onViewRef.current) return;
+      if (!el) return;
       const box = el.getBoundingClientRect();
       const cs = getComputedStyle(el);
       const top = box.top + parseFloat(cs.paddingTop || '0');
+      floatDay(el, box, top);
       const bottom = box.bottom - parseFloat(cs.paddingBottom || '0');
+      // not before the first screen is placed: it may flash at the end and would mark everything read
+      if (onSeenRef.current && placed.current === room && box.height > 0) {
+        // the lowest message whose first lines are in view; rows render oldest first
+        const rows = el.querySelectorAll<HTMLElement>(':scope > [data-mid]');
+        for (let i = rows.length - 1; i >= 0; i--) {
+          const r = rows[i].getBoundingClientRect();
+          const id = Number(rows[i].dataset.mid);
+          if (r.top + Math.min(r.height, 40) > bottom || !Number.isFinite(id)) continue;
+          if (r.bottom > top) onSeenRef.current(id);
+          break;
+        }
+      }
+      if (!onViewRef.current) return;
       const max = rest(el);
       const h = Math.max(bottom - top, 1);
       let limit = top;
@@ -350,6 +408,8 @@ function MessageListImpl({
   };
   useEffect(() => () => cancelAnimationFrame(raf.current), []);
 
+  // the floating day label holds text: read it again in the new language
+  useEffect(() => report(), [shownLang]); // eslint-disable-line react-hooks/exhaustive-deps
   useLayoutEffect(() => {
     const el = ref.current;
     // A deleted message collapses from its real height (see @keyframes msg-out).
@@ -369,6 +429,19 @@ function MessageListImpl({
     if (el && row) {
       el.scrollTop += row.getBoundingClientRect().top - el.getBoundingClientRect().top - an!.top;
     } else if (el && was && first && first < was.id && !stick.current) el.scrollTop += el.scrollHeight - was.h;
+    if (el && cur && placed.current !== room && messages.length) {
+      placed.current = room;
+      const line = el.querySelector<HTMLElement>(':scope > .new-line');
+      if (line) {
+        const top = el.getBoundingClientRect().top + parseFloat(getComputedStyle(el).paddingTop || '0');
+        el.scrollTop = rest(el);
+        const shift = line.getBoundingClientRect().top - top - 8;
+        if (shift < 0) {
+          el.scrollTop += shift;
+          stick.current = false;
+        }
+      }
+    }
     if (el && stick.current) el.scrollTop = rest(el);
     if (el) prevTop.current = { id: first, h: el.scrollHeight };
     report();
@@ -543,7 +616,7 @@ function MessageListImpl({
     if (day !== lastDay) {
       lastDay = day;
       items.push(
-        <div className="date-pill" key={'d' + day}>
+        <div className="date-pill day-pill" key={'d' + day}>
           {dayLabel(d)}
         </div>,
       );
@@ -730,7 +803,7 @@ function MessageListImpl({
           if (all.length - hidden > WINDOW + STEP) trimLater();
         }
         // Near the top: reveal what is already loaded first, and ask the server early while memory still has a buffer.
-        if (el.scrollTop < el.clientHeight * 1.5) reveal();
+        if (el.scrollTop < el.clientHeight * 2.5) reveal();
         else if (below > 0 && gap < el.clientHeight * 1.5) revealDown();
         if (more && hidden < STEP * 2) onOlder?.();
         if (prevTop.current) prevTop.current.h = el.scrollHeight;
@@ -742,7 +815,11 @@ function MessageListImpl({
       <div className="chat-head-room" ref={head} aria-hidden />
       {(more || hidden > 0) && messages.length > 0 && (
         <div className="chat-older" aria-live="polite">
-          {loadingOlder ? <span className="btn-spin" role="status" aria-label={t('Загружаем более старые сообщения')} /> : null}
+          {/* placeholder rows: a fast fling runs into them and slows down instead of stopping dead at the edge */}
+          {SKELETON_ROWS.map((w, i) => (
+            <span key={i} className={'skel skel-msg' + (i % 3 === 1 ? ' mine' : '')} style={{ width: w }} />
+          ))}
+          {loadingOlder && <span className="sr-only" role="status">{t('Загружаем более старые сообщения')}</span>}
         </div>
       )}
       {messages.length ? items : <div className="empty-state">{empty}</div>}
@@ -760,6 +837,14 @@ function MessageListImpl({
             <Icon name="chevron-down" size={22} />
             {unread > 0 && <span className="tb-count">{unread > 99 ? '99+' : unread}</span>}
           </button>,
+          dock,
+        )}
+      {dock &&
+        dayFloat &&
+        createPortal(
+          <div className="date-pill day-float" style={{ top: dayFloat.top }} aria-hidden>
+            {dayFloat.label}
+          </div>,
           dock,
         )}
     </div>

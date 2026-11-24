@@ -11,7 +11,7 @@ function MutedMark({ room }: { room: string }) {
   if (!useMuted(room)) return null;
   return (
     <span className="ch-muted" title={t('Уведомления выключены')} aria-label={t('Уведомления выключены')}>
-      <Icon name="speaker-off" size={16} />
+      <Icon name="speaker-off" size={18} />
     </span>
   );
 }

@@ -9,6 +9,7 @@ export interface PublicUser {
   avatar: string | null;
   banner: string | null;
   createdAt: string | null;
+  lastSeen?: string | null;
 }
 
 export interface Me extends PublicUser {
