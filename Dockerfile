@@ -7,7 +7,7 @@ COPY web/ ./
 RUN npm run build
 
 # 2) FastAPI backend + built static files
-FROM python:3.14-slim
+FROM python:3.13-slim
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

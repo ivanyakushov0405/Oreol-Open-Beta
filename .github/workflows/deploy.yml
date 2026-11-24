@@ -8,7 +8,7 @@ on:
 
 jobs:
   deploy:              
-    runs-on: ubuntu-24.04.5
+    runs-on: ubuntu-24.04
     if: github.ref == 'refs/heads/master'
     environment: deploy
     steps:
@@ -27,6 +27,12 @@ jobs:
                 git reset --hard $GITHUB_SHA
                 
                 cd deploy
+
+                sudo cp new.halomvp.ru.conf /etc/nginx/sites-available/new.halomvp.ru
+                sudo cp oreol-new-proxy.conf /etc/nginx/snippets/oreol-new-proxy.conf
+                sudo ln -sf /etc/nginx/sites-available/new.halomvp.ru /etc/nginx/sites-enabled/
+                sudo nginx -t && sudo systemctl reload nginx
+
                 echo "$ENV_FILES" > .env
                 docker compose up -d --build
 
