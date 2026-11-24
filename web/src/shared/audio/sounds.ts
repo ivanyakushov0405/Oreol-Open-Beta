@@ -61,7 +61,6 @@ if (typeof window !== 'undefined') {
 /** Creates and starts the context inside a gesture; a one-sample silent buffer is what iOS counts as unlocking. */
 function unlock() {
   try {
-    setSession();
     const ac = context();
     const src = ac.createBufferSource();
     src.buffer = ac.createBuffer(1, 1, 22050);
@@ -70,31 +69,6 @@ function unlock() {
   } catch {
     /* WebAudio unavailable */
   }
-}
-
-/**
- * Safari puts WebAudio in the "ambient" session, which the silent switch mutes; a voice call switched it and sounds
- * appeared only after joining voice. "transient" is meant for short notification sounds. A session already set
- * (by a call) is left alone.
- */
-const session = () => (navigator as Navigator & { audioSession?: { type: string } }).audioSession;
-let captured = false;
-function setSession() {
-  const s = session();
-  if (s && s.type === 'auto' && !captured) s.type = 'transient';
-}
-
-// A "transient" session cannot record: iOS denied the microphone in every browser. Any capture (LiveKit, the mic test)
-// goes through getUserMedia, so the session goes back to "auto" right before it and stays there.
-if (typeof navigator !== 'undefined' && navigator.mediaDevices && 'getUserMedia' in navigator.mediaDevices) {
-  const md = navigator.mediaDevices;
-  const gum = md.getUserMedia.bind(md);
-  md.getUserMedia = (c?: MediaStreamConstraints) => {
-    captured = true;
-    const s = session();
-    if (s && s.type === 'transient') s.type = 'auto';
-    return gum(c);
-  };
 }
 
 function context() {

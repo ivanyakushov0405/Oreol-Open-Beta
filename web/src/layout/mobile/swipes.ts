@@ -27,6 +27,22 @@ const fade = (list: Iterable<HTMLElement>, v: number | null) => {
     else n.style.setProperty('opacity', String(v), 'important');
   }
 };
+/**
+ * Settings cards under a settings screen are glass: they are cut to the part the finger has uncovered instead of fading,
+ * since Safari draws glass with opacity below 1 untinted. p is the uncovered share of the width; null releases them.
+ */
+const wipe = (list: Iterable<HTMLElement>, p: number | null, tr?: string) => {
+  for (const n of list) {
+    if (p === null) {
+      n.style.removeProperty('clip-path');
+      n.style.removeProperty('transition');
+      continue;
+    }
+    if (tr) n.style.setProperty('transition', tr, 'important');
+    const k = (1 - p).toFixed(4);
+    n.style.setProperty('clip-path', `inset(-40px calc(${k} * (100% + 40px)) -40px -40px)`, 'important');
+  }
+};
 const UNDER_BOX = ':scope > .m-under.dim:not(.tabbar)';
 const shift = (list: Iterable<HTMLElement>, v: string | null, tr = 'none') => {
   for (const n of list) {
@@ -54,8 +70,15 @@ export function useStageSwipes(stage: RefObject<HTMLElement>, opts: Opts) {
       // The upper screen is not necessarily last in the markup (voice over other screens comes before them), so take "all but the upper one".
       const top = topSlide();
       const rest = [...el.querySelectorAll<HTMLElement>(':scope > .m-slide:not(.out)')].filter((n) => n !== top);
-      if (rest.length) return [...rest[rest.length - 1].querySelectorAll<HTMLElement>(':scope > :not(.m-head)')];
+      if (rest.length) return [];
       return [...el.querySelectorAll<HTMLElement>(UNDER)];
+    };
+    /** Cards of the settings screen right under the upper one (see wipe). */
+    const cardsUnder = (): HTMLElement[] => {
+      const top = topSlide();
+      const rest = [...el.querySelectorAll<HTMLElement>(':scope > .m-slide:not(.out)')].filter((n) => n !== top);
+      const under = rest[rest.length - 1];
+      return under ? [...under.querySelectorAll<HTMLElement>(':scope > :not(.m-head) > *')] : [];
     };
     /**
      * The lower screen that follows the finger, only when the tab screen sits right under the upper screen. With stacked
@@ -73,6 +96,7 @@ export function useStageSwipes(stage: RefObject<HTMLElement>, opts: Opts) {
       fade(el.querySelectorAll<HTMLElement>(UNDER), null);
       for (const u of el.querySelectorAll<HTMLElement>(UNDER)) u.style.removeProperty('transition');
       for (const n of el.querySelectorAll<HTMLElement>(':scope > .m-under')) fade(n.querySelectorAll<HTMLElement>(PANELS), null);
+      wipe(el.querySelectorAll<HTMLElement>(':scope > .m-settings > :not(.m-head) > *'), null);
       delete el.dataset.swipe;
       delete el.dataset.swiped;
     };
@@ -146,6 +170,7 @@ export function useStageSwipes(stage: RefObject<HTMLElement>, opts: Opts) {
         if (head) head.style.transform = `translateX(${-x}px)`;
         const p = Math.min(1, x / w);
         fade(underEls(), p);
+        wipe(cardsUnder(), p);
         // The lower screen follows the finger (as in iOS) instead of sitting shifted.
         shift(boxesUnder(), `translateX(${(-22 * (1 - p)).toFixed(2)}%)`);
       } else {
@@ -182,10 +207,12 @@ export function useStageSwipes(stage: RefObject<HTMLElement>, opts: Opts) {
           // The lower screen is almost visible: finish smoothly without its own "return" animation;
           // resetting opacity used to make everything under the screen flash.
           const under = underEls();
+          const cards = cardsUnder();
           const boxes = boxesUnder();
           el.dataset.swiped = '';
           for (const u of under) u.style.setProperty('transition', 'opacity .22s ease', 'important');
           fade(under, 1);
+          wipe(cards, 1, 'clip-path .22s cubic-bezier(.4, 0, .7, .2)');
           shift(boxes, 'none', 'transform .22s cubic-bezier(.4, 0, .7, .2)');
           n.querySelector<HTMLButtonElement>(':scope > .m-head .pill-btn')?.click();
           swallow();
@@ -194,6 +221,7 @@ export function useStageSwipes(stage: RefObject<HTMLElement>, opts: Opts) {
             window.setTimeout(() => {
               fade(under, null);
               for (const u of under) u.style.removeProperty('transition');
+              wipe(cards, null);
               shift(boxes, null);
               delete el.dataset.swiped;
             }, 80);
@@ -208,11 +236,14 @@ export function useStageSwipes(stage: RefObject<HTMLElement>, opts: Opts) {
           swallow();
           el.dataset.swipe = 'cancel';
           const under = underEls();
+          const cards = cardsUnder();
           const boxes = boxesUnder();
           fade(under, 0);
+          wipe(cards, 0, 'clip-path .26s cubic-bezier(.2, .8, .2, 1)');
           shift(boxes, 'translateX(-22%)', 'transform .26s cubic-bezier(.2, .8, .2, 1)');
           window.setTimeout(() => {
             fade(under, null);
+            wipe(cards, null);
             shift(boxes, null);
             n.style.transition = '';
             n.style.transform = '';

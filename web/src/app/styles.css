@@ -2438,7 +2438,7 @@ input, textarea { font: inherit; color: inherit; }
 .m-slide > .m-head { animation: head-hold-in .34s cubic-bezier(.2, .8, .2, 1); }
 .m-slide.out > .m-head { animation: head-hold-still .22s cubic-bezier(.4, 0, .7, .2) forwards; }
 /* Hide the lower settings header while the next one is open on top, otherwise the plates double up. */
-.m-settings:has(~ .m-settings.m-slide:not(.out)) > .m-head > * { opacity: .001; pointer-events: none; }
+.m-settings:has(~ .m-settings.m-slide:not(.out)) > .m-head > * { clip-path: inset(0 100% 0 0); pointer-events: none; }
 
 .channel.mine svg, .channel.mine.live svg { color: var(--accent-cyan); }
 
@@ -2484,13 +2484,19 @@ input, textarea { font: inherit; color: inherit; }
 
 .m-settings { background: transparent; }
 .m-settings:has(~ .m-settings.m-slide:not(.out)) > :not(.m-head) { pointer-events: none; }
-/* the cards fade, not their container: under a semi-transparent parent the glass loses its blur until the fade ends */
-.m-settings > :not(.m-head) > * { transition: opacity .2s ease; }
 /*
-  Covered cards keep a hair of opacity instead of 0 or visibility: hidden: Safari drops the layer of a hidden glass element
-  and, when it shows again, paints it untinted for a moment before the blur is back.
+  A covered settings screen is clipped away, never faded: Safari paints glass with opacity below 1 untinted and
+  tints it only once the fade ends. Going back, it is wiped in from the left behind the screen sliding out.
+  The insets leave room for the card shadows.
 */
-.m-settings:has(~ .m-settings.m-slide:not(.out)) > :not(.m-head) > * { opacity: .001; }
+.m-settings:has(~ .m-settings.m-slide:not(.out)) > :not(.m-head) > * { clip-path: inset(-40px calc(100% + 40px) -40px -40px); }
+@keyframes glass-wipe-in {
+  from { clip-path: inset(-40px calc(100% + 40px) -40px -40px); }
+  to { clip-path: inset(-40px -40px -40px -40px); }
+}
+.m-stage:not([data-swipe]):not([data-swiped]) > .m-settings:has(~ .m-settings.m-slide.out) > :not(.m-head) > * {
+  animation: glass-wipe-in .22s cubic-bezier(.4, 0, .7, .2) both;
+}
 
 .m-full-voice.with-chat .m-voice { opacity: 0; transition: opacity .18s ease; }
 
@@ -4150,7 +4156,7 @@ html:not([data-glows='on']) .backdrop .bd-glow { opacity: 0; }
 }
 .m-stage[data-swipe='back'] .m-under.dim, .m-stage[data-swipe='back'] .m-under.dim * { transition: none !important; }
 .m-stage[data-swipe='cancel'] .m-under.dim, .m-stage[data-swipe='cancel'] .m-under.dim * { transition: opacity .26s ease !important; }
-.m-stage:is([data-swipe='back'], [data-swipe='cancel']) > .m-settings:has(~ .m-settings.m-slide:not(.out)) > :not(.m-head) > * { opacity: max(var(--swipe-p, 0), .001) !important; }
+
 /* No filter: blur here: Safari blurs whole panels on the CPU every frame (slow, heats the phone). */
 @keyframes m-tab-in { from { opacity: 0; transform: scale(.985); } to { opacity: 1; transform: none; } }
 .m-stage[data-tab-in] > .m-under:not(.tabbar) > :not(.m-servers-row),

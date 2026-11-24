@@ -351,8 +351,10 @@ function MessageListImpl({
       if (stuck) label = pill.textContent || '';
       else if (!next) next = r;
     }
-    if (!label) {
-      // no divider above the spot in the rendered window: the day of the first message there
+    const firstRow = el.querySelector<HTMLElement>(':scope > [data-mid]');
+    if (!label && firstRow && firstRow.getBoundingClientRect().top < spot) {
+      // no divider above the spot in the rendered window, but the feed goes on above it: the day of the message there.
+      // A short feed sitting at the bottom leaves the spot empty and gets no floating date.
       for (const row of el.querySelectorAll<HTMLElement>(':scope > [data-mid]')) {
         if (row.getBoundingClientRect().bottom <= spot) continue;
         const m = winRef.current.all.find((x) => String(x.id) === row.dataset.mid);
@@ -456,7 +458,10 @@ function MessageListImpl({
       }
     }
     if (el && stick.current) el.scrollTop = rest(el);
-    if (el && wasStuck && was && prevLast && last > prevLast && placed.current === room) riseNew(el, el.scrollHeight - was.h, prevLast);
+    if (el && wasStuck && was && prevLast && last > prevLast && placed.current === room && riseNew(el, el.scrollHeight - was.h, prevLast)) {
+      // rows measured mid-flight sit below the edge: check what is read once they land
+      window.setTimeout(report, 450);
+    }
     if (el) prevTop.current = { id: first, h: el.scrollHeight };
     report();
     paintGrad(true);
@@ -878,7 +883,7 @@ function MessageListImpl({
  * jumping, and the new ones rise from under the composer. Transform only, so glass bubbles keep their blur.
  */
 function riseNew(el: HTMLElement, grow: number, after: number) {
-  if (grow <= 0 || grow > el.clientHeight) return;
+  if (grow <= 0 || grow > el.clientHeight) return false;
   const box = el.getBoundingClientRect();
   for (const row of el.children as HTMLCollectionOf<HTMLElement>) {
     const r = row.getBoundingClientRect();
@@ -894,6 +899,7 @@ function riseNew(el: HTMLElement, grow: number, after: number) {
       { duration: fresh ? 420 : 340, easing: 'cubic-bezier(.2, .9, .25, 1)' },
     );
   }
+  return true;
 }
 
 /**
