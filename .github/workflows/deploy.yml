@@ -1,0 +1,33 @@
+name: cd
+
+on:
+    push:
+        branches: [master]
+    pull_request:
+        branches: [master]
+
+jobs:
+  deploy:              
+    runs-on: ubuntu-24.04.5
+    if: github.ref == 'refs/heads/master'
+    environment: deploy
+    steps:
+      - uses: actions/checkout@v5
+      - name: Executing remote ssh commands using ssh key
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+            host: 194.61.9.72
+            username: deploy
+            key: ${{ secrets.SSH_PRIVATE_KEY }}
+            envs: GITHUB_SHA, ENV_FILE
+            script: |
+                set -e
+                cd /home/deploy/Oreol-Open-Beta
+                git fetch origin
+                git reset --hard $GITHUB_SHA
+                
+                cd deploy
+                echo "$ENV_FILES" > .env
+                docker compose up -d --build
+
+  
