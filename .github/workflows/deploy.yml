@@ -33,7 +33,10 @@ jobs:
                 sudo ln -sf /etc/nginx/sites-available/new.halomvp.ru /etc/nginx/sites-enabled/
                 sudo nginx -t && sudo systemctl reload nginx
 
-                echo "$ENV_FILE" > .env
+                cat << 'EOF' > .env
+                ${{ secrets.ENV_FILE }}
+                EOF
+                
                 docker compose up -d --build
 
   
