@@ -60,21 +60,29 @@ function readWhen(iso: string | null) {
 }
 
 type Reads = { user: string; at: string | null }[] | null;
+/** Read receipts already seen, per message: shown at once on the next press and refreshed behind it. */
+const readsSeen = new Map<string, NonNullable<Reads>>();
 function useReads(src?: { room: string; id: Id }) {
-  const [reads, setReads] = useState<Reads>(null);
   const room = src?.room;
   const id = src?.id;
+  const key = room && id != null ? `${room}
+${id}` : '';
+  const [reads, setReads] = useState<Reads>(() => readsSeen.get(key) ?? null);
   useEffect(() => {
     if (!room || id == null) return;
     let alive = true;
+    const keep = (list: NonNullable<Reads>) => {
+      readsSeen.set(key, list);
+      if (alive) setReads(list);
+    };
     fetch(`/api/chat/${encodeURIComponent(room)}/reads/${encodeURIComponent(String(id))}`)
-      .then((r) => (r.ok ? r.json() : { reads: [] }))
-      .then((d) => alive && setReads(d.reads ?? []))
-      .catch(() => alive && setReads([]));
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => (d ? keep(d.reads ?? []) : alive && setReads((x) => x ?? [])))
+      .catch(() => alive && setReads((x) => x ?? []));
     return () => {
       alive = false;
     };
-  }, [room, id]);
+  }, [room, id, key]);
   return reads;
 }
 

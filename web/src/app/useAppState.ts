@@ -17,12 +17,18 @@ export function useSystemTheme() {
   const [t, setT] = useState<Theme>(systemTheme);
   useEffect(() => {
     const mq = window.matchMedia(SYSTEM_LIGHT);
-    // iOS flips the scheme of a backgrounded page to snapshot it for the app switcher in both looks; following that
-    // flashed the other theme on return. A hidden page ignores changes and reads the scheme when it is shown again.
-    const on = () => !document.hidden && setT(mq.matches ? 'light' : 'dark');
+    // iOS flips the scheme of a page going to the background to snapshot it for the app switcher in both looks, and
+    // the page may still count as visible then; following that flashed the other theme on return. A change is applied
+    // only once it has held for a while on a visible page.
+    let timer = 0;
+    const on = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => !document.hidden && setT(mq.matches ? 'light' : 'dark'), 700);
+    };
     mq.addEventListener('change', on);
     document.addEventListener('visibilitychange', on);
     return () => {
+      window.clearTimeout(timer);
       mq.removeEventListener('change', on);
       document.removeEventListener('visibilitychange', on);
     };

@@ -2461,7 +2461,10 @@ input, textarea { font: inherit; color: inherit; }
 .m-settings ~ .m-settings.m-slide.out > .m-head > .title-pill { background: none !important; border-color: transparent !important; box-shadow: none !important; backdrop-filter: none !important; }
 .m-settings:has(~ .m-settings.m-slide.out) > .m-head > .pill-btn,
 .m-settings:has(~ .m-settings.m-slide.out) > .m-head > .title-pill { animation: head-bump-a .24s cubic-bezier(.2, .8, .2, 1); }
-.m-settings:has(~ .m-settings.m-slide.out) > .m-head .t { animation: sw-in .28s ease both; }
+.m-settings:has(~ .m-settings.m-slide.out) > .m-head .t { animation: sw-in .26s ease .1s both; }
+/* The leaving title is gone before the new one rises, so the two lines never overlap. */
+.m-settings ~ .m-settings.m-slide.out > .m-head > .title-pill,
+.m-full-chat ~ .m-full-info.m-slide.out > .m-head > .title-pill { animation: head-pop-out .12s cubic-bezier(.4, 0, 1, 1) forwards !important; }
 
 .m-voice.covered { pointer-events: none; }
 
@@ -5082,7 +5085,7 @@ html[data-theme='light'][data-glass='on'] :is(.ci-pop, .ci-more, .ci-full) { --g
 .m-full-chat ~ .m-full-info.m-slide.out > .m-head > .title-pill { background: none !important; border-color: transparent !important; box-shadow: none !important; backdrop-filter: none !important; }
 .m-full-chat:has(~ .m-full-info.m-slide.out) > .m-head > .pill-btn,
 .m-full-chat:has(~ .m-full-info.m-slide.out) > .m-head > .title-pill { animation: head-bump-a .24s cubic-bezier(.2, .8, .2, 1); }
-.m-full-chat:has(~ .m-full-info.m-slide.out) > .m-head .s { animation: sw-in .28s ease both; }
+.m-full-chat:has(~ .m-full-info.m-slide.out) > .m-head .s { animation: sw-in .26s ease .1s both; }
 .m-full-chat:has(~ .m-full-info.m-slide.out) > .m-head > .group { animation: head-pop-in .24s cubic-bezier(.2, .8, .2, 1) .05s backwards; }
 
 /*

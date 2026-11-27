@@ -268,7 +268,9 @@ export function useStageSwipes(stage: RefObject<HTMLElement>, opts: Opts) {
           // Everything clears on the curve of the screen sliding out, otherwise the lower screen turns sharp before it leaves.
           for (const u of under) u.style.setProperty('transition', 'opacity .22s cubic-bezier(.4, 0, .7, .2)', 'important');
           fade(under, 1);
-          veilSet(1, w, 'opacity .22s cubic-bezier(.4, 0, .7, .2), clip-path .22s cubic-bezier(.4, 0, .7, .2)');
+          // The frost covers the whole lower screen at once (the leaving screen hides the rest): a clip following the
+          // screen lagged behind it on the iPhone and left a sharp band.
+          veilSet(1, w, 'opacity .22s cubic-bezier(.4, 0, .7, .2)');
           const body = bodyUnder();
           wipe(cards, Infinity, 'clip-path .22s cubic-bezier(.4, 0, .7, .2), opacity .22s cubic-bezier(.4, 0, .7, .2)');
           fade(cards, 1);
