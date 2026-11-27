@@ -127,6 +127,8 @@ function MessageMenu({
   const focus = !!lift && !!row;
   /** The finger that held the message is released over the menu; that release must not trigger an item. */
   const armed = useRef(!focus);
+  /** The row the lifted copy was made from: re-measuring (read receipts loaded) must not rebuild it, the photos blinked. */
+  const clonedFrom = useRef<HTMLElement | null>(null);
   // Keep the menu on screen and off the message: right below it, or above when there is no room below.
   useLayoutEffect(() => {
     const el = ref.current;
@@ -152,7 +154,8 @@ function MessageMenu({
       const bubbleEl = row.querySelector('.bubble, .sys-note') as HTMLElement | null;
       const bubble = bubbleEl ? unsqueeze(bubbleEl.getBoundingClientRect()) : r;
       const box = host.current;
-      if (focus && box) {
+      if (focus && box && clonedFrom.current !== row) {
+        clonedFrom.current = row;
         box.replaceChildren();
         const clone = row.cloneNode(true) as HTMLElement;
         clone.removeAttribute('data-pressing');

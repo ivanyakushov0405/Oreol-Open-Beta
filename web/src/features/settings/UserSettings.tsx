@@ -21,6 +21,36 @@ const THEME_PREVIEW: Record<ThemePref, string> = {
   system: 'linear-gradient(135deg,#040a14,#0e2238 49.5%,#eef4fb 50.5%,#9fc2ff)',
 };
 
+/**
+ * WebKit: the theme changes behind one full-screen layer of the new background that fades in and out. Colour
+ * transitions on every glass panel made the phone re-blur them all each frame and the switch stuttered.
+ */
+function fadeTheme(app: AppState, pref: ThemePref, t: 'light' | 'dark') {
+  const root = document.documentElement;
+  const veil = document.createElement('div');
+  veil.style.cssText = `position:fixed;inset:0;z-index:2147483647;pointer-events:none;opacity:0;background:${t === 'light' ? '#e9f0f8' : '#06101d'}`;
+  document.body.appendChild(veil);
+  // Marks a theme animation in progress, so the surface colour transitions stay off (animateSurfaces).
+  root.dataset.vt = t;
+  const done = () => {
+    veil.remove();
+    delete root.dataset.vt;
+  };
+  const apply = () => {
+    flushSync(() => app.setTheme(pref));
+    root.dataset.theme = t;
+  };
+  veil.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 180, easing: 'ease-in', fill: 'forwards' }).finished.then(() => {
+    apply();
+    // Two frames for the new theme to paint before it is uncovered.
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        veil.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 320, easing: 'ease-out', fill: 'forwards' }).finished.then(done, done);
+      }),
+    );
+  }, () => (apply(), done()));
+}
+
 function switchTheme(app: AppState, pref: ThemePref, from: HTMLElement) {
   if (app.themePref === pref) return;
   const t = pref === 'system' ? systemTheme() : pref;
@@ -31,11 +61,11 @@ function switchTheme(app: AppState, pref: ThemePref, from: HTMLElement) {
   }
   const doc = document as Document & { startViewTransition?: (cb: () => void) => { ready: Promise<void> } };
   // Firefox and WebKit (Safari, and every browser on iPhone) render the reveal snapshots without backdrop-filter
-  // tint, so the glass turns grey during the animation and colours in at the end. There the theme changes through
-  // plain color transitions.
+  // tint, so the glass turns grey during the animation and colours in at the end.
   const ua = navigator.userAgent;
   const webkit = /iP(hone|ad|od)/.test(ua) || (/AppleWebKit/.test(ua) && !/Chrome|Chromium|Edg/.test(ua));
-  if (!doc.startViewTransition || /firefox/i.test(ua) || webkit) {
+  if (webkit) return fadeTheme(app, pref, t);
+  if (!doc.startViewTransition || /firefox/i.test(ua)) {
     app.setTheme(pref);
     return;
   }

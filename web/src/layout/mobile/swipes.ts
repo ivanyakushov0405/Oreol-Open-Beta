@@ -82,6 +82,7 @@ export function useStageSwipes(stage: RefObject<HTMLElement>, opts: Opts) {
     const veilOff = () => {
       veil?.remove();
       veil = null;
+      for (const n of el.querySelectorAll<HTMLElement>(':scope > [data-frost]')) delete n.dataset.frost;
     };
 
     /**
@@ -197,6 +198,8 @@ export function useStageSwipes(stage: RefObject<HTMLElement>, opts: Opts) {
           o.current.onPeek(true);
           el.dataset.swipe = 'back';
           s.node.dataset.swiping = '';
+          // The screen's own frost blurs only during the gesture and its ending: a constant blur slowed theme changes.
+          s.node.dataset.frost = '';
           veilOn(s.node);
         } else {
           el.dataset.swipe = 'tab';
@@ -262,13 +265,14 @@ export function useStageSwipes(stage: RefObject<HTMLElement>, opts: Opts) {
           const cards = cardsUnder();
           const boxes = boxesUnder();
           el.dataset.swiped = '';
-          for (const u of under) u.style.setProperty('transition', 'opacity .22s ease', 'important');
+          // Everything clears on the curve of the screen sliding out, otherwise the lower screen turns sharp before it leaves.
+          for (const u of under) u.style.setProperty('transition', 'opacity .22s cubic-bezier(.4, 0, .7, .2)', 'important');
           fade(under, 1);
-          veilSet(1, w, 'opacity .22s ease, clip-path .22s cubic-bezier(.4, 0, .7, .2)');
+          veilSet(1, w, 'opacity .22s cubic-bezier(.4, 0, .7, .2), clip-path .22s cubic-bezier(.4, 0, .7, .2)');
           const body = bodyUnder();
-          wipe(cards, Infinity, 'clip-path .22s cubic-bezier(.4, 0, .7, .2), opacity .22s ease');
+          wipe(cards, Infinity, 'clip-path .22s cubic-bezier(.4, 0, .7, .2), opacity .22s cubic-bezier(.4, 0, .7, .2)');
           fade(cards, 1);
-          for (const b of body) b.style.setProperty('transition', 'opacity .22s ease', 'important');
+          for (const b of body) b.style.setProperty('transition', 'opacity .22s cubic-bezier(.4, 0, .7, .2)', 'important');
           fade(body, 1);
           shift(boxes, 'none', 'transform .22s cubic-bezier(.4, 0, .7, .2)');
           n.querySelector<HTMLButtonElement>(':scope > .m-head .pill-btn')?.click();
