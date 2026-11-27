@@ -2492,18 +2492,18 @@ input, textarea { font: inherit; color: inherit; }
 .m-settings { background: transparent; }
 .m-settings:has(~ .m-settings.m-slide:not(.out)) > :not(.m-head) { pointer-events: none; }
 /*
-  A covered settings screen is clipped away, never faded: Safari paints glass with opacity below 1 untinted and
-  tints it only once the fade ends. Going back, it is wiped in from the left behind the screen sliding out.
-  The insets leave room for the card shadows.
+  A covered settings screen is clipped away at rest, never faded: Safari paints glass with opacity below 1 untinted.
+  The insets leave room for the card shadows. Going back with the button it fades in whole behind the leaving screen,
+  on that screen's curve, as after a swipe: a wipe from the left started late on the iPhone and cut the cards. The
+  leaving screen frosts it meanwhile, so the short fade under it does not show Safari's grey glass.
 */
 .m-settings:has(~ .m-settings.m-slide:not(.out)) > :not(.m-head) > * { clip-path: inset(-40px calc(100% + 40px) -40px -40px); }
-@keyframes glass-wipe-in {
-  from { clip-path: inset(-40px calc(100% + 40px) -40px -40px); }
-  to { clip-path: inset(-40px -40px -40px -40px); }
-}
+@keyframes glass-back-in { from { opacity: 0; } }
 .m-stage:not([data-swipe]):not([data-swiped]) > .m-settings:has(~ .m-settings.m-slide.out) > :not(.m-head) > * {
-  animation: glass-wipe-in .22s cubic-bezier(.4, 0, .7, .2) both;
+  animation: glass-back-in .22s cubic-bezier(.4, 0, .7, .2) both;
 }
+.m-stage:not([data-swipe]):not([data-swiped]) > .m-settings.m-slide.out::before { backdrop-filter: blur(12px); }
+[data-theme='light'] .m-stage:not([data-swipe]):not([data-swiped]) > .m-settings.m-slide.out::before { backdrop-filter: blur(8px); }
 
 .m-full-voice.with-chat .m-voice { opacity: 0; transition: opacity .18s ease; }
 
@@ -5089,24 +5089,37 @@ html[data-theme='light'][data-glass='on'] :is(.ci-pop, .ci-more, .ci-full) { --g
 .m-full-chat:has(~ .m-full-info.m-slide.out) > .m-head > .group { animation: head-pop-in .24s cubic-bezier(.2, .8, .2, 1) .05s backwards; }
 
 /*
-  Phone profile sheet that opens under the finger (MemberCard "staged"). --sheet-p is how far it is open: the
-  collapsed card is a little narrower and the two layers cross-fade with it. Registered so it can transition.
+  Phone profile sheet that opens under the finger (MemberCard "staged"). The collapsed card is a little narrower and
+  the two layers cross-fade as it opens. While dragging everything follows --sheet-p (how far it is open, set inline);
+  otherwise the open/closed states run plain transitions on the curve of the sheet itself. A transition of the
+  registered variable did not run on the iPhone and the width snapped at the end.
 */
-@property --sheet-p { syntax: '<number>'; inherits: true; initial-value: 0; }
 .member-card.sheet.staged[style*='--sheet-y'] {
-  scale: calc(.96 + .04 * var(--sheet-p)); transform-origin: 50% 0;
-  transition: transform .4s cubic-bezier(.22, .9, .25, 1), --sheet-p .4s cubic-bezier(.22, .9, .25, 1);
+  scale: .96; transform-origin: 50% 0;
+  transition: transform .4s cubic-bezier(.22, .9, .25, 1), scale .4s cubic-bezier(.22, .9, .25, 1);
 }
-.member-card.sheet.staged.dragging[style*='--sheet-y'] { transition: none; }
+.member-card.sheet.staged.open[style*='--sheet-y'] { scale: 1; }
+.member-card.sheet.staged.dragging[style*='--sheet-y'] { scale: calc(.96 + .04 * var(--sheet-p)); transition: none; }
 .mc-stack { position: relative; flex: 1; min-height: 0; align-self: stretch; display: flex; flex-direction: column; }
-.mc-stack > .body {
-  opacity: clamp(0, calc(1 - var(--sheet-p) / .45), 1); transform: translateY(calc(var(--sheet-p) * -12px));
+.member-card.sheet .mc-stack > .body, .member-card.sheet .mc-stack > .body .mc-avatar,
+.member-card.sheet .mc-stack > .mc-full, .member-card.sheet .mc-stack .mc-full .pm-avatar {
+  transition: opacity .2s ease .12s, transform .4s cubic-bezier(.22, .9, .25, 1), scale .4s cubic-bezier(.22, .9, .25, 1);
 }
-.mc-stack > .body .mc-avatar { scale: calc(1 + var(--sheet-p) * .33); transform-origin: 50% 40%; }
-.member-card.sheet .mc-stack > .mc-full {
-  position: absolute; inset: 0; opacity: clamp(0, calc((var(--sheet-p) - .35) / .5), 1);
-  transform: translateY(calc((1 - var(--sheet-p)) * 14px));
-}
-.member-card.sheet .mc-stack .mc-full .pm-avatar { animation: none; scale: calc(.75 + var(--sheet-p) * .25); transform-origin: 50% 40%; }
+.member-card.sheet .mc-stack > .body .mc-avatar, .member-card.sheet .mc-stack .mc-full .pm-avatar { transform-origin: 50% 40%; }
+.member-card.sheet .mc-stack > .mc-full { position: absolute; inset: 0; opacity: 0; transform: translateY(14px); transition-delay: 0s; }
+.member-card.sheet .mc-stack .mc-full .pm-avatar { animation: none; scale: .75; }
 .member-card.sheet .mc-stack .mc-full .pm-body > * { animation: none; }
+/* Open: the card leaves first, the full profile comes in after it. */
+.member-card.sheet.staged.open .mc-stack > .body { opacity: 0; transform: translateY(-12px); transition-delay: 0s; }
+.member-card.sheet.staged.open .mc-stack > .body .mc-avatar { scale: 1.33; }
+.member-card.sheet.staged.open .mc-stack > .mc-full { opacity: 1; transform: none; transition-delay: .12s, 0s, 0s; }
+.member-card.sheet.staged.open .mc-stack .mc-full .pm-avatar { scale: 1; }
+.member-card.sheet.staged.dragging .mc-stack > .body {
+  opacity: clamp(0, calc(1 - var(--sheet-p) / .45), 1); transform: translateY(calc(var(--sheet-p) * -12px)); transition: none;
+}
+.member-card.sheet.staged.dragging .mc-stack > .body .mc-avatar { scale: calc(1 + var(--sheet-p) * .33); transition: none; }
+.member-card.sheet.staged.dragging .mc-stack > .mc-full {
+  opacity: clamp(0, calc((var(--sheet-p) - .35) / .5), 1); transform: translateY(calc((1 - var(--sheet-p)) * 14px)); transition: none;
+}
+.member-card.sheet.staged.dragging .mc-stack .mc-full .pm-avatar { scale: calc(.75 + var(--sheet-p) * .25); transition: none; }
 .member-card.sheet.staged.open .mc-stack > .body, .member-card.sheet.staged:not(.open) .mc-stack > .mc-full { pointer-events: none; }

@@ -99,8 +99,6 @@ export function MemberCard({
     onPointerMove: (e: React.PointerEvent) => {
       if (dragFrom.current === null) return;
       const dy = e.clientY - dragFrom.current;
-      // Opening by hand: the full profile is mounted at once so it can fade in under the finger.
-      if (dy < -4 && staged && !expanded && !extras) setExtras(true);
       setDrag(dy);
     },
     onPointerUp: (e: React.PointerEvent) => {
@@ -264,7 +262,8 @@ export function MemberCard({
               </div>
             )}
           </div>
-            {extras && <div className="mc-full">{full}</div>}
+            {/* Mounted from the start: a layer mounted already open would appear without its transition. */}
+            <div className="mc-full">{full}</div>
           </div>
         ) : sheet && extras && full ? (
           <div className="mc-full">{full}</div>

@@ -22,30 +22,40 @@ const THEME_PREVIEW: Record<ThemePref, string> = {
 };
 
 /**
- * WebKit: the theme changes behind one full-screen layer of the new background that fades in and out. Colour
- * transitions on every glass panel made the phone re-blur them all each frame and the switch stuttered.
+ * WebKit: a circle of the new background grows from the tapped option, the theme changes under it and the layer then
+ * fades away. One layer animates only clip-path and opacity: colour transitions on every glass panel made the phone
+ * re-blur them all each frame and the switch stuttered.
  */
-function fadeTheme(app: AppState, pref: ThemePref, t: 'light' | 'dark') {
+function revealTheme(app: AppState, pref: ThemePref, t: 'light' | 'dark', from: HTMLElement) {
   const root = document.documentElement;
+  const b = from.getBoundingClientRect();
+  const x = b.left + b.width / 2;
+  const y = b.top + b.height / 2;
+  const r = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
   const veil = document.createElement('div');
-  veil.style.cssText = `position:fixed;inset:0;z-index:2147483647;pointer-events:none;opacity:0;background:${t === 'light' ? '#e9f0f8' : '#06101d'}`;
+  veil.style.cssText = `position:fixed;inset:0;z-index:2147483647;pointer-events:none;background:${t === 'light' ? '#e9f0f8' : '#06101d'}`;
   document.body.appendChild(veil);
   // Marks a theme animation in progress, so the surface colour transitions stay off (animateSurfaces).
   root.dataset.vt = t;
-  const done = () => {
-    veil.remove();
-    delete root.dataset.vt;
-  };
   const apply = () => {
     flushSync(() => app.setTheme(pref));
     root.dataset.theme = t;
   };
-  veil.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 180, easing: 'ease-in', fill: 'forwards' }).finished.then(() => {
+  const done = () => {
+    veil.remove();
+    delete root.dataset.vt;
+  };
+  const grow = veil.animate({ clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${r}px at ${x}px ${y}px)`] }, {
+    duration: 420,
+    easing: 'cubic-bezier(.35, 0, .2, 1)',
+    fill: 'forwards',
+  });
+  grow.finished.then(() => {
     apply();
     // Two frames for the new theme to paint before it is uncovered.
     requestAnimationFrame(() =>
       requestAnimationFrame(() => {
-        veil.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 320, easing: 'ease-out', fill: 'forwards' }).finished.then(done, done);
+        veil.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 360, easing: 'ease-out', fill: 'forwards' }).finished.then(done, done);
       }),
     );
   }, () => (apply(), done()));
@@ -64,7 +74,7 @@ function switchTheme(app: AppState, pref: ThemePref, from: HTMLElement) {
   // tint, so the glass turns grey during the animation and colours in at the end.
   const ua = navigator.userAgent;
   const webkit = /iP(hone|ad|od)/.test(ua) || (/AppleWebKit/.test(ua) && !/Chrome|Chromium|Edg/.test(ua));
-  if (webkit) return fadeTheme(app, pref, t);
+  if (webkit) return revealTheme(app, pref, t, from);
   if (!doc.startViewTransition || /firefox/i.test(ua)) {
     app.setTheme(pref);
     return;
