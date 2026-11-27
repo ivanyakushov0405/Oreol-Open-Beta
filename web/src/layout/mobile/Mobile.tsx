@@ -84,6 +84,18 @@ function useLagged(on: boolean, ms: number) {
 
 export function Mobile({ app }: { app: AppState }) {
   const stageRef = useRef<HTMLDivElement>(null);
+  // The stage and its screens never scroll sideways; a focus or scroll into view could still shift them and the
+  // screen then sat off by that much, with swipes measured from the wrong place.
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    const fix = (e: Event) => {
+      const n = e.target as HTMLElement;
+      if ((n === stage || n.parentElement === stage) && n.scrollLeft) n.scrollLeft = 0;
+    };
+    stage.addEventListener('scroll', fix, true);
+    return () => stage.removeEventListener('scroll', fix, true);
+  }, []);
   useTabShadeClip(stageRef);
   const [tab, setTab] = useState<Tab>('servers');
   // During the back swipe the lower screen renders again and appears under the sliding upper one.
@@ -769,7 +781,7 @@ export function Mobile({ app }: { app: AppState }) {
               ) : (
                 <button className="icon-btn has-badge" title={t('Чат канала')} aria-label={t('Чат канала')} onClick={(e) => { e.currentTarget.blur(); setVoiceChat(true); }}>
                   <Icon name="chats" />
-                  <UnreadBadge n={chatUnread(app, app.lobby)} className="corner" />
+                  <UnreadBadge n={chatUnread(app, app.lobby)} className="corner" rooms={[app.lobby.room]} />
                 </button>
               )
             }
@@ -792,6 +804,7 @@ export function Mobile({ app }: { app: AppState }) {
           <Hold hold={holdUnder.current}>
           <Head title={t('Участники')} sub={app.membersReady ? t('{0} · {1} в сети', { 0: app.server.name, 1: online.length }) : app.server.name} onBack={() => close('members', () => setMembers(false))} />
           <div className="m-members-list glass">
+            <div className="m-members-scroll">
             <div className="section-title overline">{t('В сети: ')}{online.length}</div>
             {online.map((m) => (
               <MemberRow
@@ -814,6 +827,7 @@ export function Mobile({ app }: { app: AppState }) {
                 onClick={() => openProfile(m.username)}
               />
             ))}
+            </div>
           </div>
           </Hold>
         </div>

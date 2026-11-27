@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, putUser, type PublicUser } from '../../shared/api';
+import { voiceNow } from '../voice/voiceNow';
 import { firstPhotoUrl, previewText, type ChatMessage, type Status } from '../../shared/model';
 
 type ServerEvent =
@@ -39,6 +40,10 @@ export type NewMessage = { room: string; message: ChatMessage };
 const announce = (room: string, message: ChatMessage) =>
   window.dispatchEvent(new CustomEvent<NewMessage>(NEW_MESSAGE, { detail: { room, message } }));
 
+/** On a phone the app in the background means the user left: they show offline (desktop tabs stay online). */
+const phone = () => matchMedia('(pointer: coarse)').matches;
+const away = () => phone() && document.visibilityState === 'hidden' && !voiceNow.on;
+
 export function useChat(room: string | null, user: string) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [pinned, setPinned] = useState<ChatMessage[]>([]);
@@ -60,6 +65,7 @@ export function useChat(room: string | null, user: string) {
   const olderBusy = useRef(false);
   const msgsRef = useRef(messages);
   msgsRef.current = messages;
+  const revive = useRef<() => void>(() => {});
   const roomRef = useRef(room);
   roomRef.current = room;
 
@@ -99,6 +105,7 @@ export function useChat(room: string | null, user: string) {
       ws.onopen = () => {
         attempt = 0;
         setConnected(true);
+        if (away()) ws.send(JSON.stringify({ type: 'hidden', on: true }));
       };
       ws.onmessage = (e) => {
         const ev = JSON.parse(e.data) as ServerEvent;
@@ -196,9 +203,21 @@ export function useChat(room: string | null, user: string) {
     // Back in the app (the phone killed the socket in the background) or online again:
     // reconnect now instead of waiting for the retry timer, which could reach 8 s.
     const wake = () => {
+      const ws0 = wsRef.current;
+      if (ws0?.readyState === WebSocket.OPEN && phone()) ws0.send(JSON.stringify({ type: 'hidden', on: away() }));
       if (closed || document.visibilityState !== 'visible') return;
       const ws = wsRef.current;
       if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+      window.clearTimeout(retry);
+      attempt = 0;
+      open();
+    };
+    // A socket that looks open but is dead: drop it without waiting for its close, which can take long, and reopen.
+    revive.current = () => {
+      if (closed) return;
+      const ws = wsRef.current;
+      wsRef.current = null;
+      ws?.close();
       window.clearTimeout(retry);
       attempt = 0;
       open();
@@ -209,6 +228,7 @@ export function useChat(room: string | null, user: string) {
 
     return () => {
       closed = true;
+      revive.current = () => {};
       document.removeEventListener('visibilitychange', wake);
       window.removeEventListener('online', wake);
       window.removeEventListener('pageshow', wake);
@@ -265,13 +285,31 @@ export function useChat(room: string | null, user: string) {
     [raw],
   );
 
+  const readsRef = useRef(reads);
+  readsRef.current = reads;
+  const readCheck = useRef(0);
+  useEffect(() => () => window.clearTimeout(readCheck.current), [room]);
   const markRead = useCallback(
     (id: number | string) => {
       const n = Number(id);
-      if (!n || n <= readSent.current) return;
-      if (raw({ type: 'read', id: n })) readSent.current = n;
+      const r = roomRef.current;
+      if (!n || !r || n <= readSent.current) return;
+      readSent.current = n;
+      raw({ type: 'read', id: n });
+      // The server echoes a mark that moved. A phone back from the background can hold a socket that still looks open
+      // but delivers nothing: without the echo, send the mark over HTTP, and if it did move there, the socket is dead.
+      window.clearTimeout(readCheck.current);
+      readCheck.current = window.setTimeout(async () => {
+        if (roomRef.current !== r || (readsRef.current[user] ?? 0) >= n) return;
+        try {
+          const res = await api<{ changed?: boolean }>(`/api/chat/${encodeURIComponent(r)}/read`, { method: 'POST', body: { id: n } });
+          if (res.changed && roomRef.current === r) revive.current();
+        } catch {
+          if (roomRef.current === r && readSent.current === n) readSent.current = n - 1;
+        }
+      }, 3000);
     },
-    [raw],
+    [raw, user],
   );
 
   const notifyTyping = useCallback(() => {

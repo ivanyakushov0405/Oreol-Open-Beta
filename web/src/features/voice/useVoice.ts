@@ -4,6 +4,7 @@ import { VideoPresets, ConnectionQuality, DisconnectReason, Participant, RemoteT
 import { getAudioPrefs, subscribeAudioPrefs } from '../../shared/audio/audioPrefs';
 import { playSound } from '../../shared/audio/sounds';
 import { createMicProcessor } from './micProcessor';
+import { voiceNow } from './voiceNow';
 import { getPeerVolume, subscribePeerVolume } from './peerVolume';
 import { VOICE_CHANGED, VOICE_LOCAL } from '../chat/useChat';
 import { FLIP_EVENT, getFacing, setFacing } from './camFacing';
@@ -151,6 +152,9 @@ export function useVoice(user: string) {
   const deafRef = useRef(false);
   const serverRef = useRef<string | null>(null);
   const [state, setState] = useState<'idle' | 'connecting' | 'connected'>(() => (savedVoice() ? 'connecting' : 'idle'));
+  useEffect(() => {
+    voiceNow.on = state !== 'idle';
+  }, [state]);
   const [reconnecting, setReconnecting] = useState(false);
   const [peers, setPeers] = useState<VoicePeer[]>([]);
   const [quality, setQuality] = useState<Quality>('good');

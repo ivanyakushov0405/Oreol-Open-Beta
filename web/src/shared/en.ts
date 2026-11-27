@@ -536,6 +536,7 @@ export const EN: Record<string, string> = {
   'LiveKit не настроен на сервере': 'Voice is not configured on the server',
   'Вы не участник этого сервера': 'You are not a member of this server',
   'Нет доступа к этому чату': 'You do not have access to this chat',
+  'Нет сообщения': 'No message',
   'Неизвестный раздел': 'Unknown section',
   'Неизвестный статус': 'Unknown status',
   'Запрос с чужого сайта': 'Request from another site',

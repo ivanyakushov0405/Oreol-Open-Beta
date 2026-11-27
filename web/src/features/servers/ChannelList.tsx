@@ -1,7 +1,7 @@
 import type { AppState } from '../../app/useAppState';
 import { Icon } from '../../shared/icons';
 import type { Channel } from '../../shared/model';
-import { UnreadBadge, unreadCount, unreadMentions } from '../chat/unread';
+import { justArrived, UnreadBadge, unreadCount, unreadMentions } from '../chat/unread';
 import { VoiceUserRow } from '../voice/VoiceUserRow';
 import { usePeerAnim } from '../voice/peerAnim';
 import { t } from '../../shared/i18n';
@@ -38,11 +38,11 @@ export function ChannelList({
     return (
       <span className="ch-badges">
         {at > 0 && (
-          <span key={'@' + at} className="badge unread-badge mention-badge" title={t('Упоминаний: {0}', { 0: at })}>
+          <span key={'@' + at} className={'badge unread-badge mention-badge' + (justArrived([chat.room]) ? '' : ' still')} title={t('Упоминаний: {0}', { 0: at })}>
             @
           </span>
         )}
-        <UnreadBadge n={n} />
+        <UnreadBadge n={n} rooms={[chat.room]} />
       </span>
     );
   };

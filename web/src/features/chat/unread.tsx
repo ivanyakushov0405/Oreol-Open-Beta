@@ -1,12 +1,18 @@
 import type { AppState } from '../../app/useAppState';
 import { handleOf } from '../../shared/model';
 import { mentionsMe } from './mentions';
+import { NEW_MESSAGE, type NewMessage } from './useChat';
 import { t } from '../../shared/i18n';
 
-export function UnreadBadge({ n, className = '' }: { n: number; className?: string }) {
+/** When a message last arrived in each room: a badge bounces only right after that, not every time it is shown again. */
+const arrived = new Map<string, number>();
+window.addEventListener(NEW_MESSAGE, (e) => arrived.set((e as CustomEvent<NewMessage>).detail.room, Date.now()));
+export const justArrived = (rooms?: (string | null)[]) => !rooms || rooms.some((r) => !!r && Date.now() - (arrived.get(r) ?? 0) < 1500);
+
+export function UnreadBadge({ n, className = '', rooms }: { n: number; className?: string; rooms?: (string | null)[] }) {
   if (!n) return null;
   return (
-    <span key={n} className={'badge unread-badge ' + className} aria-label={t('Непрочитанных: {0}', { 0: n })}>
+    <span key={n} className={'badge unread-badge ' + className + (justArrived(rooms) ? '' : ' still')} aria-label={t('Непрочитанных: {0}', { 0: n })}>
       {n > 99 ? '99+' : n}
     </span>
   );

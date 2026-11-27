@@ -321,7 +321,8 @@ export function ChatInfo({
     return () => window.clearTimeout(id);
   }, [q]);
   useEffect(() => {
-    if (search) input.current?.focus();
+    // no scroll: focusing mid-animation scrolled the phone stage sideways
+    if (search) input.current?.focus({ preventScroll: true });
   }, [search]);
   useEffect(() => {
     if (!more) return;
@@ -350,6 +351,8 @@ export function ChatInfo({
   }, [tab, search, query]);
 
   const go = (id: number | string) => {
+    // the search field must not keep the keyboard up over the chat
+    (document.activeElement as HTMLElement | null)?.blur?.();
     close();
     void chat.reveal(id).then((ok) => !ok && app.notify(t('Сообщение не найдено, возможно его удалили')));
   };
@@ -500,6 +503,7 @@ export function ChatInfo({
                       </span>
                       <span className="ci-result-text">{snippet(m.content || '', query)}</span>
                     </span>
+                    <ResultThumb m={m} />
                   </button>
                 ))}
               </div>
@@ -576,5 +580,23 @@ export function ChatInfo({
       {panel}
       {viewer != null && visual && <PhotoViewer photos={items} start={viewer} onClose={() => setViewer(null)} />}
     </>
+  );
+}
+
+/** The first photo or video of a found message, so a result with a picture is recognisable at a glance. */
+function ResultThumb({ m }: { m: ChatMessage }) {
+  const a = m.attachments?.find((x) => !x.file);
+  if (!a) return null;
+  return (
+    <span className="ci-result-thumb" aria-hidden="true">
+      {a.video ? (
+        <>
+          <video src={a.url + '#t=0.1'} preload="metadata" muted playsInline tabIndex={-1} />
+          <Icon name="play" size={12} />
+        </>
+      ) : (
+        <img src={a.url} alt="" loading="lazy" decoding="async" draggable={false} />
+      )}
+    </span>
   );
 }

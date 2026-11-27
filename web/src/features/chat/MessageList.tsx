@@ -60,6 +60,8 @@ const STEP = 40;
 /** Never keep more rows than this in the DOM; rows far from the viewport go back to memory. */
 const MAX_ROWS = 140;
 const SKELETON_ROWS = ['58%', '42%', '66%', '36%', '52%', '62%', '40%', '48%'];
+/** A pause longer than this between two messages of one person starts a new group. */
+const GROUP_GAP_MS = 10 * 60 * 1000;
 
 /**
  * The list re-renders only when what it shows changes. Previously any app update (someone speaking, typing,
@@ -521,11 +523,15 @@ function MessageListImpl({
     const row = ref.current?.querySelector<HTMLElement>(`[data-mid="${CSS.escape(String(focus.id))}"]`);
     if (!row) return;
     stick.current = false;
-    row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    // Only the list scrolls: scrollIntoView also moved the phone stage sideways and broke the swipes.
+    const el = ref.current!;
+    const box = el.getBoundingClientRect();
+    const r = row.getBoundingClientRect();
+    el.scrollBy({ top: r.top + r.height / 2 - (box.top + box.height / 2), behavior: 'smooth' });
     row.classList.remove('flash');
     void row.offsetWidth;
     row.classList.add('flash');
-    const id = window.setTimeout(() => row.classList.remove('flash'), 1400);
+    const id = window.setTimeout(() => row.classList.remove('flash'), 1600);
     return () => window.clearTimeout(id);
   }, [focus, firstIdx, endIdx]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -629,7 +635,20 @@ function MessageListImpl({
     onPointerUp: () => (cancelPress(), endSwipe()),
     onPointerCancel: () => (cancelPress(), endSwipe()),
   });
-  messages.forEach((m) => {
+  // Messages one person sends in a row form a group: the name only on the first, avatar and tail only on the
+  // last. A new day, the "new" line or a long pause starts a new group.
+  const groupBreak =
+    newAfter > 0 ? messages.findIndex((m) => !m.sys && m.user !== me && Number(m.id) > newAfter) : -1;
+  const joins = (i: number) => {
+    const a = messages[i - 1];
+    const b = messages[i];
+    if (!a || !b || a.sys || b.sys || a.user !== b.user || i === groupBreak) return false;
+    const ta = a.ts ? new Date(a.ts) : null;
+    const tb = b.ts ? new Date(b.ts) : null;
+    if (!ta || !tb || ta.toDateString() !== tb.toDateString()) return false;
+    return tb.getTime() - ta.getTime() < GROUP_GAP_MS;
+  };
+  messages.forEach((m, i) => {
     const d = m.ts ? new Date(m.ts) : new Date();
     const day = d.toDateString();
     if (day !== lastDay) {
@@ -658,7 +677,7 @@ function MessageListImpl({
       items.push(
         <button
           type="button"
-          className={'sys-row' + (gone ? ' gone' : '') + (m.leaving ? ' msg-out' : '') + (sel ? ' selected' : '')}
+          className={'sys-row' + (gone ? ' gone' : '') + (selecting ? ' selecting' : '') + (m.leaving ? ' msg-out' : '') + (sel ? ' selected' : '')}
           key={m.id}
           data-mid={m.id}
           aria-disabled={selecting || gone || undefined}
@@ -668,7 +687,7 @@ function MessageListImpl({
           {...pressProps(m)}
         >
           <span className="date-pill sys-note sn-one">
-            <Icon name={m.sys === 'pin' ? 'pin-fill' : 'pin-off'} size={13} />
+            <Icon name={m.sys === 'pin' ? 'pin-fill' : 'pin-off'} size={16} />
             <span className="sn-nick">
               <Nick name={m.user} />
             </span>
@@ -683,16 +702,21 @@ function MessageListImpl({
     const mine = m.user === me;
     const isSel = !!selected?.has(String(m.id));
     const read = mine && Number(m.id) <= readUpTo;
+    const edited = m.edited ? (
+      <span className="msg-edited" title={t('Изменено')}>
+        {t('изм. ')}
+      </span>
+    ) : null;
     const pinMark = m.pinned ? <Icon name="pin-fill" size={15} className="msg-pin" /> : null;
     const replyCount = m.replies ? (
       <span className="msg-replies" title={t('Ответов: {0}', { 0: m.replies })}>
-        <Icon name="reply-fill" size={14} />
+        <Icon name="reply-fill" size={16} />
         {m.replies}
       </span>
     ) : null;
     items.push(
       <div
-        className={'msg' + (m.leaving ? ' msg-out' : '') + (mine ? ' mine' : '') + (selecting ? ' selecting' : '') + (isSel ? ' selected' : '') + (!mine && mentionsMe(m.content, myTag) ? ' mention-me' : '')}
+        className={'msg' + (joins(i) ? ' g-cont' : '') + (joins(i + 1) ? ' g-more' : '') + (m.leaving ? ' msg-out' : '') + (mine ? ' mine' : '') + (selecting ? ' selecting' : '') + (isSel ? ' selected' : '') + (!mine && mentionsMe(m.content, myTag) ? ' mention-me' : '')}
         key={m.id}
         data-mid={m.id}
         data-pin={m.pinned ? '' : undefined}
@@ -722,13 +746,13 @@ function MessageListImpl({
                 <Nick name={m.user} />
               </span>
             )}
+            {/* Own: replies, edited, pin, time, ticks. Others: time, pin, edited, replies (mirrored around the time). */}
             {mine && replyCount}
-            {!mine && pinMark}
-            <time title={m.edited ? t('Изменено') : undefined}>
-              {m.edited && <span className="msg-edited">{t('изм. ')}</span>}
-              {timeFmt.format(d)}
-            </time>
+            {mine && edited}
             {mine && pinMark}
+            <time>{timeFmt.format(d)}</time>
+            {!mine && pinMark}
+            {!mine && edited}
             {!mine && replyCount}
             {mine && (
               <span className={'msg-ticks' + (read ? ' read' : '')} title={read ? t('Прочитано') : t('Отправлено')}>

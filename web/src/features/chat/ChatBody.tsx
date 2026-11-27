@@ -136,6 +136,11 @@ function MessageMenu({
     const pad = 8;
     const gap = 6;
     if (row) {
+      // Measure the row unpressed: the clone starts from the same .97 squeeze, so the pressed rect would shift it.
+      if (focus) {
+        row.style.transition = 'none';
+        row.style.transform = 'none';
+      }
       const r = row.getBoundingClientRect();
       const bubble = (row.querySelector('.bubble, .sys-note') as HTMLElement | null)?.getBoundingClientRect() ?? r;
       const box = host.current;
@@ -146,6 +151,11 @@ function MessageMenu({
         clone.style.cssText = '';
         // Full width of the clone, otherwise a service-row button shrinks to its content and drifts left.
         clone.style.width = '100%';
+        // A lazy copy of an already shown photo is decoded again and blinks; decode it with the first frame.
+        for (const img of clone.querySelectorAll('img')) {
+          img.loading = 'eager';
+          img.decoding = 'sync';
+        }
         // Keep the list classes (bubble colors depend on them) but drop the list's own layout.
         const scroll = document.createElement('div');
         scroll.className = 'chat-scroll';
@@ -194,7 +204,15 @@ function MessageMenu({
     setPos({ left, top, origin: `${up ? 'bottom' : 'top'} ${left < x - w / 2 ? 'right' : 'left'}` });
     // Once read receipts load the menu changes width; re-measure so it stays on screen.
   }, [x, y, row, focus, !!reads]);
-  useEffect(() => (focus && row ? () => void row.style.removeProperty('visibility') : undefined), [row, focus]);
+  useEffect(
+    () =>
+      focus && row
+        ? () => {
+            for (const k of ['visibility', 'transform', 'transition']) row.style.removeProperty(k);
+          }
+        : undefined,
+    [row, focus],
+  );
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     window.addEventListener('keydown', onKey);
@@ -383,6 +401,32 @@ function Modal({ title, children, onClose }: { title: string; children: ReactNod
 
 const msgs = (n: number) => plural(n, 'сообщение', 'сообщения', 'сообщений');
 
+/** The selection actions in the composer's place and shape, so the list keeps running under it. */
+function SelectBar({ children }: { children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    const box = el?.parentElement;
+    if (!el || !box) return;
+    const set = () => box.style.setProperty('--composer-h', `${el.offsetHeight}px`);
+    set();
+    const ro = new ResizeObserver(set);
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      box.style.removeProperty('--composer-h');
+    };
+  }, []);
+  return (
+    <div ref={ref} className="composer sel-mode">
+      {children}
+    </div>
+  );
+}
+
+/** The last search jump already shown, shared by every mount of the chat view. */
+let jumpDone = 0;
+
 export function ChatBody({ app, chat, channel, compact }: { app: AppState; chat: Chat; channel: Channel; compact?: boolean }) {
   const cls = 'chat' + (app.glassChat ? ' transparent' : '');
   const title = channel.kind === 'voice' ? t('чат «{0}»', { 0: channel.name }) : `#${channel.name}`;
@@ -472,8 +516,30 @@ export function ChatBody({ app, chat, channel, compact }: { app: AppState; chat:
     setFocus({ id, n: Date.now() });
   };
   useEffect(() => {
-    if (chat.jumpReq) setFocus({ id: chat.jumpReq.id, n: Date.now() });
+    const req = chat.jumpReq;
+    // The request outlives this view; reopening the chat must not jump to the found message again.
+    if (!req || req.n <= jumpDone) return;
+    jumpDone = req.n;
+    setFocus({ id: req.id, n: Date.now() });
   }, [chat.jumpReq]);
+  /** Once the select bar has replaced the input, bring the chosen message to the middle of what stays visible. */
+  const centerRow = (id: Id) =>
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        const root = rootRef.current;
+        const el = root?.querySelector<HTMLElement>('.chat-scroll');
+        const row = el?.querySelector<HTMLElement>(`:scope > [data-mid="${CSS.escape(String(id))}"]`);
+        if (!root || !el || !row) return;
+        const box = el.getBoundingClientRect();
+        const bar = root.querySelector<HTMLElement>(':scope > .composer');
+        const bottom = bar ? Math.min(box.bottom, bar.getBoundingClientRect().top) : box.bottom;
+        // On the phone the list also runs under the screen head.
+        const head = root.closest('.m-full')?.querySelector<HTMLElement>(':scope > .m-head');
+        const top = head ? Math.max(box.top, head.getBoundingClientRect().bottom) : box.top;
+        const r = row.getBoundingClientRect();
+        el.scrollBy({ top: r.top + r.height / 2 - (top + bottom) / 2, behavior: 'smooth' });
+      }),
+    );
   const toggle = (m: ChatMessage) =>
     setSelected((s) => {
       const next = new Set(s ?? []);
@@ -499,7 +565,10 @@ export function ChatBody({ app, chat, channel, compact }: { app: AppState; chat:
   };
   // Pin notes and the pinned list are not selectable: no multi-select there.
   const selectItem = (m: ChatMessage): MenuItem[] =>
-    pinnedView || m.sys ? [] : [{ icon: 'check', label: t('Выделить'), run: () => setSelected(new Set([String(m.id)])) }];
+    pinnedView || m.sys ? [] : [{ icon: 'check', label: t('Выделить'), run: () => {
+            setSelected(new Set([String(m.id)]));
+            centerRow(m.id);
+          } }];
   const menuItems = (m: ChatMessage, photo?: string): MenuItem[] => {
     if (m.sys) {
       return [
@@ -725,10 +794,11 @@ export function ChatBody({ app, chat, channel, compact }: { app: AppState; chat:
         onSeen={pinnedView ? undefined : onSeen}
       />
       {selected ? (
-        <div className="composer select-bar">
-          <button className="icon-btn" title={t('Отменить выделение')} onClick={() => setSelected(null)}>
+        <SelectBar>
+          <button type="button" className="round" title={t('Отменить выделение')} onClick={() => setSelected(null)}>
             <Icon name="close" />
           </button>
+          <div className="field sb-field">
           <span className="sb-count">{selected.size ? t('Выбрано: {0}', { 0: selected.size }) : t('Выберите сообщения')}</span>
           <button className="sb-act" disabled={!selected.size} title={t('Копировать')} onClick={() => {
             copy(selList.map((m) => (selList.length > 1 ? `${m.user}: ${previewText(m)}` : previewText(m))).join('\n'));
@@ -742,7 +812,8 @@ export function ChatBody({ app, chat, channel, compact }: { app: AppState; chat:
           <button className="sb-act danger" disabled={!selected.size} title={t('Удалить')} onClick={() => setDel(selList.map((m) => m.id))}>
             <Icon name="trash" />
           </button>
-        </div>
+          </div>
+        </SelectBar>
       ) : pinnedView ? (
         <div className="composer pinned-bar">
           <Icon name="pin-fill" size={18} />

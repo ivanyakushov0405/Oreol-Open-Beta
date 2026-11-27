@@ -275,7 +275,7 @@ export function Desktop({ app }: { app: AppState }) {
                 <button type="button" className={'btn-chip' + (voiceChat ? ' on' : '')} onClick={() => setVoiceChat((v) => !v)}>
                   <Icon name="chats" size={16} />
                   {t('Чат канала')}
-                  {!voiceChat && <UnreadBadge n={chatUnread(app, app.lobby)} />}
+                  {!voiceChat && <UnreadBadge n={chatUnread(app, app.lobby)} rooms={[app.lobby.room]} />}
                 </button>
               </div>
             ) : (

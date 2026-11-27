@@ -1650,9 +1650,13 @@ class ChatHub:
 
     # A user whose last socket closed stays online this long: switching channels reopens the socket at once.
     OFFLINE_GRACE = 8.0
+    # A phone that put the app in the background: offline almost at once, a quick app switch does not flicker.
+    HIDDEN_GRACE = 2.0
 
     def __init__(self):
         self.rooms: dict[str, list[tuple[WebSocket, str]]] = {}
+        # Sockets of phones whose page is in the background: still connected, but the user is not there.
+        self.hidden: set[WebSocket] = set()
 
     def users(self, room: str) -> list[str]:
         seen: list[str] = []
@@ -1661,13 +1665,26 @@ class ChatHub:
                 seen.append(name)
         return seen
 
-    def all_users(self) -> list[str]:
+    def present_users(self) -> list[str]:
+        """Users with at least one socket whose page is in front."""
         seen: list[str] = []
-        for room in self.rooms:
-            for name in self.users(room):
-                if name not in seen:
+        for socks in self.rooms.values():
+            for ws, name in socks:
+                if ws not in self.hidden and name not in seen:
                     seen.append(name)
         return seen
+
+    async def set_hidden(self, ws: WebSocket, user: str, on: bool):
+        was = user in self.present_users()
+        if on:
+            self.hidden.add(ws)
+        else:
+            self.hidden.discard(ws)
+        now = user in self.present_users()
+        if was and not now:
+            asyncio.create_task(self.went_offline(user, self.HIDDEN_GRACE))
+        elif now and not was:
+            await self.broadcast_presence()
 
     async def join(self, ws: WebSocket, room: str, user: str):
         self.rooms.setdefault(room, []).append((ws, user))
@@ -1678,12 +1695,13 @@ class ChatHub:
         self.rooms[room] = [(w, n) for w, n in self.rooms.get(room, []) if w is not ws]
         if not self.rooms[room]:
             del self.rooms[room]
-        if user and user not in self.all_users():
+        self.hidden.discard(ws)
+        if user and user not in self.present_users():
             asyncio.create_task(self.went_offline(user))
 
-    async def went_offline(self, user: str):
-        await asyncio.sleep(self.OFFLINE_GRACE)
-        if user in self.all_users():
+    async def went_offline(self, user: str, delay: float | None = None):
+        await asyncio.sleep(self.OFFLINE_GRACE if delay is None else delay)
+        if user in self.present_users():
             return
         conn = db()
         conn.execute("UPDATE users SET last_seen = CURRENT_TIMESTAMP WHERE username = ? AND status != 'offline'", (user,))
@@ -1709,8 +1727,9 @@ class ChatHub:
                     pass
 
     def statuses(self) -> dict[str, str]:
-        """Visible status of each connected user. Invisible users are left out, everyone sees them offline."""
-        names = self.all_users()
+        """Visible status of each connected user. Invisible users are left out, everyone sees them offline, and so are
+        phones with the app in the background."""
+        names = self.present_users()
         if not names:
             return {}
         conn = db()
@@ -1921,6 +1940,8 @@ async def api_ws(websocket: WebSocket, room: str):
                     last = min(ids[0], top)
                     if last and mark_read(uid, room, last):
                         await hub.send(room, {"type": "read", "user": user, "id": last})
+            elif kind == "hidden":
+                await hub.set_hidden(websocket, user, bool(data.get("on")))
             elif kind == "typing":
                 await hub.send(room, {"type": "typing", "user": user}, skip=websocket)
             elif kind == "voice":
@@ -1936,6 +1957,9 @@ def server_json(conn, srv) -> dict:
     channels = conn.execute(
         "SELECT slug, name, kind, room FROM channels WHERE server_id = ? ORDER BY position, id", (srv["id"],)
     ).fetchall()
+    # Voice is one room per server (voice_room): only the first voice channel is real, more would all show the same call.
+    first_voice = next((c["room"] for c in channels if c["kind"] == "voice"), None)
+    channels = [c for c in channels if c["kind"] != "voice" or c["room"] == first_voice]
     return {
         "id": srv["id"],
         "short": srv["short"],
@@ -2436,6 +2460,31 @@ async def chat_search(room: str, q: str, request: Request, before: int | None = 
     out = [msg_json(conn, r) for r in rows]
     conn.close()
     return {"messages": out, "next": rows[-1]["id"] if len(rows) == limit else None}
+
+
+@app.post("/api/chat/{room}/read")
+async def chat_read(room: str, request: Request):
+    """Read mark over HTTP: the client falls back to it when the socket did not confirm the mark (a phone back from
+    the background can hold a socket that looks open but no longer delivers)."""
+    row, err = chat_access(request, room)
+    if err:
+        return err
+    try:
+        data = await request.json()
+    except Exception:
+        data = None
+    ids = as_ids(data.get("id")) if isinstance(data, dict) else []
+    if not ids:
+        return JSONResponse({"error": "Нет сообщения"}, status_code=400)
+    conn = chat_conn()
+    top = conn.execute("SELECT MAX(id) FROM messages WHERE room = ?", (room,)).fetchone()[0] or 0
+    conn.close()
+    last = min(ids[0], top)
+    changed = bool(last) and mark_read(row["id"], room, last)
+    if changed:
+        await hub.send(room, {"type": "read", "user": row["username"], "id": last})
+    # changed tells the client its socket lost the mark, so it should reconnect
+    return {"ok": True, "changed": changed}
 
 
 @app.get("/api/chat/{room}/reads/{msg_id}")
