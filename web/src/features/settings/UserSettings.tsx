@@ -21,46 +21,6 @@ const THEME_PREVIEW: Record<ThemePref, string> = {
   system: 'linear-gradient(135deg,#040a14,#0e2238 49.5%,#eef4fb 50.5%,#9fc2ff)',
 };
 
-/**
- * WebKit: a circle of the new background grows from the tapped option, the theme changes under it and the layer then
- * fades away. One layer animates only clip-path and opacity: colour transitions on every glass panel made the phone
- * re-blur them all each frame and the switch stuttered.
- */
-function revealTheme(app: AppState, pref: ThemePref, t: 'light' | 'dark', from: HTMLElement) {
-  const root = document.documentElement;
-  const b = from.getBoundingClientRect();
-  const x = b.left + b.width / 2;
-  const y = b.top + b.height / 2;
-  const r = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
-  const veil = document.createElement('div');
-  veil.style.cssText = `position:fixed;inset:0;z-index:2147483647;pointer-events:none;background:${t === 'light' ? '#e9f0f8' : '#06101d'}`;
-  document.body.appendChild(veil);
-  // Marks a theme animation in progress, so the surface colour transitions stay off (animateSurfaces).
-  root.dataset.vt = t;
-  const apply = () => {
-    flushSync(() => app.setTheme(pref));
-    root.dataset.theme = t;
-  };
-  const done = () => {
-    veil.remove();
-    delete root.dataset.vt;
-  };
-  const grow = veil.animate({ clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${r}px at ${x}px ${y}px)`] }, {
-    duration: 420,
-    easing: 'cubic-bezier(.35, 0, .2, 1)',
-    fill: 'forwards',
-  });
-  grow.finished.then(() => {
-    apply();
-    // Two frames for the new theme to paint before it is uncovered.
-    requestAnimationFrame(() =>
-      requestAnimationFrame(() => {
-        veil.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 360, easing: 'ease-out', fill: 'forwards' }).finished.then(done, done);
-      }),
-    );
-  }, () => (apply(), done()));
-}
-
 function switchTheme(app: AppState, pref: ThemePref, from: HTMLElement) {
   if (app.themePref === pref) return;
   const t = pref === 'system' ? systemTheme() : pref;
@@ -70,12 +30,9 @@ function switchTheme(app: AppState, pref: ThemePref, from: HTMLElement) {
     return;
   }
   const doc = document as Document & { startViewTransition?: (cb: () => void) => { ready: Promise<void> } };
-  // Firefox and WebKit (Safari, and every browser on iPhone) render the reveal snapshots without backdrop-filter
-  // tint, so the glass turns grey during the animation and colours in at the end.
-  const ua = navigator.userAgent;
-  const webkit = /iP(hone|ad|od)/.test(ua) || (/AppleWebKit/.test(ua) && !/Chrome|Chromium|Edg/.test(ua));
-  if (webkit) return revealTheme(app, pref, t, from);
-  if (!doc.startViewTransition || /firefox/i.test(ua)) {
+  // Firefox renders the reveal snapshots without backdrop-filter saturation, so everything dims during the animation
+  // and flashes at the end. There the theme changes through plain color transitions.
+  if (!doc.startViewTransition || /firefox/i.test(navigator.userAgent)) {
     app.setTheme(pref);
     return;
   }

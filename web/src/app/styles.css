@@ -2390,7 +2390,8 @@ input, textarea { font: inherit; color: inherit; }
 @keyframes m-under-in { from { opacity: 0; } to { opacity: 1; } }
 .m-under { transition: opacity .2s ease; }
 .m-under.dim { opacity: 0; pointer-events: none; transition-duration: .32s; }
-.m-under.back { animation: m-under-in .22s ease; }
+/* The lower screen returns on the curve of the screen leaving over it (.m-slide.out), or it shows through that screen early. */
+.m-under.back { animation: m-under-in .22s cubic-bezier(.4, 0, .7, .2); }
 .m-full-voice > .m-voice { transition: opacity .2s ease; }
 
 .m-members .m-head .title-pill { background: none !important; box-shadow: none !important; border-color: transparent !important; backdrop-filter: none !important; }
@@ -2502,8 +2503,8 @@ input, textarea { font: inherit; color: inherit; }
 .m-stage:not([data-swipe]):not([data-swiped]) > .m-settings:has(~ .m-settings.m-slide.out) > :not(.m-head) > * {
   animation: glass-back-in .22s cubic-bezier(.4, 0, .7, .2) both;
 }
-.m-stage:not([data-swipe]):not([data-swiped]) > .m-settings.m-slide.out::before { backdrop-filter: blur(12px); }
-[data-theme='light'] .m-stage:not([data-swipe]):not([data-swiped]) > .m-settings.m-slide.out::before { backdrop-filter: blur(8px); }
+.m-stage:not([data-swipe]):not([data-swiped]) > :is(.m-settings.m-slide, .m-full.m-members).out::before { backdrop-filter: blur(12px); }
+[data-theme='light'] .m-stage:not([data-swipe]):not([data-swiped]) > :is(.m-settings.m-slide, .m-full.m-members).out::before { backdrop-filter: blur(8px); }
 
 .m-full-voice.with-chat .m-voice { opacity: 0; transition: opacity .18s ease; }
 
@@ -3141,7 +3142,7 @@ html.boot *:not(.backdrop *), html.boot *:not(.backdrop *)::before, html.boot *:
 .m-under:not(.tabbar), .m-under.dim:not(.tabbar), .m-under.back:not(.tabbar) { opacity: 1; animation: none; transition: none; }
 .m-under:not(.tabbar) > :not(.m-servers-row), .m-under .m-servers-row > :not(.srv-stack) , .m-under .m-servers-row > .srv-stack > .sidebar{ transition: opacity .2s ease; }
 .m-under.dim:not(.tabbar) > :not(.m-servers-row), .m-under.dim .m-servers-row > :not(.srv-stack) , .m-under.dim .m-servers-row > .srv-stack > .sidebar{ opacity: 0; transition-duration: .32s; }
-.m-under.back:not(.tabbar) > :not(.m-servers-row), .m-under.back .m-servers-row > :not(.srv-stack) , .m-under.back .m-servers-row > .srv-stack > .sidebar{ animation: m-under-in .22s ease; }
+.m-under.back:not(.tabbar) > :not(.m-servers-row), .m-under.back .m-servers-row > :not(.srv-stack) , .m-under.back .m-servers-row > .srv-stack > .sidebar{ animation: m-under-in .22s cubic-bezier(.4, 0, .7, .2); }
 [data-theme='light'] .composer .field, [data-theme='light'] .composer .round {
   backdrop-filter: blur(16px) saturate(1.6) !important;
 }
@@ -3399,7 +3400,7 @@ html.glass-anim :is(.rail, .sidebar, .members, .main, .side-chat, .settings-nav,
 @keyframes m-under-back { from { transform: translateX(-22%); } to { transform: none; } }
 .m-under:not(.tabbar) { transition: transform .22s cubic-bezier(.2, .8, .2, 1); }
 .m-under.dim:not(.tabbar) { transform: translateX(-22%); transition: transform .34s cubic-bezier(.2, .8, .2, 1); }
-.m-under.back:not(.tabbar) { animation: m-under-back .22s cubic-bezier(.2, .8, .2, 1); }
+.m-under.back:not(.tabbar) { animation: m-under-back .22s cubic-bezier(.4, 0, .7, .2); }
 
 .m-slide:not(.m-quiet) .chat > .composer, .m-slide.out .chat > .composer { animation: none; }
 .m-slide:not(.m-quiet) .chat > .composer > *, .m-slide.out .chat > .composer > * { animation: none !important; }
