@@ -240,6 +240,7 @@ export function ChatInfo({
   chat,
   channel,
   full,
+  screen,
   startSearch,
   onClose,
 }: {
@@ -248,6 +249,8 @@ export function ChatInfo({
   channel: Channel;
   /** Phone: a full screen page instead of a dropdown under the title. */
   full?: boolean;
+  /** Phone: a screen of its own on the stage that slides in and closes with the back swipe; the classes of its slide state. */
+  screen?: string;
   startSearch?: boolean;
   onClose: () => void;
 }) {
@@ -301,20 +304,20 @@ export function ChatInfo({
 
   useLayoutEffect(() => {
     const el = root.current;
-    if (!full || !el) return;
+    if (!full || !el || screen != null) return;
     void morph(el, true);
     const head = el.closest('.m-full')?.querySelector(':scope > .m-head');
     // unmounted without the closing animation (room change, navigation): give the header back
     return () => head?.querySelectorAll<HTMLElement>(HEAD_PARTS).forEach((x) => (x.style.visibility = ''));
-  }, [full]);
+  }, [full, screen != null]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const close = useCallback(() => {
     const el = root.current;
-    if (!full || !el) return onClose();
+    if (!full || !el || screen != null) return onClose();
     if (closing.current) return;
     closing.current = true;
     void morph(el, false).then(onClose);
-  }, [full, onClose]);
+  }, [full, screen, onClose]);
 
   useEffect(() => {
     const id = window.setTimeout(() => setQuery(q.trim().toLowerCase()), 300);
@@ -381,9 +384,16 @@ export function ChatInfo({
   const visual = tab === 'photo' || tab === 'video' || tab === 'gif';
 
   const panel = (
-    <div ref={root} className={'ci' + (full ? ' ci-full' : ' ci-pop glass')} role="dialog" aria-label={t('Информация о чате')}>
+    <div
+      ref={root}
+      className={'ci' + (full ? ' ci-full' : ' ci-pop glass') + (screen != null ? ' m-full m-full-info' + screen : '')}
+      // The back swipe closes the screen only where it does not switch tabs: on the first tab and in search.
+      data-edge={tab === TABS[0].id || search ? '' : undefined}
+      role="dialog"
+      aria-label={t('Информация о чате')}
+    >
       {full ? (
-        <div className="m-head ci-head">
+        <div className={'m-head ci-head' + (screen != null ? ' pop' : '')}>
           <button type="button" className="pill-btn glass ci-back" title={t('Назад')} aria-label={t('Назад')} onClick={(e) => (springPress(e.currentTarget), close())}>
             <Icon name="back" />
           </button>

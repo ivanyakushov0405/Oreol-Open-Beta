@@ -68,6 +68,11 @@ export function MemberCard({
   };
   const [drag, setDrag] = useState(0);
   const dragFrom = useRef<number | null>(null);
+  /** Travel between the collapsed and the expanded sheet, px; measured when a drag starts. */
+  const range = useRef(1);
+  const dragAt = useRef(0);
+  // With the full profile the sheet morphs between two layers as it opens; --sheet-p is how far it is open.
+  const staged = !!sheet && !!full && h0 !== null;
   const noteKey = `oreol.note.${name}`;
   const [note, setNote] = useState(() => {
     try {
@@ -87,21 +92,28 @@ export function MemberCard({
   const grab = {
     onPointerDown: (e: React.PointerEvent) => {
       dragFrom.current = e.clientY;
+      dragAt.current = e.timeStamp;
+      if (ref.current && h0 !== null) range.current = Math.max(1, ref.current.offsetHeight - h0);
       (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     },
     onPointerMove: (e: React.PointerEvent) => {
-      if (dragFrom.current !== null) setDrag(e.clientY - dragFrom.current);
+      if (dragFrom.current === null) return;
+      const dy = e.clientY - dragFrom.current;
+      // Opening by hand: the full profile is mounted at once so it can fade in under the finger.
+      if (dy < -4 && staged && !expanded && !extras) setExtras(true);
+      setDrag(dy);
     },
-    onPointerUp: () => {
+    onPointerUp: (e: React.PointerEvent) => {
       const dy = drag;
+      const v = dy / Math.max(1, e.timeStamp - dragAt.current);
       dragFrom.current = null;
       setDrag(0);
+      const far = range.current * 0.25;
       if (Math.abs(dy) < 6) setExpanded((x) => !x);
-      else if (dy < -40) setExpanded(true);
-      else if (dy > 60) {
-        if (expanded) setExpanded(false);
-        else onClose();
-      }
+      else if (!expanded && (dy < -far || (dy < -30 && v < -0.5))) setExpanded(true);
+      else if (expanded && (dy > far || (dy > 30 && v > 0.5))) setExpanded(false);
+      else if (!expanded && dy > 60) onClose();
+      // Released short of a threshold the sheet slides back, and onTransitionEnd drops a mounted full profile.
     },
     onPointerCancel: () => {
       dragFrom.current = null;
@@ -131,7 +143,7 @@ export function MemberCard({
         }}
       />
       <div
-        className={'member-card' + (sheet ? ' sheet' : '') + (sheet && expanded ? ' expanded' : '') + (drag ? ' dragging' : '')}
+        className={'member-card' + (sheet ? ' sheet' : '') + (staged ? ' staged' : '') + (staged && expanded ? ' open' : '') + (sheet && expanded ? ' expanded' : '') + (drag ? ' dragging' : '')}
         ref={ref}
         style={
           sheet
@@ -142,7 +154,10 @@ export function MemberCard({
                 : {
                     height: 'calc(100% - env(safe-area-inset-top) - 54px)',
                     maxHeight: 'none',
-                    '--sheet-y': expanded ? `${Math.max(0, drag)}px` : `calc(100% - ${h0}px + ${Math.max(0, drag)}px)`,
+                    '--sheet-y': expanded ? `${Math.max(0, drag)}px` : `max(0px, calc(100% - ${h0}px + ${drag}px))`,
+                    '--sheet-p': String(
+                      expanded ? Math.max(0, 1 - Math.max(0, drag) / range.current) : Math.min(1, Math.max(0, -drag / range.current)),
+                    ),
                   }) as React.CSSProperties)
             : pos
         }
@@ -158,10 +173,103 @@ export function MemberCard({
           </div>
         )}
         <Banner name={name} {...(sheet ? grab : {})} />
-        {sheet && extras && full ? (
+        {staged ? (
+          <div className="mc-stack">
+          <div className={'body' + (back && !staged ? ' from-full' : '')}>
+            <span className="mc-avatar">
+              <Avatar name={name} size={72} status={status} />
+            </span>
+            <div className="mc-identity">
+              <h3 style={{ color: nameColor(name) }}>{display}</h3>
+              <span className="mc-handle">{handleOf(name)}</span>
+              <span className="mc-activity">
+                <i className={`status-${status}`} />
+                {activity}
+              </span>
+            </div>
+            {sheet && extras && !full && !me && (
+              <div className="mc-actions">
+                <button type="button" className="mc-btn" onClick={onCall}>
+                  <Icon name="voice" size={16} />
+                  {t('Позвонить')}
+                </button>
+              </div>
+            )}
+            <div className="mc-info">
+              {profile?.bio && (
+                <section>
+                  <div className="mc-over">{t('О себе')}</div>
+                  <p className="mc-bio">{profile.bio}</p>
+                </section>
+              )}
+              <section>
+                <div className="mc-over">{t('Ник на сервере')}</div>
+                <div className="mc-value">
+                  {display} · {serverName}
+                </div>
+              </section>
+              <section>
+                <div className="mc-over">{t('Роли')}</div>
+                <div className="mc-roles">
+                  <span className="mc-role">
+                    <i style={{ background: 'var(--role-everyone, #5c7590)' }} />
+                    @everyone
+                  </span>
+                  {me && <span className="mc-role">{t('Это вы')}</span>}
+                </div>
+              </section>
+              <section>
+                <div className="mc-over">{t('На сервере с')}</div>
+                <div className="mc-value muted">{sinceFmt.format(since).replace(t(' г.'), '')}</div>
+              </section>
+            </div>
+            {sheet && extras && !full && (
+              <>
+                <div className="mc-info">
+                  <section>
+                    <div className="mc-over">{t('Общие серверы: 1')}</div>
+                    <div className="mc-server">
+                      <span className="mc-server-ico" style={{ background: serverIcon?.gradient }}>
+                        {serverIcon?.short}
+                      </span>
+                      <span>
+                        <b>{serverName}</b>
+                        <small>
+                          {display} · @everyone
+                        </small>
+                      </span>
+                    </div>
+                  </section>
+                </div>
+                <div className="mc-info">
+                  <section>
+                    <div className="mc-over">{t('Заметка')}</div>
+                    <textarea
+                      className="mc-note"
+                      rows={2}
+                      value={note}
+                      placeholder={t('Нажмите, чтобы добавить заметку. Её видите только вы')}
+                      onChange={(e) => saveNote(e.target.value)}
+                    />
+                  </section>
+                </div>
+              </>
+            )}
+            {(me || !sheet) && (
+              <div className={'mc-actions' + (sheet && extras && !full && !me ? ' hidden' : '')}>
+                <button type="button" className={'mc-btn' + (me ? ' primary' : '')} onClick={onProfile}>
+                  {me && <Icon name="settings" size={16} />}
+                  {me ? t('Редактировать профиль') : t('Профиль')}
+                </button>
+              </div>
+            )}
+          </div>
+            {extras && <div className="mc-full">{full}</div>}
+          </div>
+        ) : sheet && extras && full ? (
           <div className="mc-full">{full}</div>
         ) : (
-        <div className={'body' + (back ? ' from-full' : '')}>
+        <div className={'body' + (back && !staged ? ' from-full' : '')}>
           <span className="mc-avatar">
             <Avatar name={name} size={72} status={status} />
           </span>
@@ -173,7 +281,7 @@ export function MemberCard({
               {activity}
             </span>
           </div>
-          {sheet && extras && !me && (
+          {sheet && extras && !full && !me && (
             <div className="mc-actions">
               <button type="button" className="mc-btn" onClick={onCall}>
                 <Icon name="voice" size={16} />
@@ -191,7 +299,7 @@ export function MemberCard({
             <section>
               <div className="mc-over">{t('Ник на сервере')}</div>
               <div className="mc-value">
-                {name} · {serverName}
+                {display} · {serverName}
               </div>
             </section>
             <section>
@@ -209,7 +317,7 @@ export function MemberCard({
               <div className="mc-value muted">{sinceFmt.format(since).replace(t(' г.'), '')}</div>
             </section>
           </div>
-          {sheet && extras && (
+          {sheet && extras && !full && (
             <>
               <div className="mc-info">
                 <section>
@@ -221,7 +329,7 @@ export function MemberCard({
                     <span>
                       <b>{serverName}</b>
                       <small>
-                        {name} · @everyone
+                        {display} · @everyone
                       </small>
                     </span>
                   </div>
@@ -242,7 +350,7 @@ export function MemberCard({
             </>
           )}
           {(me || !sheet) && (
-            <div className={'mc-actions' + (sheet && extras && !me ? ' hidden' : '')}>
+            <div className={'mc-actions' + (sheet && extras && !full && !me ? ' hidden' : '')}>
               <button type="button" className={'mc-btn' + (me ? ' primary' : '')} onClick={onProfile}>
                 {me && <Icon name="settings" size={16} />}
                 {me ? t('Редактировать профиль') : t('Профиль')}

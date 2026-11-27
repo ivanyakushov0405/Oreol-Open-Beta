@@ -28,9 +28,10 @@ const fade = (list: Iterable<HTMLElement>, v: number | null) => {
   }
 };
 /**
- * What lies under the upper screen is cut at its left edge (edge, viewport px), so nothing shows through the transparent
- * screen. Settings cards are glass and are cut instead of faded, since Safari draws glass with opacity below 1 untinted.
- * dx is how far an element will still move before tr ends; edge null releases them. Rects are read before any write.
+ * Settings cards under a settings screen are glass: they are shown or cut at an edge (viewport px) instead of fading,
+ * since Safari draws glass with opacity below 1 untinted. Only the cards themselves are cut: a cut on
+ * a box around glass would grey that glass too. dx is how far an element will still move before tr ends; edge null
+ * releases them. Rects are read before any write.
  */
 const wipe = (list: Iterable<HTMLElement>, edge: number | null, tr?: string, dx = 0) => {
   const els = [...list];
@@ -51,7 +52,7 @@ const shift = (list: Iterable<HTMLElement>, v: string | null, tr = 'none') => {
     else (n.style.setProperty('transform', v, 'important'), n.style.setProperty('transition', tr, 'important'));
   }
 };
-const SKIP = 'input, textarea, select, [contenteditable], .ci-full, .tabbar, .m-call, .m-call-pill, .member-card, .popover-backdrop, .msg-menu, .m-menu, .dialog';
+const SKIP = 'input, textarea, select, [contenteditable], .ci-full:not([data-edge]), .tabbar, .m-call, .m-call-pill, .member-card, .popover-backdrop, .msg-menu, .m-menu, .dialog';
 
 export function useStageSwipes(stage: RefObject<HTMLElement>, opts: Opts) {
   const o = useRef(opts);
@@ -62,6 +63,26 @@ export function useStageSwipes(stage: RefObject<HTMLElement>, opts: Opts) {
     type S = { id: number; x: number; y: number; t: number; kind: 'back' | 'tab'; node: HTMLElement; active: boolean; dx: number };
     let s: S | null = null;
     let swallowClick = false;
+    /** Frost over the lower screen during a back swipe: right under the upper one, at its level, clearing as it moves. */
+    let veil: HTMLElement | null = null;
+    const veilOn = (node: HTMLElement) => {
+      veil?.remove();
+      veil = document.createElement('div');
+      veil.className = 'm-swipe-veil';
+      veil.style.zIndex = getComputedStyle(node).zIndex;
+      node.before(veil);
+    };
+    const veilSet = (p: number, w: number, tr?: string) => {
+      if (!veil) return;
+      if (tr) veil.style.transition = tr;
+      veil.style.opacity = String(1 - p);
+      // Only the strip the upper screen has left: under it the screen frosts by itself.
+      veil.style.clipPath = `inset(0 ${(w * (1 - p)).toFixed(1)}px 0 0)`;
+    };
+    const veilOff = () => {
+      veil?.remove();
+      veil = null;
+    };
 
     /**
      * What appears under the leaving screen. With stacked screens (Settings > Blocked) only the previous screen shows;
@@ -74,12 +95,24 @@ export function useStageSwipes(stage: RefObject<HTMLElement>, opts: Opts) {
       if (rest.length) return [];
       return [...el.querySelectorAll<HTMLElement>(UNDER)];
     };
-    /** Cards of the settings screen right under the upper one (see wipe). */
-    const cardsUnder = (): HTMLElement[] => {
+    /** The screen right under the upper one, when screens are stacked. */
+    const slideUnder = () => {
       const top = topSlide();
       const rest = [...el.querySelectorAll<HTMLElement>(':scope > .m-slide:not(.out)')].filter((n) => n !== top);
-      const under = rest[rest.length - 1];
-      return under ? [...under.querySelectorAll<HTMLElement>(':scope > :not(.m-head) > *')] : [];
+      return rest[rest.length - 1] ?? null;
+    };
+    /** Cards of the settings screen right under the upper one (see wipe). */
+    const cardsUnder = (): HTMLElement[] => {
+      const under = slideUnder();
+      return under?.matches('.m-settings') ? [...under.querySelectorAll<HTMLElement>(':scope > :not(.m-head) > *')] : [];
+    };
+    /**
+     * Content of another screen right under the upper one (the chat under its info screen). It stays visible under a
+     * covering screen, so it is only faded, never cut: a cut on a box around glass would grey that glass.
+     */
+    const bodyUnder = (): HTMLElement[] => {
+      const under = slideUnder();
+      return under && !under.matches('.m-settings') ? [...under.querySelectorAll<HTMLElement>(':scope > :not(.m-head)')] : [];
     };
     /**
      * The lower screen that follows the finger, only when the tab screen sits right under the upper screen. With stacked
@@ -98,9 +131,15 @@ export function useStageSwipes(stage: RefObject<HTMLElement>, opts: Opts) {
       for (const u of el.querySelectorAll<HTMLElement>(UNDER)) u.style.removeProperty('transition');
       for (const n of el.querySelectorAll<HTMLElement>(':scope > .m-under')) fade(n.querySelectorAll<HTMLElement>(PANELS), null);
       wipe(el.querySelectorAll<HTMLElement>(':scope > .m-settings > :not(.m-head) > *'), null);
-      wipe(el.querySelectorAll<HTMLElement>(UNDER), null);
+      fade(el.querySelectorAll<HTMLElement>(':scope > .m-settings > :not(.m-head) > *'), null);
+      for (const b of el.querySelectorAll<HTMLElement>(':scope > .m-slide:not(.m-settings) > :not(.m-head)')) {
+        b.style.removeProperty('opacity');
+        b.style.removeProperty('transition');
+      }
+      for (const u of el.querySelectorAll<HTMLElement>(UNDER)) u.style.removeProperty('transition');
       delete el.dataset.swipe;
       delete el.dataset.swiped;
+      veilOff();
     };
     const topSlide = () => {
       // Voice opened from the widget over other screens comes earlier in the markup but is on top.
@@ -158,6 +197,7 @@ export function useStageSwipes(stage: RefObject<HTMLElement>, opts: Opts) {
           o.current.onPeek(true);
           el.dataset.swipe = 'back';
           s.node.dataset.swiping = '';
+          veilOn(s.node);
         } else {
           el.dataset.swipe = 'tab';
         }
@@ -173,11 +213,16 @@ export function useStageSwipes(stage: RefObject<HTMLElement>, opts: Opts) {
         const p = Math.min(1, x / w);
         const under = underEls();
         fade(under, p);
+        veilSet(p, w);
         // The lower screen follows the finger (as in iOS) instead of sitting shifted.
         shift(boxesUnder(), `translateX(${(-22 * (1 - p)).toFixed(2)}%)`);
-        const edge = el.getBoundingClientRect().left + x;
-        wipe(under, edge);
-        wipe(cardsUnder(), edge);
+        // The upper screen frosts what lies under it, so the cards show whole and blurred, as under the chat.
+        const cards = cardsUnder();
+        wipe(cards, Infinity);
+        // Faded like any lower screen, or their sharp text shows through the clearing frost. Under the frost Safari's
+        // grey glass at opacity below 1 does not show.
+        fade(cards, p);
+        fade(bodyUnder(), p);
       } else {
         const k = o.current.canTab(x < 0 ? 1 : -1) ? 0.12 : 0.05;
         s.node.style.transform = `translateX(${x * k}px)`;
@@ -217,9 +262,14 @@ export function useStageSwipes(stage: RefObject<HTMLElement>, opts: Opts) {
           const cards = cardsUnder();
           const boxes = boxesUnder();
           el.dataset.swiped = '';
-          wipe(under, Infinity, 'opacity .22s ease, clip-path .22s cubic-bezier(.4, 0, .7, .2)');
+          for (const u of under) u.style.setProperty('transition', 'opacity .22s ease', 'important');
           fade(under, 1);
-          wipe(cards, Infinity, 'clip-path .22s cubic-bezier(.4, 0, .7, .2)');
+          veilSet(1, w, 'opacity .22s ease, clip-path .22s cubic-bezier(.4, 0, .7, .2)');
+          const body = bodyUnder();
+          wipe(cards, Infinity, 'clip-path .22s cubic-bezier(.4, 0, .7, .2), opacity .22s ease');
+          fade(cards, 1);
+          for (const b of body) b.style.setProperty('transition', 'opacity .22s ease', 'important');
+          fade(body, 1);
           shift(boxes, 'none', 'transform .22s cubic-bezier(.4, 0, .7, .2)');
           n.querySelector<HTMLButtonElement>(':scope > .m-head .pill-btn')?.click();
           swallow();
@@ -227,9 +277,13 @@ export function useStageSwipes(stage: RefObject<HTMLElement>, opts: Opts) {
             o.current.onPeek(false);
             window.setTimeout(() => {
               fade(under, null);
-              wipe(under, null);
+              for (const u of under) u.style.removeProperty('transition');
               wipe(cards, null);
+              fade(cards, null);
+              fade(body, null);
+              for (const b of body) b.style.removeProperty('transition');
               shift(boxes, null);
+              veilOff();
               delete el.dataset.swiped;
             }, 80);
           }, 400);
@@ -246,13 +300,23 @@ export function useStageSwipes(stage: RefObject<HTMLElement>, opts: Opts) {
           const cards = cardsUnder();
           const boxes = boxesUnder();
           fade(under, 0);
-          wipe(cards, el.getBoundingClientRect().left, 'clip-path .26s cubic-bezier(.2, .8, .2, 1)');
+          veilSet(0, w, 'opacity .26s ease, clip-path .26s cubic-bezier(.2, .8, .2, 1)');
+          // The cards are covered and blurred by now: a short fade does not show Safari's grey glass.
+          for (const c of cards) c.style.setProperty('transition', 'opacity .26s ease', 'important');
+          fade(cards, 0);
+          // The content under a covering screen stays visible, so it returns to full instead of fading out.
+          const body = bodyUnder();
+          for (const b of body) b.style.setProperty('transition', 'opacity .26s ease', 'important');
+          fade(body, 1);
           shift(boxes, 'translateX(-22%)', 'transform .26s cubic-bezier(.2, .8, .2, 1)');
           window.setTimeout(() => {
             fade(under, null);
-            wipe(under, null);
             wipe(cards, null);
+            fade(cards, null);
+            fade(body, null);
+            for (const b of body) b.style.removeProperty('transition');
             shift(boxes, null);
+            veilOff();
             n.style.transition = '';
             n.style.transform = '';
             if (head) head.style.transition = head.style.transform = '';

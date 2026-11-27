@@ -453,7 +453,8 @@ export function Mobile({ app }: { app: AppState }) {
     const sub = r.name === 'server' ? r.sub : undefined;
     const sec = r.name === 'server' || r.name === 'settings' ? r.section : undefined;
     const want = {
-      tab: (r.name === 'chats' ? 'chats' : r.name === 'you' ? 'you' : r.name === 'settings' ? tab : 'servers') as Tab,
+      // Settings open from the You tab, so a reload on settings must keep it under them.
+      tab: (r.name === 'chats' ? 'chats' : r.name === 'you' ? 'you' : r.name === 'settings' ? (firstApply.current ? 'you' : tab) : 'servers') as Tab,
       open: ch,
       voiceChat: !!ch && ch.kind === 'voice' && sub === 'chat',
       members: !!srv && sub === 'members',
@@ -706,9 +707,6 @@ export function Mobile({ app }: { app: AppState }) {
             }
           />
           <ChatBody app={app} chat={chat} channel={chatCh} compact />
-          {chatInfo && chatCh === open && (
-            <ChatInfo key={chatCh.room} app={app} chat={chat} channel={chatCh} full startSearch={chatInfo.search} onClose={() => setChatInfo(null)} />
-          )}
           {chatMenu && (
             <>
               <div className="popover-backdrop m-menu-backdrop" onClick={() => setChatMenu(false)} />
@@ -742,6 +740,19 @@ export function Mobile({ app }: { app: AppState }) {
           )}
           </Hold>
         </div>
+      )}
+
+      {chatCh && chatInfo && chatCh === open && (
+        <ChatInfo
+          key={chatCh.room}
+          app={app}
+          chat={chat}
+          channel={chatCh}
+          full
+          screen={slide('info')}
+          startSearch={chatInfo.search}
+          onClose={() => close('info', () => setChatInfo(null))}
+        />
       )}
 
       {open && open.kind === 'voice' && (

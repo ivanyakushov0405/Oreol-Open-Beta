@@ -340,6 +340,18 @@ function MessageListImpl({
    * and the previous day slides back in above it. Dividers at or above the spot are hidden: the floating one is them.
    */
   const [dayFloat, setDayFloat] = useState<{ label: string; top: number; shift: number } | null>(null);
+  // The floating date shows while the list moves and steps away once it has been still for a moment.
+  const [dayIdle, setDayIdle] = useState(false);
+  const dayTimer = useRef(0);
+  const dayAwake = () => {
+    setDayIdle(false);
+    window.clearTimeout(dayTimer.current);
+    dayTimer.current = window.setTimeout(() => setDayIdle(true), 1400);
+  };
+  useEffect(() => () => window.clearTimeout(dayTimer.current), []);
+  useEffect(() => {
+    if (dayFloat) dayAwake();
+  }, [!!dayFloat]); // eslint-disable-line react-hooks/exhaustive-deps
   const floatDay = (el: HTMLElement, box: DOMRect, top: number) => {
     const spot = top + 6;
     const GAP = 32;
@@ -839,6 +851,7 @@ function MessageListImpl({
       onTouchEnd={(e) => void (motion.current.touch = e.touches.length > 0)}
       onTouchCancel={() => void (motion.current.touch = false)}
       onScroll={(e) => {
+        dayAwake();
         const el = e.currentTarget;
         const mo = motion.current;
         const now = performance.now();
@@ -893,7 +906,7 @@ function MessageListImpl({
       {dock &&
         dayFloat &&
         createPortal(
-          <div className="date-pill day-float" style={{ top: dayFloat.top, transform: `translate(-50%, ${dayFloat.shift}px)` }} aria-hidden>
+          <div className={'date-pill day-float' + (dayIdle ? ' idle' : '')} style={{ top: dayFloat.top, transform: `translateY(${dayFloat.shift}px)` }} aria-hidden>
             {dayFloat.label}
           </div>,
           dock,

@@ -30,9 +30,12 @@ function switchTheme(app: AppState, pref: ThemePref, from: HTMLElement) {
     return;
   }
   const doc = document as Document & { startViewTransition?: (cb: () => void) => { ready: Promise<void> } };
-  // Firefox renders the reveal snapshots without backdrop-filter saturation, so everything dims during the animation
-  // and flashes at the end. There the theme changes through plain color transitions.
-  if (!doc.startViewTransition || /firefox/i.test(navigator.userAgent)) {
+  // Firefox and WebKit (Safari, and every browser on iPhone) render the reveal snapshots without backdrop-filter
+  // tint, so the glass turns grey during the animation and colours in at the end. There the theme changes through
+  // plain color transitions.
+  const ua = navigator.userAgent;
+  const webkit = /iP(hone|ad|od)/.test(ua) || (/AppleWebKit/.test(ua) && !/Chrome|Chromium|Edg/.test(ua));
+  if (!doc.startViewTransition || /firefox/i.test(ua) || webkit) {
     app.setTheme(pref);
     return;
   }

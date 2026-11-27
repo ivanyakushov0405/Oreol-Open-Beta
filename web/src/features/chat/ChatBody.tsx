@@ -136,13 +136,21 @@ function MessageMenu({
     const pad = 8;
     const gap = 6;
     if (row) {
-      // Measure the row unpressed: the clone starts from the same .97 squeeze, so the pressed rect would shift it.
-      if (focus) {
-        row.style.transition = 'none';
-        row.style.transform = 'none';
-      }
-      const r = row.getBoundingClientRect();
-      const bubble = (row.querySelector('.bubble, .sys-note') as HTMLElement | null)?.getBoundingClientRect() ?? r;
+      // The pressed row is squeezed around its centre, possibly still mid-way. Undo that squeeze in the measurements and
+      // start the clone from the same scale, so the copy takes over without a jump.
+      const tf = getComputedStyle(row).transform;
+      const k = focus && tf && tf !== 'none' ? new DOMMatrixReadOnly(tf).a || 1 : 1;
+      const vr = row.getBoundingClientRect();
+      const cx = vr.left + vr.width / 2;
+      const cy = vr.top + vr.height / 2;
+      const unsqueeze = (b: DOMRect) => {
+        const left = cx + (b.left - cx) / k;
+        const top = cy + (b.top - cy) / k;
+        return { left, top, right: left + b.width / k, bottom: top + b.height / k, width: b.width / k, height: b.height / k };
+      };
+      const r = unsqueeze(vr);
+      const bubbleEl = row.querySelector('.bubble, .sys-note') as HTMLElement | null;
+      const bubble = bubbleEl ? unsqueeze(bubbleEl.getBoundingClientRect()) : r;
       const box = host.current;
       if (focus && box) {
         box.replaceChildren();
@@ -167,13 +175,20 @@ function MessageMenu({
           const val = cs.getPropertyValue(v);
           if (val) scroll.style.setProperty(v, val);
         }
+        scroll.style.setProperty('--lift-from', String(k));
         scroll.appendChild(clone);
         box.appendChild(scroll);
         box.style.left = `${r.left}px`;
         box.style.width = `${r.width}px`;
         box.style.top = `${r.top}px`;
-        // Hide the original under the blur so the clone is the only message on screen.
-        row.style.visibility = 'hidden';
+        // Hide the original under the blur so the clone is the only message on screen, but only once the clone's photos
+        // are decoded: until then the original, exactly underneath, fills in for them instead of a blank frame.
+        const imgs = [...clone.querySelectorAll('img')];
+        const hide = () => {
+          if (clone.isConnected) row.style.visibility = 'hidden';
+        };
+        if (!imgs.length) hide();
+        else void Promise.all(imgs.map((i) => i.decode().catch(() => undefined))).then(hide);
       }
       const mine = row.classList.contains('mine');
       const want = focus ? (mine ? bubble.right - w : bubble.left) : Math.min(Math.max(x - 24, bubble.left), Math.max(bubble.left, bubble.right - w));
@@ -208,7 +223,7 @@ function MessageMenu({
     () =>
       focus && row
         ? () => {
-            for (const k of ['visibility', 'transform', 'transition']) row.style.removeProperty(k);
+            row.style.removeProperty('visibility');
           }
         : undefined,
     [row, focus],
