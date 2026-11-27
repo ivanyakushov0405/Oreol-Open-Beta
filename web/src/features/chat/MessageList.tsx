@@ -43,6 +43,8 @@ export interface MessageActions {
   onSeen?: (id: number) => void;
   readUpTo?: number;
   newAfter?: number;
+  /** The messages are fresh from the server (not a cache or the previous room): only then the first screen is placed. */
+  ready?: boolean;
   more?: boolean;
   loadingOlder?: boolean;
   onOlder?: () => void;
@@ -126,6 +128,7 @@ function MessageListImpl({
   focus,
   readUpTo = 0,
   newAfter = 0,
+  ready = true,
   onView,
   onSeen,
   lang: shownLang,
@@ -167,12 +170,29 @@ function MessageListImpl({
   // Unread messages older than the default window: start the window a little above the first of them.
   const firstNew = newAfter > 0 ? all.findIndex((m) => !m.sys && m.user !== me && Number(m.id) > newAfter) : -1;
   useEffect(() => {
-    if (cur || !all.length) return;
+    if (cur || !all.length || !ready) return;
     const from = firstNew >= 0 && firstNew < all.length - WINDOW ? Math.max(0, firstNew - 10) : Math.max(0, all.length - WINDOW);
     setWin({ room, floor: idAt(all, from), ceil: from + MAX_ROWS < all.length ? idAt(all, from + MAX_ROWS - 1) : null });
-  }, [all, cur, room]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [all, cur, room, ready]); // eslint-disable-line react-hooks/exhaustive-deps
   /** Room whose first screen is placed: with unread messages it opens at the "New" divider, not at the end. */
   const placed = useRef<string | null>(null);
+  /** Room whose "New" line is held in the middle until the user scrolls: rows revealed or loaded above it after
+   * the first placement would otherwise push it off screen. */
+  const centering = useRef<string | null>(null);
+  /** Puts the "New" line in the middle of what is visible; a short unread part stays at the end. */
+  const centerNew = (el: HTMLElement) => {
+    const line = el.querySelector<HTMLElement>(':scope > .new-line');
+    if (!line) return false;
+    const box = el.getBoundingClientRect();
+    const cs = getComputedStyle(el);
+    const top = box.top + parseFloat(cs.paddingTop || '0');
+    const bottom = box.bottom - parseFloat(cs.paddingBottom || '0');
+    const shift = line.getBoundingClientRect().top + line.offsetHeight / 2 - (top + bottom) / 2;
+    const max = rest(el);
+    el.scrollTop = Math.min(max, el.scrollTop + shift);
+    stick.current = el.scrollTop >= max - 1;
+    return true;
+  };
   /** The row at the top of the viewport and its offset: after the window changes it is put back in place. */
   const anchor = useRef<{ id: string; top: number } | null>(null);
   const keepAnchor = () => {
@@ -394,12 +414,15 @@ function MessageListImpl({
       const bottom = box.bottom - parseFloat(cs.paddingBottom || '0');
       // not before the first screen is placed: it may flash at the end and would mark everything read
       if (onSeenRef.current && placed.current === room && box.height > 0) {
-        // the lowest message that shows on screen at all; rows render oldest first
+        // The lowest message seen whole, above the composer (one partly under the field is not read yet).
+        // A message taller than the space counts once it fills it from the top. Rows render oldest first.
+        const field = el.parentElement?.querySelector<HTMLElement>(':scope > .composer .field');
+        const cut = (field ? field.getBoundingClientRect().top : bottom) + 2;
         const rows = el.querySelectorAll<HTMLElement>(':scope > [data-mid]');
         for (let i = rows.length - 1; i >= 0; i--) {
           const r = rows[i].getBoundingClientRect();
           const id = Number(rows[i].dataset.mid);
-          if (r.top + Math.min(r.height, 12) > bottom || !Number.isFinite(id)) continue;
+          if ((r.bottom > cut && r.top > top) || !Number.isFinite(id)) continue;
           if (r.bottom > top) onSeenRef.current(id);
           break;
         }
@@ -460,17 +483,9 @@ function MessageListImpl({
     }
     if (el && cur && placed.current !== room && messages.length) {
       placed.current = room;
-      const line = el.querySelector<HTMLElement>(':scope > .new-line');
-      if (line) {
-        const top = el.getBoundingClientRect().top + parseFloat(getComputedStyle(el).paddingTop || '0');
-        el.scrollTop = rest(el);
-        const shift = line.getBoundingClientRect().top - top - 8;
-        if (shift < 0) {
-          el.scrollTop += shift;
-          stick.current = false;
-        }
-      }
-    }
+      el.scrollTop = rest(el);
+      centering.current = centerNew(el) ? room : null;
+    } else if (el && centering.current === room) centerNew(el);
     if (el && stick.current) el.scrollTop = rest(el);
     if (el && wasStuck && was && prevLast && last > prevLast && placed.current === room && riseNew(el, el.scrollHeight - was.h, prevLast)) {
       // rows measured mid-flight sit below the edge: check what is read once they land
@@ -479,7 +494,9 @@ function MessageListImpl({
     if (el) prevTop.current = { id: first, h: el.scrollHeight };
     report();
     paintGrad(true);
-  }, [messages]); // eslint-disable-line react-hooks/exhaustive-deps
+    // Also once the row window is ready: a list mounted with messages already loaded (a chat reopened on the phone)
+    // gets it a render later, and without this its first screen was never placed and nothing was marked read.
+  }, [messages, !!cur]); // eslint-disable-line react-hooks/exhaustive-deps
   // A history page arrived while the list is still at the top: show the next part right away.
   useEffect(() => {
     const el = ref.current;
@@ -847,7 +864,10 @@ function MessageListImpl({
     <div
       className="chat-scroll"
       ref={ref}
-      onTouchStart={() => void (motion.current.touch = true)}
+      onTouchStart={() => void ((motion.current.touch = true), (centering.current = null))}
+      onWheel={() => void (centering.current = null)}
+      onKeyDown={() => void (centering.current = null)}
+      onPointerDown={() => void (centering.current = null)}
       onTouchEnd={(e) => void (motion.current.touch = e.touches.length > 0)}
       onTouchCancel={() => void (motion.current.touch = false)}
       onScroll={(e) => {

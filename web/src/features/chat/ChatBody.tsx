@@ -695,7 +695,8 @@ export function ChatBody({ app, chat, channel, compact }: { app: AppState; chat:
   // a message arriving in an open chat is already read and needs no divider.
   const [mark, setMark] = useState<{ room: string; id: number; line: boolean } | null>(null);
   let newAfter = mark?.room === channel.room ? mark.id : 0;
-  if (mark?.room !== channel.room && chat.room === channel.room) {
+  // Taken from fresh history only: a cached list or stale read mark put the line in the wrong place.
+  if (mark?.room !== channel.room && chat.room === channel.room && chat.synced) {
     newAfter = chat.myRead;
     const line = chat.messages.some((m) => !m.sys && m.user !== me && Number(m.id) > chat.myRead);
     setMark({ room: channel.room, id: chat.myRead, line });
@@ -816,6 +817,7 @@ export function ChatBody({ app, chat, channel, compact }: { app: AppState; chat:
         focus={focus}
         readUpTo={readUpTo}
         newAfter={pinnedView ? 0 : newAfter}
+        ready={pinnedView || chat.synced}
         onView={setViewPin}
         onSeen={pinnedView ? undefined : onSeen}
       />

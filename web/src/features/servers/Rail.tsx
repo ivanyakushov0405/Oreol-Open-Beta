@@ -5,7 +5,7 @@ import { Icon, LogoPeople } from '../../shared/icons';
 import type { ServerId } from '../../shared/model';
 import { useVoiceCounts } from '../voice/useVoice';
 import { t } from '../../shared/i18n';
-import { chatUnread, UnreadBadge } from '../chat/unread';
+import { roomUnread, UnreadBadge } from '../chat/unread';
 
 export function Rail({
   app,
@@ -23,12 +23,14 @@ export function Rail({
   const inVoice = app.voice.state === 'connected';
   const counts = useVoiceCounts(app.servers.map((s) => s.id));
   const unread = app.serverUnread;
-  // The open server counts live from its chats once they hold its rooms; until then (just switched) the server's own
-  // count stays, so the badge does not drop out and come back.
+  // The open server sums its rooms: each counts live once its socket delivered history, the server summary before that,
+  // so right after a switch the badge does not drop out and come back.
   const srv = app.servers.find((s) => s.id === app.serverId);
-  const own = (room: string | null) => !!room && !!srv?.channels.some((c) => c.room === room);
-  const live = useCalmRise(chatUnread(app, app.general) + (own(app.lobby.room) ? chatUnread(app, app.lobby) : 0));
-  const here = own(app.general.room) ? live : unread[app.serverId]?.count ?? 0;
+  const chatOf = (room: string) => (app.general.room === room ? app.general : app.lobby.room === room ? app.lobby : null);
+  const rooms = srv?.channels ?? [];
+  // Only a live message in a synced chat rises calmly (it may be read at once); counts from the summary show at once.
+  const synced = rooms.every((c) => !chatOf(c.room) || chatOf(c.room)!.synced) && !!chatOf(rooms[0]?.room ?? '');
+  const here = useCalmRise(rooms.reduce((n, c) => n + roomUnread(app, chatOf(c.room), c.room).n, 0), app.serverId, synced);
   const [tip, setTip] = useState<{ text: string; x: number; y: number } | null>(null);
   const hover = (text: string) => ({
     // Tooltip only for mouse: on phones every tap "hovers" and it just got in the way.
@@ -94,12 +96,18 @@ export function Rail({
  * A rise shows a moment later. A message that lands in the open chat counts as unread until the read mark returns,
  * and showing that at once made the badge blink in and out.
  */
-function useCalmRise(n: number, ms = 1200) {
+function useCalmRise(n: number, key: string, calm: boolean, ms = 1200) {
   const [shown, setShown] = useState(n);
+  // Another server: its count shows at once instead of rising from the previous one.
+  const [shownKey, setShownKey] = useState(key);
+  if (shownKey !== key) {
+    setShownKey(key);
+    setShown(n);
+  }
   useEffect(() => {
-    if (n <= shown) return void setShown(n);
+    if (n <= shown || !calm) return void setShown(n);
     const id = window.setTimeout(() => setShown(n), ms);
     return () => window.clearTimeout(id);
   }, [n]); // eslint-disable-line react-hooks/exhaustive-deps
-  return Math.min(n, shown);
+  return calm ? Math.min(n, shown) : n;
 }

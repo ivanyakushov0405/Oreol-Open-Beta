@@ -3601,7 +3601,10 @@ html[data-theme='light'] .pin-banner, html[data-theme='light'][data-glass] .pin-
 .um-volume { display: flex; flex-direction: column; gap: 8px; padding: 8px 12px 10px; }
 .um-vol-top { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--text-primary); }
 .um-vol-top b { margin-left: auto; font-weight: 500; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
-.um-volume input[type='range'] { width: 100%; }
+.um-volume .range { margin: 0; }
+/* The filled part up to the value (--p), in the accent color like the rest of the app. */
+.um-volume .range::-webkit-slider-runnable-track { background: linear-gradient(to right, var(--btn-fill) var(--p), var(--surface-selected) var(--p)); }
+.um-volume .range::-moz-range-track { background: linear-gradient(to right, var(--btn-fill) var(--p), var(--surface-selected) var(--p)); }
 .msg-ava { display: contents; }
 
 :root:not([data-theme='light'])[data-glass] :is(.rail, .sidebar, .members, .main, .side-chat).glass,
@@ -3821,7 +3824,14 @@ html[data-vt] .backdrop .bd-layer.one, html[data-vt] .backdrop .bd-layer.one > s
 .backdrop .bd-layer.one { transition: background-color .6s cubic-bezier(.4, 0, .2, 1) !important; }
 html[data-vt] .backdrop .bd-layer.one, html[data-vt] .backdrop .bd-layer.one > svg { transition: none !important; }
 
-:is(.main, .side-chat) > .chat > .composer::before { display: none !important; }
+/* Desktop: a lighter shade than on the phone, so messages scrolled under the glass field still show through. */
+:is(.main, .side-chat) > .chat > .composer::before {
+  display: block !important; top: auto; bottom: 0; height: calc(100% + 40px);
+  background: linear-gradient(to bottom, color-mix(in srgb, var(--bg-chat) 0%, transparent), color-mix(in srgb, var(--bg-chat) 38%, transparent) 45%, color-mix(in srgb, var(--bg-chat) 66%, transparent)) !important;
+}
+[data-theme="light"] :is(.main, .side-chat) > .chat > .composer::before {
+  background: linear-gradient(to bottom, #0a1a2e00, #0a1a2e0f 40%, #0a1a2e2e) !important;
+}
 :root:not([data-theme='light']) :is(.main, .side-chat) > .chat > .composer :is(.field, .round) {
   background: linear-gradient(180deg, #ffffff12, #ffffff06), #0b1b3094 !important;
   backdrop-filter: blur(16px) saturate(1.4) !important;
@@ -5041,7 +5051,9 @@ html[data-theme='light'][data-glass='on'] :is(.ci-pop, .ci-more, .ci-full) { --g
 .chat-scroll > .msg.g-cont { margin-top: -8px; }
 .msg.g-more .msg-ava .avatar, .msg.g-more > .avatar { visibility: hidden; }
 .msg.g-more .bubble::before, .msg.g-more .bubble::after { content: none; }
-.msg.g-cont:not(.mine) .bubble > .meta > .msg-nick { display: none; }
+/* The name stays as an invisible spacer after the time: messages below the first one are at least as wide as its
+   "name + time" line, so a group does not narrow down. */
+.msg.g-cont:not(.mine) .bubble > .meta > .msg-nick { order: 9; visibility: hidden; height: 0; overflow: hidden; white-space: nowrap; pointer-events: none; }
 .msg.g-more:not(.mine) .bubble { border-bottom-left-radius: 6px; }
 .msg.g-cont:not(.mine) .bubble { border-top-left-radius: 6px; }
 .msg.mine.g-more .bubble { border-bottom-right-radius: 6px; }

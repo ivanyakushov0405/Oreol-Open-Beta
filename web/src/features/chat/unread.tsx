@@ -21,6 +21,17 @@ export function chatUnread(app: AppState, chat: AppState['lobby']) {
   return unreadCount(chat.messages, chat.myRead, app.name);
 }
 
+/** Unread in a room: live from its chat once the socket delivered history, the server's summary before that
+ * (right after a reload or a server switch the chat is empty or a stale cache). */
+export function roomUnread(app: AppState, chat: AppState['lobby'] | null, room: string) {
+  const own = !!chat && chat.room === room;
+  const n = own ? unreadCount(chat.messages, chat.myRead, app.name) : 0;
+  const at = own ? unreadMentions(chat.messages, chat.myRead, app.name) : 0;
+  if (own && chat.synced) return { n, at };
+  const s = app.roomUnread[room];
+  return { n: Math.max(n, s?.count ?? 0), at: Math.max(at, s?.mentions ?? 0) };
+}
+
 export function unreadMentions(messages: { id: string | number; user: string; sys?: string | null; content?: string | null }[], readId: number, me: string) {
   const tag = handleOf(me);
   let n = 0;

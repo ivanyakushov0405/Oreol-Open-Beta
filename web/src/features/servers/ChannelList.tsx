@@ -1,7 +1,7 @@
 import type { AppState } from '../../app/useAppState';
 import { Icon } from '../../shared/icons';
 import type { Channel } from '../../shared/model';
-import { justArrived, UnreadBadge, unreadCount, unreadMentions } from '../chat/unread';
+import { justArrived, roomUnread, UnreadBadge } from '../chat/unread';
 import { VoiceUserRow } from '../voice/VoiceUserRow';
 import { usePeerAnim } from '../voice/peerAnim';
 import { t } from '../../shared/i18n';
@@ -31,18 +31,17 @@ export function ChannelList({
   const voiceRows = usePeerAnim(app.voiceUsers, (p) => p.identity, `${app.server.id}:${app.voiceSource}`, 1500);
   const badge = (c: Channel, i: number) => {
     const chat = c.kind === 'voice' ? app.lobby : i === 0 ? app.general : null;
-    if (!chat || active === c.id) return null;
-    const n = unreadCount(chat.messages, chat.myRead, app.name);
+    if (active === c.id) return null;
+    const { n, at } = roomUnread(app, chat, c.room);
     if (!n) return null;
-    const at = unreadMentions(chat.messages, chat.myRead, app.name);
     return (
       <span className="ch-badges">
         {at > 0 && (
-          <span key={'@' + at} className={'badge unread-badge mention-badge' + (justArrived([chat.room]) ? '' : ' still')} title={t('Упоминаний: {0}', { 0: at })}>
+          <span key={'@' + at} className={'badge unread-badge mention-badge' + (justArrived([c.room]) ? '' : ' still')} title={t('Упоминаний: {0}', { 0: at })}>
             @
           </span>
         )}
-        <UnreadBadge n={n} rooms={[chat.room]} />
+        <UnreadBadge n={n} rooms={[c.room]} />
       </span>
     );
   };

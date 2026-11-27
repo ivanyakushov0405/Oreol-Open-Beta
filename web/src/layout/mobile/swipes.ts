@@ -187,6 +187,9 @@ export function useStageSwipes(stage: RefObject<HTMLElement>, opts: Opts) {
         if (s.kind === 'back' && dx < 0) return void (s = null);
         s.active = true;
         window.getSelection()?.removeAllRanges();
+        // The keyboard goes down first, so the screen does not jump under the finger when it closes.
+        const typing = document.activeElement as HTMLElement | null;
+        if (typing?.matches('input, textarea, [contenteditable]')) typing.blur();
         // Measure the gesture from here, so the first pixels do not jump.
         s.x = e.clientX - Math.sign(dx);
         try {

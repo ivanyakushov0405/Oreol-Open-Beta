@@ -23,7 +23,10 @@ export const userMenuProps = (name: string) => ({
   onContextMenu: (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    openUserMenu(name, e.clientX, e.clientY, false, !!(e.currentTarget as Element).closest('.chat'));
+    const el = e.currentTarget as Element;
+    // The members panel sits beside the open chat: a mention goes to its composer.
+    const nextToChat = !!el.closest('aside.members') && !!document.querySelector('.chat .composer');
+    openUserMenu(name, e.clientX, e.clientY, false, !!el.closest('.chat') || nextToChat);
   },
 });
 
@@ -111,6 +114,7 @@ function UserMenu({
             </span>
             <input
               type="range"
+              className="range"
               min={0}
               max={200}
               step={1}

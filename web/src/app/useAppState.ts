@@ -170,7 +170,7 @@ export function useAppState(
   const voice = useVoice(name);
   const general = useChat(textChannel?.room ?? null, name);
   const lobby = useChat(voiceChannel?.room ?? null, name);
-  const serverUnread = useServerUnread(serverId, general.myRead, lobby.myRead);
+  const { servers: serverUnread, rooms: roomUnread } = useServerUnread(name, serverId, general.myRead, lobby.myRead);
   // A freshly opened socket has no presence yet: keep the last known one instead of showing everyone offline.
   const lastStatuses = useRef<Record<string, Status>>({});
   const statuses = useMemo(() => {
@@ -354,6 +354,7 @@ export function useAppState(
     serverById,
     serverId,
     serverUnread,
+    roomUnread,
     setServerId,
     textChannel,
     voiceChannel,

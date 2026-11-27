@@ -5,7 +5,7 @@ import { firstPhotoUrl, previewText, type ChatMessage, type Status } from '../..
 
 type ServerEvent =
   | { type: 'unread'; room?: string; message?: ChatMessage | null }
-  | { type: 'history'; messages: ChatMessage[]; pinned?: ChatMessage[]; reads?: Record<string, number> }
+  | { type: 'history'; floor?: number; messages: ChatMessage[]; pinned?: ChatMessage[]; reads?: Record<string, number> }
   | { type: 'read'; user: string; id: number }
   | { type: 'message'; message: ChatMessage }
   | { type: 'update'; message: ChatMessage }
@@ -15,7 +15,8 @@ type ServerEvent =
   | { type: 'typing'; user: string }
   | { type: 'presence'; statuses: Record<string, Status> }
   | { type: 'profile'; user: PublicUser }
-  | { type: 'voice'; user: string };
+  | { type: 'voice'; user: string }
+  | { type: 'pong' };
 
 /**
  * Voice join/leave goes to everyone through the chat socket at once, otherwise others only saw it on the next poll.
@@ -58,6 +59,8 @@ export function useChat(room: string | null, user: string) {
   /** Newcomer to the chat (never marked anything read): history before they joined does not count as unread. */
   const [floor, setFloor] = useState(0);
   const [loaded, setLoaded] = useState<string | null>(null);
+  /** Room whose history came from the socket: until then the messages may be a stale cache. */
+  const [synced, setSynced] = useState<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const lastTypingSent = useRef(0);
   const [hasMore, setHasMore] = useState(false);
@@ -90,6 +93,7 @@ export function useChat(room: string | null, user: string) {
     setFloor(0);
     setHasMore((cached?.messages.length ?? 0) >= PAGE);
     setLoaded(cached ? room : null);
+    setSynced(null);
     readSent.current = 0;
     setView('all');
     setTyping({});
@@ -97,6 +101,7 @@ export function useChat(room: string | null, user: string) {
     let closed = false;
     let retry: number | undefined;
     let attempt = 0;
+    let probe: number | undefined;
 
     const open = () => {
       const proto = location.protocol === 'https:' ? 'wss' : 'ws';
@@ -108,6 +113,7 @@ export function useChat(room: string | null, user: string) {
         if (away()) ws.send(JSON.stringify({ type: 'hidden', on: true }));
       };
       ws.onmessage = (e) => {
+        if (wsRef.current === ws) window.clearTimeout(probe);
         const ev = JSON.parse(e.data) as ServerEvent;
         if (ev.type === 'history') {
           // On reconnect keep the older messages already loaded.
@@ -116,24 +122,12 @@ export function useChat(room: string | null, user: string) {
           setMessages(older.length ? [...older, ...ev.messages] : ev.messages);
           if (!older.length) setHasMore(ev.messages.length >= PAGE);
           setLoaded(room);
+          setSynced(room);
           setPinned(ev.pinned ?? ev.messages.filter((m) => m.pinned));
           setReads(ev.reads ?? {});
           readSent.current = ev.reads?.[user] ?? 0;
-          if (ev.reads?.[user] == null) {
-            // Remember the join point on this device so old messages do not become new again after reload.
-            const key = `oreol.chatFloor.${user}.${room}`;
-            const saved = localStorage.getItem(key);
-            let f = Number(saved) || 0;
-            if (saved == null) {
-              f = ev.messages.length ? Number(ev.messages[ev.messages.length - 1].id) || 0 : 0;
-              try {
-                localStorage.setItem(key, String(f));
-              } catch {
-                /* ignore */
-              }
-            }
-            setFloor(f);
-          }
+          // Never marked anything here: what came before joining the server is not new (the server counts the same way).
+          setFloor(ev.reads?.[user] == null ? ev.floor ?? 0 : 0);
         } else if (ev.type === 'read') {
           setReads((r) => (ev.id > (r[ev.user] ?? 0) ? { ...r, [ev.user]: ev.id } : r));
         } else if (ev.type === 'reactions') {
@@ -207,7 +201,15 @@ export function useChat(room: string | null, user: string) {
       if (ws0?.readyState === WebSocket.OPEN && phone()) ws0.send(JSON.stringify({ type: 'hidden', on: away() }));
       if (closed || document.visibilityState !== 'visible') return;
       const ws = wsRef.current;
-      if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+      if (ws?.readyState === WebSocket.OPEN) {
+        // iOS can keep a socket that looks open but delivers nothing after sleep: then no new messages come
+        // and nothing is marked read. Any reply proves it alive; silence reopens it, which also reloads history.
+        ws.send(JSON.stringify({ type: 'ping' }));
+        window.clearTimeout(probe);
+        probe = window.setTimeout(() => wsRef.current === ws && revive.current(), 2500);
+        return;
+      }
+      if (ws?.readyState === WebSocket.CONNECTING) return;
       window.clearTimeout(retry);
       attempt = 0;
       open();
@@ -233,6 +235,7 @@ export function useChat(room: string | null, user: string) {
       window.removeEventListener('online', wake);
       window.removeEventListener('pageshow', wake);
       window.clearTimeout(retry);
+      window.clearTimeout(probe);
       wsRef.current?.close();
       wsRef.current = null;
       setMessages([]);
@@ -295,7 +298,13 @@ export function useChat(room: string | null, user: string) {
       const r = roomRef.current;
       if (!n || !r || n <= readSent.current) return;
       readSent.current = n;
-      raw({ type: 'read', id: n });
+      if (!raw({ type: 'read', id: n })) {
+        // No open socket (reconnecting): the mark goes over HTTP now instead of being dropped.
+        api(`/api/chat/${encodeURIComponent(r)}/read`, { method: 'POST', body: { id: n } }).catch(() => {
+          if (roomRef.current === r && readSent.current === n) readSent.current = n - 1;
+        });
+        return;
+      }
       // The server echoes a mark that moved. A phone back from the background can hold a socket that still looks open
       // but delivers nothing: without the echo, send the mark over HTTP, and if it did move there, the socket is dead.
       window.clearTimeout(readCheck.current);
@@ -382,6 +391,7 @@ export function useChat(room: string | null, user: string) {
     loadingOlder,
     loadOlder,
     room: loaded,
+    synced: synced === room && loaded === room,
     pinned,
     reads,
     myRead: Math.max(reads[user] ?? 0, floor),

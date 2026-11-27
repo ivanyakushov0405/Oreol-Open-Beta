@@ -1646,6 +1646,20 @@ async def api_voice_participants(request: Request, server: str = "rg"):
     return await get_room_participants(srv["voice_room"])
 
 
+# Last message of the room from before the user joined its server: with no read mark yet, only later ones are unread.
+JOIN_FLOOR_SQL = (
+    "SELECT MAX(id) FROM messages WHERE room = ? AND timestamp <= (SELECT m.joined_at FROM server_members m "
+    "JOIN channels c ON c.server_id = m.server_id WHERE c.room = ? AND m.user_id = ?)"
+)
+
+
+def join_floor(user_id: int, room: str) -> int:
+    conn = db()
+    got = conn.execute(JOIN_FLOOR_SQL, (room, room, user_id)).fetchone()[0]
+    conn.close()
+    return got or 0
+
+
 class ChatHub:
 
     # A user whose last socket closed stays online this long: switching channels reopens the socket at once.
@@ -1801,6 +1815,7 @@ async def api_ws(websocket: WebSocket, room: str):
             "messages": get_history_v2(room, user_id=uid),
             "pinned": get_pinned(room, uid),
             "reads": get_reads(room),
+            "floor": join_floor(uid, room),
         }
     )
     await hub.join(websocket, room, user)
@@ -1944,6 +1959,8 @@ async def api_ws(websocket: WebSocket, room: str):
                 await hub.set_hidden(websocket, user, bool(data.get("on")))
             elif kind == "typing":
                 await hub.send(room, {"type": "typing", "user": user}, skip=websocket)
+            elif kind == "ping":
+                await websocket.send_json({"type": "pong"})
             elif kind == "voice":
                 # someone joined or left voice: everyone refreshes the roster now instead of waiting for the poll
                 await hub.broadcast_all({"type": "voice", "user": user})
@@ -1998,6 +2015,7 @@ async def unread_counts(request: Request):
     ).fetchall()
     conn.close()
     out: dict[str, dict] = {}
+    per_room: dict[str, dict] = {}
     me = row["username"]
     mention = f"%@{me}%"
     conn = chat_conn()
@@ -2005,15 +2023,17 @@ async def unread_counts(request: Request):
         got = conn.execute(
             "SELECT COUNT(*) AS n, SUM(content LIKE ? OR content LIKE '%@everyone%') AS at FROM messages "
             "WHERE room = ? AND sys IS NULL AND username != ? "
-            "AND id > COALESCE((SELECT last_id FROM chat_reads WHERE user_id = ? AND room = ?), 0) "
+            f"AND id > COALESCE((SELECT last_id FROM chat_reads WHERE user_id = ? AND room = ?), ({JOIN_FLOOR_SQL}), 0) "
             "AND id NOT IN (SELECT message_id FROM message_hidden WHERE user_id = ?)",
-            (mention, r["room"], me, row["id"], r["room"], row["id"]),
+            (mention, r["room"], me, row["id"], r["room"], r["room"], r["room"], row["id"], row["id"]),
         ).fetchone()
         cur = out.setdefault(r["server_id"], {"count": 0, "mentions": 0})
         cur["count"] += got["n"] or 0
         cur["mentions"] += got["at"] or 0
+        per_room[r["room"]] = {"count": got["n"] or 0, "mentions": got["at"] or 0}
     conn.close()
-    return {"servers": out}
+    # Rooms let the channel list show its badges before the channel's socket delivers history.
+    return {"servers": out, "rooms": per_room}
 
 
 # Link previews (Open Graph). The server fetches the link itself, so only the public internet is allowed:
