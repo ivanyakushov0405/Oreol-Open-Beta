@@ -1671,6 +1671,9 @@ class ChatHub:
         self.rooms: dict[str, list[tuple[WebSocket, str]]] = {}
         # Sockets of phones whose page is in the background: still connected, but the user is not there.
         self.hidden: set[WebSocket] = set()
+        # Users who have no socket in front right now, with a token of that absence. Any return clears it, so a timer
+        # from an earlier absence cannot catch the gap of a later channel switch (a socket closed, the next not joined yet).
+        self.gone: dict[str, object] = {}
 
     def users(self, room: str) -> list[str]:
         seen: list[str] = []
@@ -1696,12 +1699,14 @@ class ChatHub:
             self.hidden.discard(ws)
         now = user in self.present_users()
         if was and not now:
-            asyncio.create_task(self.went_offline(user, self.HIDDEN_GRACE))
+            self.mark_gone(user, self.HIDDEN_GRACE)
         elif now and not was:
+            self.gone.pop(user, None)
             await self.broadcast_presence()
 
     async def join(self, ws: WebSocket, room: str, user: str):
         self.rooms.setdefault(room, []).append((ws, user))
+        self.gone.pop(user, None)
         await self.broadcast_presence()
 
     async def leave(self, ws: WebSocket, room: str):
@@ -1711,12 +1716,22 @@ class ChatHub:
             del self.rooms[room]
         self.hidden.discard(ws)
         if user and user not in self.present_users():
-            asyncio.create_task(self.went_offline(user))
+            self.mark_gone(user, self.OFFLINE_GRACE)
 
-    async def went_offline(self, user: str, delay: float | None = None):
-        await asyncio.sleep(self.OFFLINE_GRACE if delay is None else delay)
-        if user in self.present_users():
+    def mark_gone(self, user: str, delay: float):
+        # Already away: the timer of that absence keeps running.
+        if user in self.gone:
             return
+        token = object()
+        self.gone[user] = token
+        asyncio.create_task(self.went_offline(user, delay, token))
+
+    async def went_offline(self, user: str, delay: float, token: object):
+        await asyncio.sleep(delay)
+        # Offline only if away the whole time since: came back meanwhile (even briefly) cancels this timer.
+        if self.gone.get(user) is not token or user in self.present_users():
+            return
+        del self.gone[user]
         conn = db()
         conn.execute("UPDATE users SET last_seen = CURRENT_TIMESTAMP WHERE username = ? AND status != 'offline'", (user,))
         conn.commit()
@@ -2002,6 +2017,20 @@ async def servers_list(request: Request):
     return {"servers": out}
 
 
+# Same rule as the client (mentions.tsx): a handle is the name with spaces as dots, compared without case.
+MENTION_RE = re.compile(r"(?:^|[^\w.@])(@\w(?:[\w.]*\w)?)")
+MENTION_ALL = ("@everyone", "@here")
+
+
+def handle_of(name: str) -> str:
+    return "@" + re.sub(r"\s+", ".", name)
+
+
+def mentions_tag(text: str, tag: str) -> bool:
+    mine = tag.lower()
+    return any(m.lower() == mine or m.lower() in MENTION_ALL for m in MENTION_RE.findall(text))
+
+
 @app.get("/api/unread")
 async def unread_counts(request: Request):
     """Unread messages per server for the rail badges: others' messages past the user's read mark."""
@@ -2017,20 +2046,21 @@ async def unread_counts(request: Request):
     out: dict[str, dict] = {}
     per_room: dict[str, dict] = {}
     me = row["username"]
-    mention = f"%@{me}%"
+    tag = handle_of(me)
     conn = chat_conn()
     for r in rooms:
-        got = conn.execute(
-            "SELECT COUNT(*) AS n, SUM(content LIKE ? OR content LIKE '%@everyone%') AS at FROM messages "
-            "WHERE room = ? AND sys IS NULL AND username != ? "
+        unread = conn.execute(
+            "SELECT content FROM messages WHERE room = ? AND (sys IS NULL OR sys = 'pin') AND username != ? "
             f"AND id > COALESCE((SELECT last_id FROM chat_reads WHERE user_id = ? AND room = ?), ({JOIN_FLOOR_SQL}), 0) "
             "AND id NOT IN (SELECT message_id FROM message_hidden WHERE user_id = ?)",
-            (mention, r["room"], me, row["id"], r["room"], r["room"], r["room"], row["id"], row["id"]),
-        ).fetchone()
+            (r["room"], me, row["id"], r["room"], r["room"], r["room"], row["id"], row["id"]),
+        ).fetchall()
+        n = len(unread)
+        at = sum(1 for u in unread if mentions_tag(u["content"] or "", tag))
         cur = out.setdefault(r["server_id"], {"count": 0, "mentions": 0})
-        cur["count"] += got["n"] or 0
-        cur["mentions"] += got["at"] or 0
-        per_room[r["room"]] = {"count": got["n"] or 0, "mentions": got["at"] or 0}
+        cur["count"] += n
+        cur["mentions"] += at
+        per_room[r["room"]] = {"count": n, "mentions": at}
     conn.close()
     # Rooms let the channel list show its badges before the channel's socket delivers history.
     return {"servers": out, "rooms": per_room}

@@ -1075,7 +1075,7 @@ input, textarea { font: inherit; color: inherit; }
 .m-voice .ctrl.leave { width: 80px; border-radius: 22px; }
 
 .members { width: 240px; }
-.members-head { height: 60px; padding: 0 12px 0 16px; display: flex; flex-direction: column; justify-content: center; gap: 2px; }
+.members-head { height: auto; min-height: 60px; padding: 10px 12px 10px 16px; display: flex; flex-direction: column; justify-content: center; gap: 2px; }
 .members-head b { font-size: 18px; line-height: 23px; font-weight: 600; color: #eaf6ff; }
 .members-head span { font-size: 12px; line-height: 15px; color: var(--text-secondary); }
 .members .sidebar-scroll { padding: 12px 12px 16px; display: flex; flex-direction: column; gap: 4px; }
@@ -5051,9 +5051,7 @@ html[data-theme='light'][data-glass='on'] :is(.ci-pop, .ci-more, .ci-full) { --g
 .chat-scroll > .msg.g-cont { margin-top: -8px; }
 .msg.g-more .msg-ava .avatar, .msg.g-more > .avatar { visibility: hidden; }
 .msg.g-more .bubble::before, .msg.g-more .bubble::after { content: none; }
-/* The name stays as an invisible spacer after the time: messages below the first one are at least as wide as its
-   "name + time" line, so a group does not narrow down. */
-.msg.g-cont:not(.mine) .bubble > .meta > .msg-nick { order: 9; visibility: hidden; height: 0; overflow: hidden; white-space: nowrap; pointer-events: none; }
+.msg.g-cont:not(.mine) .bubble > .meta > .msg-nick { display: none; }
 .msg.g-more:not(.mine) .bubble { border-bottom-left-radius: 6px; }
 .msg.g-cont:not(.mine) .bubble { border-top-left-radius: 6px; }
 .msg.mine.g-more .bubble { border-bottom-right-radius: 6px; }

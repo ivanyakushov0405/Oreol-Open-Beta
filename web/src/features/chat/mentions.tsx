@@ -10,9 +10,10 @@ export const LONG_PRESS_MS = 420;
 // Latin and Cyrillic; a trailing dot ("@ivan.") is not part of the mention.
 const MENTION_RE = /(^|[^\p{L}\p{N}_.@])(@[\p{L}\p{N}_](?:[\p{L}\p{N}._]*[\p{L}\p{N}_])?)/giu;
 export function mentionsMe(text: string, myTag: string) {
+  const mine = myTag.toLowerCase();
   for (const m of text.matchAll(MENTION_RE)) {
     const t = m[2].toLowerCase();
-    if (t === myTag || MENTION_ALL.includes(t)) return true;
+    if (t === mine || MENTION_ALL.includes(t)) return true;
   }
   return false;
 }
