@@ -4,6 +4,7 @@ import { Icon } from '../../shared/icons';
 import { handleOf, nameColor, type Status } from '../../shared/model';
 import { Avatar, Banner } from '../../shared/ui/Avatar';
 import { Modal } from '../../shared/ui/Modal';
+import { ZoomAvatar } from '../chat/Photos';
 import { dateFormat, t } from '../../shared/i18n';
 
 const sinceFmt = dateFormat({ day: 'numeric', month: 'long', year: 'numeric' });
@@ -12,7 +13,6 @@ export function MemberCard({
   name,
   me,
   at,
-  activity,
   since,
   serverName,
   onClose,
@@ -31,7 +31,6 @@ export function MemberCard({
   onCall?: () => void;
   full?: ReactNode;
   at: { x: number; y: number };
-  activity: string;
   since: Date;
   serverName: string;
   onClose: () => void;
@@ -66,7 +65,9 @@ export function MemberCard({
       return next;
     });
   };
-  const [drag, setDrag] = useState(0);
+  // The drag writes the sheet position straight to the element: a React render per pointer move lagged a frame behind the finger.
+  const [dragging, setDragging] = useState(false);
+  const drag = useRef(0);
   const dragFrom = useRef<number | null>(null);
   /** Travel between the collapsed and the expanded sheet, px; measured when a drag starts. */
   const range = useRef(1);
@@ -98,14 +99,17 @@ export function MemberCard({
     },
     onPointerMove: (e: React.PointerEvent) => {
       if (dragFrom.current === null) return;
-      const dy = e.clientY - dragFrom.current;
-      setDrag(dy);
+      drag.current = e.clientY - dragFrom.current;
+      if (drag.current && !dragging) setDragging(true);
+      place(drag.current);
     },
     onPointerUp: (e: React.PointerEvent) => {
-      const dy = drag;
+      const dy = drag.current;
       const v = dy / Math.max(1, e.timeStamp - dragAt.current);
       dragFrom.current = null;
-      setDrag(0);
+      drag.current = 0;
+      setDragging(false);
+      place(0);
       const far = range.current * 0.25;
       if (Math.abs(dy) < 6) setExpanded((x) => !x);
       else if (!expanded && (dy < -far || (dy < -30 && v < -0.5))) setExpanded(true);
@@ -115,9 +119,27 @@ export function MemberCard({
     },
     onPointerCancel: () => {
       dragFrom.current = null;
-      setDrag(0);
+      drag.current = 0;
+      setDragging(false);
+      place(0);
     },
   };
+  // Rest position for the current state; a drag moves the sheet by dy from it.
+  function place(dy: number) {
+    const el = ref.current;
+    if (!el || !sheet) return;
+    if (h0 === null) {
+      el.style.transform = dy > 0 ? `translateY(${dy}px)` : '';
+      return;
+    }
+    const open = expRef.current;
+    el.style.setProperty('--sheet-y', open ? `${Math.max(0, dy)}px` : `max(0px, calc(100% - ${h0}px + ${dy}px))`);
+    el.style.setProperty(
+      '--sheet-p',
+      String(open ? Math.max(0, 1 - Math.max(0, dy) / range.current) : Math.min(1, Math.max(0, -dy / range.current))),
+    );
+  }
+  useLayoutEffect(() => place(drag.current), [sheet, h0, expanded]);
   useLayoutEffect(() => {
     const h = ref.current?.offsetHeight ?? 409;
     setPos({
@@ -125,6 +147,83 @@ export function MemberCard({
       top: Math.max(8, Math.min(at.y, window.innerHeight - h - 8)),
     });
   }, [at.x, at.y]);
+  const sinceText = sinceFmt.format(since).replace(t(' г.'), '');
+  const body = (
+    <div className={'body' + (back && !staged ? ' from-full' : '')}>
+      <ZoomAvatar className="mc-avatar" url={profile?.avatar}>
+        <Avatar name={name} size={72} status={status} />
+      </ZoomAvatar>
+      <div className="mc-identity">
+        <h3 style={{ color: nameColor(name) }}>{display}</h3>
+        <span className="mc-handle">
+          {display} · {handleOf(name)}
+        </span>
+      </div>
+      {sheet && extras && !full && !me && (
+        <div className="mc-actions">
+          <button type="button" className="mc-btn" onClick={onCall}>
+            <Icon name="voice" size={20} />
+            {t('Позвонить')}
+          </button>
+        </div>
+      )}
+      <div className="mc-info">
+        <section>
+          <div className="mc-over">{t('Роли')}</div>
+          <div className="mc-roles">
+            <span className="mc-role">
+              <i style={{ background: 'var(--role-everyone, #5c7590)' }} />
+              @everyone
+            </span>
+          </div>
+        </section>
+        <section>
+          <div className="mc-over">{t('На сервере с')}</div>
+          <div className="mc-value muted">{sinceText}</div>
+        </section>
+      </div>
+      {sheet && extras && !full && (
+        <>
+          <div className="mc-info">
+            <section>
+              <div className="mc-over">{t('Общие серверы: 1')}</div>
+              <div className="mc-server">
+                <span className="mc-server-ico" style={{ background: serverIcon?.gradient }}>
+                  {serverIcon?.short}
+                </span>
+                <span>
+                  <b>{serverName}</b>
+                  <small>
+                    {display} · @everyone
+                  </small>
+                </span>
+              </div>
+            </section>
+          </div>
+          <div className="mc-info">
+            <section>
+              <div className="mc-over">{t('Заметка')}</div>
+              <textarea
+                className="mc-note"
+                rows={2}
+                value={note}
+                placeholder={t('Нажмите, чтобы добавить заметку. Её видите только вы')}
+                onChange={(e) => saveNote(e.target.value)}
+              />
+            </section>
+          </div>
+        </>
+      )}
+      {(me || !sheet) && (
+        <div className={'mc-actions' + (sheet && extras && !full && !me ? ' hidden' : '')}>
+          {/* On the phone sheet the full profile is the expanded sheet itself. */}
+          <button type="button" className="mc-btn" onClick={sheet && staged ? () => setExpanded(true) : onProfile}>
+            {t('Профиль')}
+          </button>
+        </div>
+      )}
+    </div>
+  );
   return (
     <Modal onClose={onClose}>
       <div
@@ -141,22 +240,16 @@ export function MemberCard({
         }}
       />
       <div
-        className={'member-card' + (sheet ? ' sheet' : '') + (staged ? ' staged' : '') + (staged && expanded ? ' open' : '') + (sheet && expanded ? ' expanded' : '') + (drag ? ' dragging' : '')}
+        className={'member-card' + (sheet ? ' sheet' : '') + (staged ? ' staged' : '') + (staged && expanded ? ' open' : '') + (sheet && expanded ? ' expanded' : '') + (dragging ? ' dragging' : '')}
         ref={ref}
         style={
           sheet
             ? // The sheet is always full height; collapsed it is shifted down so only the card shows.
               // Expanding moves it with transform, not height: animating height relaid the whole sheet every frame.
-              ((h0 === null
-                ? { transform: drag > 0 ? `translateY(${drag}px)` : undefined }
-                : {
-                    height: 'calc(100% - env(safe-area-inset-top) - 54px)',
-                    maxHeight: 'none',
-                    '--sheet-y': expanded ? `${Math.max(0, drag)}px` : `max(0px, calc(100% - ${h0}px + ${drag}px))`,
-                    '--sheet-p': String(
-                      expanded ? Math.max(0, 1 - Math.max(0, drag) / range.current) : Math.min(1, Math.max(0, -drag / range.current)),
-                    ),
-                  }) as React.CSSProperties)
+              // --sheet-y and --sheet-p are written by place().
+              h0 === null
+              ? undefined
+              : { height: 'calc(100% - env(safe-area-inset-top) - 54px)', maxHeight: 'none' }
             : pos
         }
         onTransitionEnd={(e) => {
@@ -173,190 +266,14 @@ export function MemberCard({
         <Banner name={name} {...(sheet ? grab : {})} />
         {staged ? (
           <div className="mc-stack">
-          <div className={'body' + (back && !staged ? ' from-full' : '')}>
-            <span className="mc-avatar">
-              <Avatar name={name} size={72} status={status} />
-            </span>
-            <div className="mc-identity">
-              <h3 style={{ color: nameColor(name) }}>{display}</h3>
-              <span className="mc-handle">{handleOf(name)}</span>
-              <span className="mc-activity">
-                <i className={`status-${status}`} />
-                {activity}
-              </span>
-            </div>
-            {sheet && extras && !full && !me && (
-              <div className="mc-actions">
-                <button type="button" className="mc-btn" onClick={onCall}>
-                  <Icon name="voice" size={16} />
-                  {t('Позвонить')}
-                </button>
-              </div>
-            )}
-            <div className="mc-info">
-              {profile?.bio && (
-                <section>
-                  <div className="mc-over">{t('О себе')}</div>
-                  <p className="mc-bio">{profile.bio}</p>
-                </section>
-              )}
-              <section>
-                <div className="mc-over">{t('Ник на сервере')}</div>
-                <div className="mc-value">
-                  {display} · {serverName}
-                </div>
-              </section>
-              <section>
-                <div className="mc-over">{t('Роли')}</div>
-                <div className="mc-roles">
-                  <span className="mc-role">
-                    <i style={{ background: 'var(--role-everyone, #5c7590)' }} />
-                    @everyone
-                  </span>
-                  {me && <span className="mc-role">{t('Это вы')}</span>}
-                </div>
-              </section>
-              <section>
-                <div className="mc-over">{t('На сервере с')}</div>
-                <div className="mc-value muted">{sinceFmt.format(since).replace(t(' г.'), '')}</div>
-              </section>
-            </div>
-            {sheet && extras && !full && (
-              <>
-                <div className="mc-info">
-                  <section>
-                    <div className="mc-over">{t('Общие серверы: 1')}</div>
-                    <div className="mc-server">
-                      <span className="mc-server-ico" style={{ background: serverIcon?.gradient }}>
-                        {serverIcon?.short}
-                      </span>
-                      <span>
-                        <b>{serverName}</b>
-                        <small>
-                          {display} · @everyone
-                        </small>
-                      </span>
-                    </div>
-                  </section>
-                </div>
-                <div className="mc-info">
-                  <section>
-                    <div className="mc-over">{t('Заметка')}</div>
-                    <textarea
-                      className="mc-note"
-                      rows={2}
-                      value={note}
-                      placeholder={t('Нажмите, чтобы добавить заметку. Её видите только вы')}
-                      onChange={(e) => saveNote(e.target.value)}
-                    />
-                  </section>
-                </div>
-              </>
-            )}
-            {(me || !sheet) && (
-              <div className={'mc-actions' + (sheet && extras && !full && !me ? ' hidden' : '')}>
-                <button type="button" className={'mc-btn' + (me ? ' primary' : '')} onClick={onProfile}>
-                  {me && <Icon name="settings" size={16} />}
-                  {me ? t('Редактировать профиль') : t('Профиль')}
-                </button>
-              </div>
-            )}
-          </div>
+            {body}
             {/* Mounted from the start: a layer mounted already open would appear without its transition. */}
             <div className="mc-full">{full}</div>
           </div>
         ) : sheet && extras && full ? (
           <div className="mc-full">{full}</div>
         ) : (
-        <div className={'body' + (back && !staged ? ' from-full' : '')}>
-          <span className="mc-avatar">
-            <Avatar name={name} size={72} status={status} />
-          </span>
-          <div className="mc-identity">
-            <h3 style={{ color: nameColor(name) }}>{display}</h3>
-            <span className="mc-handle">{handleOf(name)}</span>
-            <span className="mc-activity">
-              <i className={`status-${status}`} />
-              {activity}
-            </span>
-          </div>
-          {sheet && extras && !full && !me && (
-            <div className="mc-actions">
-              <button type="button" className="mc-btn" onClick={onCall}>
-                <Icon name="voice" size={16} />
-                {t('Позвонить')}
-              </button>
-            </div>
-          )}
-          <div className="mc-info">
-            {profile?.bio && (
-              <section>
-                <div className="mc-over">{t('О себе')}</div>
-                <p className="mc-bio">{profile.bio}</p>
-              </section>
-            )}
-            <section>
-              <div className="mc-over">{t('Ник на сервере')}</div>
-              <div className="mc-value">
-                {display} · {serverName}
-              </div>
-            </section>
-            <section>
-              <div className="mc-over">{t('Роли')}</div>
-              <div className="mc-roles">
-                <span className="mc-role">
-                  <i style={{ background: 'var(--role-everyone, #5c7590)' }} />
-                  @everyone
-                </span>
-                {me && <span className="mc-role">{t('Это вы')}</span>}
-              </div>
-            </section>
-            <section>
-              <div className="mc-over">{t('На сервере с')}</div>
-              <div className="mc-value muted">{sinceFmt.format(since).replace(t(' г.'), '')}</div>
-            </section>
-          </div>
-          {sheet && extras && !full && (
-            <>
-              <div className="mc-info">
-                <section>
-                  <div className="mc-over">{t('Общие серверы: 1')}</div>
-                  <div className="mc-server">
-                    <span className="mc-server-ico" style={{ background: serverIcon?.gradient }}>
-                      {serverIcon?.short}
-                    </span>
-                    <span>
-                      <b>{serverName}</b>
-                      <small>
-                        {display} · @everyone
-                      </small>
-                    </span>
-                  </div>
-                </section>
-              </div>
-              <div className="mc-info">
-                <section>
-                  <div className="mc-over">{t('Заметка')}</div>
-                  <textarea
-                    className="mc-note"
-                    rows={2}
-                    value={note}
-                    placeholder={t('Нажмите, чтобы добавить заметку. Её видите только вы')}
-                    onChange={(e) => saveNote(e.target.value)}
-                  />
-                </section>
-              </div>
-            </>
-          )}
-          {(me || !sheet) && (
-            <div className={'mc-actions' + (sheet && extras && !full && !me ? ' hidden' : '')}>
-              <button type="button" className={'mc-btn' + (me ? ' primary' : '')} onClick={onProfile}>
-                {me && <Icon name="settings" size={16} />}
-                {me ? t('Редактировать профиль') : t('Профиль')}
-              </button>
-            </div>
-          )}
-        </div>
+          body
         )}
       </div>
     </Modal>

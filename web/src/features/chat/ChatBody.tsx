@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { paths } from '../../app/router';
 import type { AppState } from '../../app/useAppState';
 import { Icon, type IconName } from '../../shared/icons';
+import { haptic } from '../../shared/haptic';
 import { Avatar } from '../../shared/ui/Avatar';
 import { firstPhotoUrl, previewText, REACTIONS, type Channel, type ChatMessage } from '../../shared/model';
 import { DisplayName } from '../members/Nick';
@@ -244,6 +245,48 @@ function MessageMenu({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
+  // Opened by a long press, the menu follows the finger that is still down: the item under it lights up and
+  // letting go there picks it, without lifting the finger first.
+  useEffect(() => {
+    if (!focus) return;
+    let over: HTMLElement | null = null;
+    const hit = (t: Touch) => {
+      const el = document.elementFromPoint(t.clientX, t.clientY)?.closest<HTMLElement>('button');
+      return el && ref.current?.contains(el) ? el : null;
+    };
+    const move = (e: TouchEvent) => {
+      const t = e.touches[0];
+      if (!t) return;
+      if (e.cancelable) e.preventDefault();
+      const next = hit(t);
+      if (next === over) return;
+      if (over) delete over.dataset.hover;
+      over = next;
+      if (over) {
+        over.dataset.hover = '';
+        haptic();
+      }
+    };
+    const off = () => {
+      window.removeEventListener('touchmove', move);
+      window.removeEventListener('touchend', end);
+      window.removeEventListener('touchcancel', end);
+    };
+    const end = (e: TouchEvent) => {
+      const picked = over;
+      if (over) delete over.dataset.hover;
+      over = null;
+      off();
+      if (!picked || e.type === 'touchcancel') return;
+      if (e.cancelable) e.preventDefault();
+      armed.current = true;
+      picked.click();
+    };
+    window.addEventListener('touchmove', move, { passive: false });
+    window.addEventListener('touchend', end);
+    window.addEventListener('touchcancel', end);
+    return off;
+  }, [focus]);
   /** Window size before the page switch, so the new page grows from it instead of jumping. */
   const before = useRef<DOMRect | null>(null);
   const go = (to: 'main' | 'reads' | 'delete') => {

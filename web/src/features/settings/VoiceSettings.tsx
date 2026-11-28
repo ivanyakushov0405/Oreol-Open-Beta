@@ -524,7 +524,7 @@ export function SoundSettings() {
         <div className="sound-chips">
           {SOUND_LIST.map(([id, label]) => (
             <button key={id} type="button" className="btn btn-secondary btn-sm" disabled={!prefs.sounds} onClick={() => playSound(id)}>
-              <Icon name="voice" size={16} />
+              <Icon name="voice" size={20} />
               {t(label)}
             </button>
           ))}

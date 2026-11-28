@@ -593,8 +593,8 @@ input, textarea { font: inherit; color: inherit; }
 
 .main-head, .sidebar-head, .members-head { height: 60px; border-bottom: 1px solid var(--header-stroke); }
 .main-head { padding: 10px 16px; gap: 12px; }
-.main-head > svg { width: 24px; height: 24px; color: var(--accent-cyan); flex: none; }
-.side-chat .main-head > svg { width: 20px; height: 20px; }
+.main-head > svg, .main-head-title > .head-ico { width: 24px; height: 24px; color: var(--accent-cyan); flex: none; }
+.side-chat .main-head > svg, .side-chat .main-head-title > .head-ico { width: 20px; height: 20px; }
 .main-head .title { font-size: 18px; font-weight: 600; line-height: 1.3; }
 .main-head .sub { font-size: 12px; line-height: 1.35; }
 .main-head .actions .icon-btn { width: 32px; height: 32px; }
@@ -806,10 +806,10 @@ input, textarea { font: inherit; color: inherit; }
 
 .hero-titles { display: grid; }
 .hero-titles h1 {
-  grid-area: 1 / 1; transition: opacity .45s ease, transform .55s cubic-bezier(.2,.8,.2,1), filter .45s ease;
-  opacity: 0; transform: translateY(12px); filter: blur(6px); pointer-events: none;
+  grid-area: 1 / 1; transition: opacity .45s ease, transform .55s cubic-bezier(.2,.8,.2,1);
+  opacity: 0; transform: translateY(12px); pointer-events: none;
 }
-.hero-titles h1.on { opacity: 1; transform: none; filter: none; pointer-events: auto; }
+.hero-titles h1.on { opacity: 1; transform: none; pointer-events: auto; }
 
 .auth-panes {
   position: relative; display: grid; overflow: hidden; margin: -8px; padding: 8px;
@@ -818,14 +818,14 @@ input, textarea { font: inherit; color: inherit; }
 }
 .auth-pane {
   grid-area: 1 / 1; align-self: start;
-  transition: opacity .35s ease, transform .5s cubic-bezier(.2,.8,.2,1), filter .35s ease, visibility 0s linear .5s;
-  opacity: 0; visibility: hidden; pointer-events: none; filter: blur(4px);
+  transition: opacity .35s ease, transform .5s cubic-bezier(.2,.8,.2,1), visibility 0s linear .5s;
+  opacity: 0; visibility: hidden; pointer-events: none;
 }
 .auth-pane.pane-login { transform: translateX(-36px); }
 .auth-pane.pane-signup { transform: translateX(36px); }
 .auth-pane.active {
-  opacity: 1; visibility: visible; pointer-events: auto; transform: none; filter: none;
-  transition: opacity .4s ease .12s, transform .55s cubic-bezier(.2,.8,.2,1) .08s, filter .4s ease .12s, visibility 0s;
+  opacity: 1; visibility: visible; pointer-events: auto; transform: none;
+  transition: opacity .4s ease .12s, transform .55s cubic-bezier(.2,.8,.2,1) .08s, visibility 0s;
 }
 .auth-pane form { display: flex; flex-direction: column; gap: 20px; }
 .pane-signup form { gap: 14px; }
@@ -1016,7 +1016,7 @@ input, textarea { font: inherit; color: inherit; }
 .side-chat .main-head { padding: 14px 16px; gap: 10px; }
 .side-chat .main-head .title { font-size: 14px; font-weight: 500; line-height: 18px; }
 .side-chat .main-head .sub { color: var(--text-muted); }
-.side-chat .main-head > svg { color: var(--text-secondary); }
+.side-chat .main-head > svg, .side-chat .main-head-title > .head-ico { color: var(--text-secondary); }
 
 .stage { padding: 24px; display: flex; flex-direction: column; }
 .tiles { display: flex; flex-wrap: wrap; justify-content: center; align-content: center; gap: 16px; flex: 1; }
@@ -1104,7 +1104,7 @@ input, textarea { font: inherit; color: inherit; }
 [data-theme="light"] .voice-user .name { color: var(--text-secondary); }
 [data-theme="light"] .voice-user .name.speaking, [data-theme="light"] .tile-label .nick { color: var(--text-primary); }
 
-.side-chat .main-head > svg { color: var(--accent-cyan); }
+.side-chat .main-head > svg, .side-chat .main-head-title > .head-ico { color: var(--accent-cyan); }
 .server-icon .voice-badge { color: #fff; }
 
 .avatar { transition: box-shadow .15s ease; }
@@ -3315,11 +3315,12 @@ html.boot *:not(.backdrop *), html.boot *:not(.backdrop *)::before, html.boot *:
 .mic-lvl .mic-fill {
   position: absolute; left: 50%; top: 50%; translate: -50% -50%; pointer-events: none;
   color: var(--accent-cyan);
-  clip-path: inset(calc(10.4% + (1 - var(--lvl, 0)) * 78.3%) 0 0 0);
+  /* At zero the whole icon is clipped, the round cap of the stand included: silence leaves no coloured dot. */
+  clip-path: inset(calc(10.4% + (1 - var(--lvl, 0)) * 81%) 0 0 0);
 }
 .mic-lvl.speaking, [data-theme='light'] .mic-lvl.speaking,
 .user-panel .icon-btn.mic-lvl.speaking, .user-panel .icon-btn.mic-lvl.speaking:hover {
-  color: var(--accent-cyan);
+  /* Speaking lights the button; the icon itself is coloured only by the level fill. */
   background: color-mix(in srgb, var(--accent-cyan) 16%, transparent);
   box-shadow: inset 0 0 0 1.5px var(--accent-cyan);
 }
@@ -4045,9 +4046,9 @@ html[data-theme='light'] .account-head .acc-head-list { border-top-color: #0a1a2
 .status-chip { display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 14px; border-radius: 999px; border: 1px solid transparent; background: var(--glass-el); box-shadow: var(--glass-el-shadow); color: var(--text-secondary); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; transition: background .15s, color .15s, box-shadow .15s; }
 .status-chip:hover { color: var(--text-primary); background: var(--surface-selected); }
 .status-chip.on { color: var(--text-primary); background: var(--surface-selected); box-shadow: var(--glass-el-shadow), inset 0 0 0 1.5px var(--accent-primary); }
-[data-theme='light'] .status-chip { background: #ffffff38; border-color: #0a1a2e24; box-shadow: inset 0 1px 0 #ffffffb3; }
-[data-theme='light'] .status-chip:hover { background: #ffffff66; border-color: #0a1a2e38; }
-[data-theme='light'] .status-chip.on { background: #ffffff59; border-color: var(--accent-primary); box-shadow: inset 0 1px 0 #ffffffb3, 0 0 0 3px color-mix(in srgb, var(--accent-primary) 14%, transparent); }
+[data-theme='light'] .status-chip { background: #0a1a2e0b; box-shadow: none; }
+[data-theme='light'] .status-chip:hover { background: #0a1a2e14; }
+[data-theme='light'] .status-chip.on { background: #fff; box-shadow: 0 1px 3px #0a1a2e1f; }
 
 .settings-body > .account-head .avatar {
   /* The mask provides the rounding: with border-radius Chrome would also clip the protruding dot. */
@@ -4185,15 +4186,6 @@ html:root:not([data-theme='light'])[data-glass='off'] .m-members-list::after {
   -webkit-mask: linear-gradient(#0000004d, #0000004d); mask: linear-gradient(#0000004d, #0000004d);
 }
 
-html[data-theme] .to-bottom {
-  background: transparent !important; backdrop-filter: none !important;
-  box-shadow: inset 0 0 0 1px #ffffff2e !important;
-}
-html[data-theme='light'] .to-bottom { box-shadow: inset 0 0 0 1px #0a1a2e2e !important; }
-@media (hover: hover) {
-  html[data-theme] .to-bottom:hover { background: #ffffff14 !important; filter: none; }
-  html[data-theme='light'] .to-bottom:hover { background: #0a1a2e0d !important; }
-}
 
 html[data-theme][data-glass='on'] .member-card {
   background: var(--g3-bg); border-color: transparent;
@@ -4362,7 +4354,8 @@ html[data-backdrop='off'] body:not(:has(.signin)) .backdrop .bd-layer.m > svg { 
 @keyframes bd-sway { 0%, 100% { transform: scale(1.03) translate(0, 0); } 50% { transform: scale(1.07) translate(-6px, -10px); } }
 .backdrop .bd-layer.one > svg { transition: opacity .45s ease, visibility 0s !important; }
 html[data-backdrop='off'] body:not(:has(.signin)) .backdrop .bd-layer.one > svg { visibility: hidden; transition: opacity .45s ease, visibility 0s .45s !important; }
-html[data-backdrop='off'] .backdrop *, html:not([data-glows='on']) .backdrop .bd-glow { animation-play-state: paused !important; }
+html[data-backdrop='off'] .backdrop *, html:not([data-glows='on']) .backdrop .bd-glow,
+.backdrop .bd-layer.hold, .backdrop .bd-layer.hold * { animation-play-state: paused !important; }
 
 /*
   Phones: a mask on the scrolling list disabled Safari's GPU scrolling and repainted the whole list each frame.
@@ -4484,6 +4477,19 @@ html[data-theme] .to-bottom {
 html[data-theme='light'] .to-bottom {
   background: linear-gradient(180deg, #ffffffd9, #ffffffa8) !important;
   box-shadow: inset 0 1px 0 #fff, inset 0 0 0 1px #0a1a2e14, 0 10px 24px -12px #1a335073 !important;
+}
+/* the ring like other glass controls; hover lightens the glass instead of a filter */
+html[data-theme] .to-bottom:not(#_) { box-shadow: 0 10px 24px -10px #000a !important; }
+html[data-theme='light'] .to-bottom:not(#_) { box-shadow: 0 10px 24px -12px #1a335073 !important; }
+html[data-theme] .to-bottom:not(#_)::after {
+  content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  box-shadow: inset 0 0 0 1px var(--ring-line, #ffffff33), var(--ring-glow, inset 0 12px 16px -14px #ffffff26);
+  mask: linear-gradient(160deg, #000, #00000052 50%, #00000085);
+}
+html[data-theme='light'] .to-bottom:not(#_)::after { --ring-line: #0a1a2e1f; --ring-glow: 0 0 #0000; mask: linear-gradient(160deg, #000, #00000099 50%, #000000cc); }
+@media (hover: hover) {
+  html[data-theme] .to-bottom:not(#_):hover { filter: none; background: linear-gradient(180deg, #ffffff1f, #ffffff0a), #0b1b30d9 !important; }
+  html[data-theme='light'] .to-bottom:not(#_):hover { filter: none; background: linear-gradient(180deg, #fffffff2, #ffffffc7) !important; }
 }
 
 html { -webkit-tap-highlight-color: transparent; }
@@ -4748,7 +4754,8 @@ html[data-vt] .backdrop .bd-layer.m, html[data-vt] .backdrop .bd-layer.m > svg {
 .member-card.sheet.dragging[style*='--sheet-y'] { transition: none; }
 @keyframes sheet-up-to { from { transform: translateY(100%); } to { transform: translateY(var(--sheet-y)); } }
 
-.m-stage:not([data-swipe]):not([data-swiped]) > .m-full:has(~ .m-settings.m-slide:not(.out)) {
+/* A screen covered by settings is hidden; settings kept under a voice screen opened from the widget (.m-below) cover nothing. */
+.m-stage:not([data-swipe]):not([data-swiped]) > .m-full:has(~ .m-settings.m-slide:not(.out):not(.m-below)) {
   visibility: hidden; transition: visibility 0s linear .24s;
 }
 
@@ -4860,6 +4867,9 @@ html[data-vt] .backdrop .bd-layer.m, html[data-vt] .backdrop .bd-layer.m > svg {
 }
 .main-head-title:hover, .main-head-title[aria-expanded="true"] { background: var(--surface-hover); }
 .main-head-title > div { min-width: 0; }
+/* the head's own gap between icon and title, minus the button's */
+.main-head-title > .head-ico { margin-right: 6px; }
+.side-chat .main-head-title > .head-ico { margin-right: 4px; }
 .main-head-title .title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .main-head-title > .chev { flex: none; color: var(--text-muted); transition: transform .2s ease; }
 .main-head-title[aria-expanded="true"] > .chev { transform: rotate(180deg); }
@@ -4868,7 +4878,7 @@ html[data-vt] .backdrop .bd-layer.m, html[data-vt] .backdrop .bd-layer.m > svg {
 .ci { display: flex; flex-direction: column; min-height: 0; color: var(--text-primary); }
 .ci-pop {
   position: absolute; z-index: 60; top: 64px; left: 12px; width: min(440px, calc(100% - 24px)); max-height: calc(100% - 80px);
-  border-radius: 18px; background: var(--bg-elevated); box-shadow: var(--shadow-elevated); animation: acct-in .16s ease-out;
+  border-radius: 18px; background: var(--bg-elevated); box-shadow: var(--shadow-elevated);
   backdrop-filter: none;
 }
 /* inside the chat screen and offset by --sat like its header, so the call widget stays above it */
@@ -4968,6 +4978,10 @@ html[data-theme][data-glass='on'] .ci-full { background: var(--g3-bg); backdrop-
 html[data-theme][data-glass='on'] .profile-modal .mc-info { background: var(--g2-bg); border-color: transparent; box-shadow: inset 0 0 0 1px var(--g-edge); }
 html[data-theme][data-glass='on'] .profile-modal .pm-avatar { box-shadow: none; }
 html[data-theme][data-glass='on'] :is(.ci-action, .ci-tabs) { background: var(--g2-bg); }
+/* light fills are white and vanish on the near-white popup: a dark tint instead */
+html[data-theme='light'] :is(.ci-pop, .ci-full) :is(.ci-ico, .ci-action, .ci-tabs) { background: #0a1a2e0b; }
+html[data-theme='light'] :is(.ci-pop, .ci-full) .ci-action:hover { background: #0a1a2e14; }
+html[data-theme='light'] :is(.ci-pop, .ci-full) .ci-tabs button.on { background: #fff; box-shadow: 0 1px 3px #0a1a2e1f; }
 html[data-theme][data-glass='on'] :is(.member-card, .profile-modal, .ci-pop, .ci-more, .ci-full) { --g3-bg: color-mix(in srgb, #0b1b30 75%, transparent); }
 html[data-theme='light'][data-glass='on'] :is(.member-card, .profile-modal, .ci-pop, .ci-more, .ci-full) { --g3-bg: #ffffffdb; }
 html[data-theme][data-glass='on'] :is(.ci-pop, .ci-more, .ci-full) { --g3-bg: color-mix(in srgb, #0b1b30 88%, transparent); }
@@ -5134,3 +5148,282 @@ html[data-theme='light'][data-glass='on'] :is(.ci-pop, .ci-more, .ci-full) { --g
 }
 .member-card.sheet.staged.dragging .mc-stack .mc-full .pm-avatar { scale: calc(.75 + var(--sheet-p) * .25); transition: none; }
 .member-card.sheet.staged.open .mc-stack > .body, .member-card.sheet.staged:not(.open) .mc-stack > .mc-full { pointer-events: none; }
+
+/*
+  Pills: a round end is concentric with what sits in it, so an icon or a round button keeps the same inset
+  on the side as on top and bottom. A text end gets the vertical inset plus r(1 - pi/4) * r / height,
+  the average gap the curve adds next to the text.
+*/
+.controls { padding: 8px; }
+.controls .ctrl:not(.leave) { border-radius: 50%; }
+.m-call-pill { padding: 0 calc(12px + 15px * (1 - pi / 4) / 2) 0 7px; }
+.status-chip { padding: 0 calc(12px + 16px * (1 - pi / 4) / 2) 0 10px; }
+/* Join bar (60px): text end with the optical inset, the button end concentric (8px all round); the 44px button itself has its 20px icon centred in its round end. */
+.join-bar { padding: 8px 8px 8px calc(12px + 30px * (1 - pi / 4) / 2); }
+.join-bar .btn { padding: 0 calc(12px + 22px * (1 - pi / 4) / 2) 0 12px; }
+[data-theme='dark'] .acct-items { padding: 6px; }
+
+/* Focus and selection: one solid 2px ring in the chat input's color, no soft halo around it. */
+:root { --sel-ring: var(--border-focus); }
+[data-theme='light'] { --sel-ring: var(--btn-fill); }
+.input:focus, .select select:focus, .auth-field .input:focus,
+[data-theme='light'] .input:focus, [data-theme='light'] .select select:focus {
+  border-color: var(--sel-ring); box-shadow: inset 0 0 0 1px var(--sel-ring);
+}
+.status-chip.on, [data-theme='light'] .status-chip.on { border-color: var(--sel-ring); }
+.status-chip.on { box-shadow: var(--glass-el-shadow), inset 0 0 0 1px var(--sel-ring); }
+[data-theme='light'] .status-chip.on { box-shadow: inset 0 0 0 1px var(--sel-ring), 0 1px 3px #0a1a2e1f; }
+
+/* The title highlight sits 8px inside the panel's 24px corner: concentric radius. */
+.main-head-title { border-radius: 16px; }
+/* Phone header pill (44px, 1px edge): a text end gets the optical inset, the 24px icon sits centred in the round end. */
+.m-head .title-pill { padding: 0 calc(12px + 22px * (1 - pi / 4) / 2); }
+.m-head .title-pill:has(> .ico-swap, > .title-ico) { padding-left: 9px; }
+
+/* Text buttons with an icon (not pills): a 20px icon, width from the content. */
+:is(.btn, .mc-btn) > svg { width: 20px; height: 20px; flex: none; }
+.pm-actions .mc-btn { flex: 0 0 auto; height: 38px; padding: 0 16px; font-size: 13px; }
+.pm-actions .mc-btn.icon { width: 38px; padding: 0; }
+.member-card.sheet .mc-full .pm-actions .mc-btn { flex: 0 0 auto; padding: 0 18px; }
+.member-card.sheet .mc-full .pm-actions .mc-btn.icon { width: 44px; padding: 0; }
+
+/* Shared servers: a plain list; the icon and the server name open the server, and hovering either squares the icon. */
+.pm-shared-list > div { gap: 12px; }
+.pm-shared-list .pm-server,
+.pm-shared-list .pm-server:hover,
+[data-theme='light'] .pm-shared-list .pm-server { display: flex; align-items: center; gap: 12px; width: 100%; margin: 0; padding: 0; border-radius: 0; background: none; cursor: default; }
+.pm-server-go {
+  width: 40px; height: 40px; padding: 0; border: 0; border-radius: 50%; flex: none; cursor: pointer;
+  font: inherit; font-size: 13px; font-weight: 600; color: #fff; transition: border-radius .2s ease;
+}
+.pm-server:has(.pm-server-name:focus-visible) .pm-server-go { border-radius: 13px; }
+/* Hover effects only with a mouse: a tap on a phone would leave them stuck. */
+@media (hover: hover) {
+  .pm-server:has(.pm-server-go:hover, .pm-server-name:hover) .pm-server-go { border-radius: 13px; }
+  .pm-server-name:hover { text-decoration: underline; text-underline-offset: 3px; }
+}
+.pm-server-body { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 1px; }
+.pm-server-name {
+  max-width: 100%; padding: 0; border: 0; background: none; font: inherit; font-size: 15px; line-height: 20px; font-weight: 600;
+  color: var(--text-primary); text-align: left; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.pm-server-nick { max-width: 100%; font-size: 13px; line-height: 18px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* The icons next to the toggle overlap; each is cut out where the next one lies, so no ring colour has to match the panel.
+   Opening the list slides them under the chevron (--i counts from the right). */
+.pm-shared-icons { gap: 0; }
+.pm-shared-icons > svg { position: relative; z-index: 1; }
+.pm-shared-icons > .mc-server-ico { font-size: 9px; line-height: 1; transition: opacity .22s ease, transform .3s cubic-bezier(.2, .8, .2, 1); }
+.pm-shared-icons > .mc-server-ico + .mc-server-ico { margin-left: -5px; }
+.pm-shared-icons > .mc-server-ico:has(+ .mc-server-ico) {
+  -webkit-mask: radial-gradient(circle at 37px 50%, #0000 15.5px, #000 16px);
+  mask: radial-gradient(circle at 37px 50%, #0000 15.5px, #000 16px);
+}
+.pm-shared-more:not(#_) { background: var(--ring-fill-on); color: var(--text-secondary); font-weight: 600; }
+.pm-shared-wrap.open .pm-shared-icons > .mc-server-ico {
+  opacity: 0; transform: translateX(calc(12px + var(--i, 0) * 22px)) scale(.8);
+  transition: opacity .2s ease-in, transform .2s cubic-bezier(.4, 0, 1, 1);
+}
+.pm-shared-wrap .pm-shared-list > div { transition: padding .28s cubic-bezier(.2, .8, .2, 1); }
+/* avatar, name and status sit close together */
+.pm-identity { margin-top: -6px; gap: 2px; }
+.pm-shared-icons .mc-server-ico.sm { border-radius: 50%; }
+
+/* Card: a larger status dot on the avatar. Full profile: no dot on the avatar, a larger one next to the status text. */
+.member-card .mc-avatar .avatar > .status-dot { width: 24px !important; height: 24px !important; border-width: 3.5px !important; }
+.pm-identity .mc-activity { gap: 7px; font-size: 13px; }
+.pm-identity .mc-activity i { width: 10px; height: 10px; }
+
+/*
+  Grouped bubbles (not the first of a group): the edge highlight runs along the top and fades out towards the small
+  6px corner, so the corner is not drawn as a sharp bright tip and nothing slides down the side.
+  The border is split into rectangles that do not overlap (stacked translucent layers would add up):
+  the side column, a 28px block at the corner with a sideways fade, the column under that block,
+  and the usual 160deg edge over the rest.
+*/
+:root:not([data-theme='light']) {
+  --ec-hi: #ffffff30; --ec-lo: #ffffff08; --ec-bot: #ffffff0f;
+  --ec-rest: linear-gradient(160deg, #ffffff30, #ffffff05 50%, #ffffff1a);
+  --ec-hi-m: #ffffff2e; --ec-lo-m: #ffffff12; --ec-bot-m: #ffffff1a;
+  --ec-rest-m: linear-gradient(160deg, #ffffff4d, #ffffff0a 50%, #ffffff24);
+}
+html[data-theme='light'] {
+  --ec-hi: #0a1a2e20; --ec-lo: #0a1a2e08; --ec-bot: #0a1a2e12;
+  --ec-rest: linear-gradient(160deg, #0a1a2e20, #0a1a2e08 50%, #0a1a2e17);
+  --ec-hi-m: #ffffff2e; --ec-lo-m: #ffffff12; --ec-bot-m: #ffffff1a;
+  --ec-rest-m: linear-gradient(160deg, #ffffff4d, #ffffff0a 50%, #ffffff24);
+}
+:root {
+  --edge-cont:
+    linear-gradient(var(--ec-lo), var(--ec-lo)) left top / 1px 100% no-repeat border-box,
+    linear-gradient(to right, var(--ec-lo), var(--ec-hi)) 1px 0 / 28px 6px no-repeat border-box,
+    linear-gradient(var(--ec-bot), var(--ec-bot)) 1px 6px / 28px calc(100% - 6px) no-repeat border-box,
+    var(--ec-rest) right top / calc(100% - 29px) 100% no-repeat;
+  --edge-cont-mine:
+    linear-gradient(var(--ec-lo-m), var(--ec-lo-m)) right top / 1px 100% no-repeat border-box,
+    linear-gradient(to left, var(--ec-lo-m), var(--ec-hi-m)) right 1px top 0 / 28px 6px no-repeat border-box,
+    linear-gradient(var(--ec-bot-m), var(--ec-bot-m)) right 1px top 6px / 28px calc(100% - 6px) no-repeat border-box,
+    var(--ec-rest-m) left top / calc(100% - 29px) 100% no-repeat;
+}
+html:not([data-theme='light']) .chat-scroll .msg.g-cont:not(.mine):not(.flash) .bubble {
+  background: linear-gradient(var(--bubble-other), var(--bubble-other)) padding-box, var(--edge-cont) border-box;
+}
+html[data-theme='light'] .chat-scroll .msg.g-cont:not(.mine):not(.flash) .bubble {
+  background: var(--bubble-l-bg) padding-box, var(--edge-cont) border-box;
+}
+html .chat-scroll .msg.mine.g-cont:not(.flash) .bubble {
+  background: linear-gradient(90deg, var(--bubble-mine-start), var(--bubble-mine-end)) padding-box, var(--edge-cont-mine) border-box;
+}
+/* the 1px inner top line would also run into the corner: grouped bubbles keep only the soft top glow */
+html:not([data-theme='light']) .chat-scroll .msg.g-cont:not(.flash) .bubble { box-shadow: inset 0 12px 16px -14px #ffffff1a; }
+
+/* Ring: the one outline for glass surfaces, secondary buttons and chips. A 1px 160deg gradient over a flat fill, no top highlight.
+   Primary buttons keep fill + highlight; messages keep their own edge; selection and focus are a solid 2px --sel-ring. */
+:root, [data-theme='dark'] {
+  --glass-el-shadow: 0 6px 18px -8px #000000a6;
+  --ring-fill: #ffffff0d;
+  --ring-fill-on: #ffffff1a;
+  --ring-edge: linear-gradient(160deg, #ffffff38, #ffffff05 50%, #ffffff1a);
+}
+[data-theme='light'] {
+  --ring-fill: #0a1a2e0b;
+  --ring-fill-on: #0a1a2e14;
+  --ring-edge: linear-gradient(160deg, #0a1a2e20, #0a1a2e08 50%, #0a1a2e17);
+}
+/* :not(#_) outranks the per-theme and glass-mode rules stacked above. */
+html[data-theme] :is(.status-chip, .btn-secondary, .mc-btn:not(.primary)):not(#_) {
+  position: relative; border-color: transparent; background: var(--ring-fill); box-shadow: none; backdrop-filter: none;
+}
+html[data-theme] :is(.status-chip, .btn-secondary, .mc-btn:not(.primary), .ci-action, .pm-close):not(#_)::after {
+  content: ''; display: block; position: absolute; inset: -1px; border-radius: inherit; padding: 1px; pointer-events: none; z-index: 5;
+  background: var(--ring-edge);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+}
+html[data-theme] .status-chip:hover:not(#_) { background: var(--ring-fill-on); }
+html[data-theme] .status-chip.on:not(#_) { background: var(--ring-fill-on); color: var(--text-primary); }
+html[data-theme] :is(.status-chip.on, .ci-action.on, .status-chip:focus-visible, .ci-action:focus-visible, .btn-secondary:focus-visible, .mc-btn:not(.primary):focus-visible):not(#_)::after {
+  background: var(--sel-ring); padding: 2px;
+}
+
+/* Popover cards: the ring instead of a bright solid border. Drawn as a border-box layer: a pseudo-element would scroll with the profile and overflow it. */
+html[data-theme]:not([data-glass='on']) :is(.member-card, .profile-modal):not(#_) {
+  border: 1px solid transparent; background: linear-gradient(var(--bg-elevated), var(--bg-elevated)) padding-box, var(--ring-edge) border-box;
+}
+/* The small card's edge is solid and quiet. */
+html[data-theme]:not([data-glass='on']) .member-card:not(#_) { border-color: #ffffff1f; background: var(--bg-elevated); }
+html[data-theme='light']:not([data-glass='on']) .member-card:not(#_) { border-color: #0a1a2e1c; }
+
+/* Action tiles (full profile under the status, chat info): an icon over a short label, equal widths. */
+.pm-actions:not(#_) { display: flex; justify-content: center; gap: 8px; width: 100%; flex-wrap: nowrap; }
+/* A lone action (your own «Редактировать») stays a regular icon-and-text button. */
+.pm-actions .mc-btn:not(:only-child):not(#_), .member-card.sheet .mc-full .pm-actions .mc-btn:not(:only-child):not(#_) {
+  flex: 1 1 0; max-width: calc((100% - 16px) / 3); width: auto; height: 62px; padding: 10px 8px; flex-direction: column; gap: 6px;
+  border-radius: 16px; font-size: 12px; line-height: 16px; font-weight: 500;
+}
+html[data-theme] .ci-action:not(#_) {
+  position: relative; height: 62px; padding: 10px 8px; gap: 6px; justify-content: center; border-radius: 16px;
+  background: var(--ring-fill); color: var(--text-primary); line-height: 16px;
+}
+html[data-theme] :is(.ci-action:hover, .ci-action.on):not(#_) { background: var(--ring-fill-on); }
+html[data-theme] .ci-action.on:not(#_) svg { color: inherit; }
+
+
+/* The phone sheet does not scroll: the drag moves the sheet itself, and a scroll bar squared off its rounded corner. */
+.member-card.sheet:not(#_), .member-card.sheet .mc-full:not(#_) { overflow: hidden; }
+
+/* Profile close: a round ring button like the others; over a banner image it turns to dark glass with a white cross. */
+html[data-theme] .pm-close:not(#_) {
+  width: 32px; height: 32px; border: 1px solid transparent; border-radius: 50%; background: var(--ring-fill); color: var(--text-secondary);
+  backdrop-filter: blur(12px); transition: background-color .15s ease, color .15s ease;
+}
+html[data-theme] .pm-close:hover:not(#_) { background: var(--ring-fill-on); color: var(--text-primary); }
+html[data-theme] .pm-close:has(+ .banner.has-img):not(#_) { background: #040a1459; color: #fff; }
+html[data-theme] .pm-close:has(+ .banner.has-img):hover:not(#_) { background: #040a1480; }
+html[data-theme] .pm-close:has(+ .banner.has-img):not(#_)::after { background: linear-gradient(160deg, #ffffff4d, #ffffff0a 45%, #ffffff1f); }
+html[data-theme] .pm-close:focus-visible:not(#_)::after { background: var(--sel-ring); padding: 2px; }
+
+/* Tiles (icon over the label) carry a 24px icon. */
+:is(.pm-actions .mc-btn:not(:only-child), .ci-action) > svg:not(#_) { width: 24px; height: 24px; }
+
+/* Back from a voice screen opened over settings (the widget): the screen below returns as after a swipe. A frost
+   (the swipe veil's tint and blur) covers it and clears on the leaving screen's curve while its cards fade in. */
+@keyframes voice-veil-out { to { opacity: 0; } }
+.m-stage:not([data-swipe]):not([data-swiped]):has(> .m-full-voice.out):has(> .m-below)::before {
+  content: ''; position: absolute; inset: 0; z-index: 7; pointer-events: none;
+  background: var(--bg-chat-glass); backdrop-filter: blur(12px);
+  animation: voice-veil-out .22s cubic-bezier(.4, 0, .7, .2) forwards;
+}
+[data-theme='light'] .m-stage:not([data-swipe]):not([data-swiped]):has(> .m-full-voice.out):has(> .m-below)::before {
+  background: #e3ecf652; backdrop-filter: blur(8px);
+}
+.m-stage:not([data-swipe]):not([data-swiped]):has(> .m-full-voice.out) > .m-below > :not(.m-head) > * {
+  animation: glass-back-in .22s cubic-bezier(.4, 0, .7, .2) both !important;
+}
+
+/* Ring drawn as an inset 1px shadow faded by a plain 160deg gradient mask (as the big glass panels do). A ring cut out
+   with mask-composite has an unsmoothed inner corner and turns jagged when the page is zoomed out; the shadow is
+   anti-aliased like the message edge. */
+:root:not([data-theme='light']) :is(.user-panel, .composer .field, .composer .round, .brand-card, .rail-home, .voice-status,
+  .controls, .tile, .btn-secondary, .main-head .actions .icon-btn, .members-head .icon-btn):not(#_)::after,
+html[data-theme] :is(.status-chip, .btn-secondary, .mc-btn:not(.primary), .ci-action, .pm-close):not(#_)::after {
+  padding: 0; background: none;
+  /* Like the message edge: the line plus a soft glow under the top edge. */
+  box-shadow: inset 0 0 0 1px var(--ring-line, #ffffff33), var(--ring-glow, inset 0 12px 16px -14px #ffffff26);
+  -webkit-mask: linear-gradient(160deg, #000, #00000052 50%, #00000085);
+  mask: linear-gradient(160deg, #000, #00000052 50%, #00000085);
+  -webkit-mask-composite: source-over; mask-composite: add;
+}
+[data-theme='light'] { --ring-line: #0a1a2e1f; --ring-glow: 0 0 #0000; }
+[data-theme='light'] :is(.status-chip, .btn-secondary, .mc-btn:not(.primary), .ci-action, .pm-close):not(#_)::after {
+  -webkit-mask: linear-gradient(160deg, #000, #00000099 50%, #000000cc);
+  mask: linear-gradient(160deg, #000, #00000099 50%, #000000cc);
+}
+/* The profile close over a banner image keeps a white ring. */
+html[data-theme] .pm-close:has(+ .banner.has-img):not(#_)::after { box-shadow: inset 0 0 0 1px #ffffff4d; }
+/* Focus and selection: a solid 2px ring, no fade. */
+:root:not([data-theme='light']) .composer .field:focus-within:not(#_)::after { padding: 0; background: none; box-shadow: inset 0 0 0 1px var(--border-focus); -webkit-mask: none; mask: none; }
+html[data-theme] :is(.status-chip.on, .ci-action.on, .status-chip:focus-visible, .ci-action:focus-visible, .btn-secondary:focus-visible, .mc-btn:not(.primary):focus-visible, .pm-close:focus-visible):not(#_)::after {
+  padding: 0; background: none; box-shadow: inset 0 0 0 2px var(--sel-ring); -webkit-mask: none; mask: none;
+}
+html[data-theme][data-glass='on'] .member-card:not(#_) { box-shadow: inset 0 0 0 1px var(--g-edge), var(--g3-shadow); }
+
+/* The chat-info screen is opaque and its header sits in flow: no scroll shade under it. */
+.m-full.ci-full > .m-head::before { content: none; }
+/* tiles have no border, so the ring sits on the edge */
+html[data-theme] .ci-action.ci-action:not(#_)::after { inset: 0; }
+/* the sheet and its two layers change transform, scale and opacity every frame of a drag: keep them on their own layers */
+.member-card.sheet[style*='--sheet-y'] { will-change: transform, scale; }
+.member-card.sheet.staged.dragging .mc-stack > :is(.body, .mc-full),
+/* screens moved by a swipe stay on their own layers for the gesture (transform only: will-change on opacity would change how glass inside blurs) */
+.m-stage[data-swipe] > .m-slide[data-swiping], .m-stage[data-swipe] > .m-slide[data-swiping] > .m-head,
+.m-stage[data-swipe='back'] > .m-under.dim:not(.tabbar), .m-stage[data-swipe='tab'] > .m-under:not(.tabbar) { will-change: transform; }
+/* a file dragged over the chat: the whole chat is the drop target */
+.chat[data-drop]:not(#_)::after {
+  content: ''; position: absolute; inset: 8px; height: auto; opacity: 1; z-index: 50; pointer-events: none; border-radius: 18px;
+  box-shadow: inset 0 0 0 2px var(--sel-ring); background: color-mix(in srgb, var(--sel-ring) 8%, transparent);
+}
+/* the attachment strip fades at an edge only while more is hidden past it (--fade-l, --fade-r from Composer) */
+.composer-photos {
+  --fade-l: 0px; --fade-r: 0px; overscroll-behavior-x: contain; scrollbar-width: none;
+  -webkit-mask: linear-gradient(to right, transparent, #000 var(--fade-l), #000 calc(100% - var(--fade-r)), transparent);
+  mask: linear-gradient(to right, transparent, #000 var(--fade-l), #000 calc(100% - var(--fade-r)), transparent);
+}
+.composer-photos::-webkit-scrollbar { display: none; }
+.composer-photos[data-drag] { cursor: grabbing; }
+.composer-photos[data-drag] * { pointer-events: none; }
+/*
+  Selected rows of one group read as one block: in selection mode a group's rows touch instead of overlapping
+  (the translucent fill doubled where they overlapped), and the corners and the light ring open where two meet.
+*/
+.chat.is-selecting .chat-scroll > .msg.g-cont { margin-top: -4px; }
+.chat-scroll > .msg.selected + .msg.selected.g-cont { border-top-left-radius: 0; border-top-right-radius: 0; }
+.chat-scroll > .msg.selected:has(+ .msg.selected.g-cont) { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+[data-theme='light'] .chat-scroll > .msg.selected { --sr: color-mix(in srgb, var(--accent-blue, #1e6bff) 28%, transparent); }
+[data-theme='light'] .chat-scroll > .msg.selected + .msg.selected.g-cont { box-shadow: inset 1px 0 var(--sr), inset -1px 0 var(--sr), inset 0 -1px var(--sr); }
+[data-theme='light'] .chat-scroll > .msg.selected:has(+ .msg.selected.g-cont) { box-shadow: inset 1px 0 var(--sr), inset -1px 0 var(--sr), inset 0 1px var(--sr); }
+[data-theme='light'] .chat-scroll > .msg.selected + .msg.selected.g-cont:has(+ .msg.selected.g-cont) { box-shadow: inset 1px 0 var(--sr), inset -1px 0 var(--sr); }
+:is(.pm-avatar, .mc-avatar).zoomable { cursor: zoom-in; }
+.phv-img { transform-origin: center; }
+/* the item under a finger still held from the long press that opened the menu */
+.msg-menu [data-hover] { background: var(--surface-hover); }
+.chat-scroll[data-wait] > * { visibility: hidden; }

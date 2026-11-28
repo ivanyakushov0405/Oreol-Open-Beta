@@ -49,6 +49,8 @@ export interface Attachment {
   url: string;
   w: number;
   h: number;
+  /** A small copy for grid tiles, only for large photos. */
+  thumb?: string;
   video?: boolean;
   /** A document: downloaded, never shown inline. */
   file?: boolean;

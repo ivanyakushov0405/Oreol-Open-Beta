@@ -231,7 +231,7 @@ export function VoiceStage({ app, mobile }: { app: AppState; mobile?: boolean })
             </span>
             {!connecting && (
               <button className="btn btn-primary" onClick={app.joinVoice}>
-                <Icon name="voice" size={18} />
+                <Icon name="voice" size={20} />
                 {v.error ? t('Повторить') : other ? t('Перейти сюда') : t('Подключиться')}
               </button>
             )}
@@ -254,7 +254,7 @@ export function VoiceStage({ app, mobile }: { app: AppState; mobile?: boolean })
           <>
             <p>{v.error ?? (other ? t('Вы в голосовом канале сервера «{0}»', { 0: other }) : t('Вы не в голосовом канале'))}</p>
             <button className="btn btn-primary" onClick={app.joinVoice} style={{ height: 44, padding: '0 24px' }}>
-              <Icon name="voice" size={18} />
+              <Icon name="voice" size={20} />
               {v.error ? t('Повторить') : other ? t('Перейти сюда') : t('Подключиться')}
             </button>
           </>

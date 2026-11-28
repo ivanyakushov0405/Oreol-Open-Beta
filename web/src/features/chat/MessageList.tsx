@@ -61,6 +61,8 @@ const WINDOW = 60;
 const STEP = 40;
 /** Never keep more rows than this in the DOM; rows far from the viewport go back to memory. */
 const MAX_ROWS = 140;
+/** Where each room was left: the row at the top of the viewport and its offset. A room left at the end has none. */
+const spots = new Map<string, { id: string; top: number }>();
 const SKELETON_ROWS = ['58%', '42%', '66%', '36%', '52%', '62%', '40%', '48%'];
 /** A pause longer than this between two messages of one person starts a new group. */
 const GROUP_GAP_MS = 10 * 60 * 1000;
@@ -142,8 +144,18 @@ function MessageListImpl({
   // Ids instead of indexes, so messages loaded above or arriving below do not shift the window.
   const [win, setWin] = useState<{ room: string; floor: number; ceil: number | null } | null>(null);
   const cur = win && win.room === room ? win : null;
+  /** Index of the row this room was left at, in what is loaded; -1 when there is none or it is not loaded. */
+  const spotAt = useMemo(() => {
+    const spot = spots.get(room);
+    return spot ? all.findIndex((m) => String(m.id) === spot.id) : -1;
+  }, [all, room]);
   const [firstIdx, endIdx] = useMemo(() => {
     const n = all.length;
+    // Before the window is set, it already covers the saved spot (same as the effect below): the default window showed the end first and jumped.
+    if (!cur && spotAt >= 0 && spotAt < n - WINDOW) {
+      const a = Math.max(0, spotAt - 10);
+      return [a, Math.min(n, a + WINDOW)];
+    }
     if (!cur) return [Math.max(0, n - WINDOW), n];
     let a = all.findIndex((m) => Number(m.id) >= cur.floor);
     if (a < 0) a = Math.max(0, n - WINDOW);
@@ -156,7 +168,7 @@ function MessageListImpl({
     if (b <= a) b = Math.min(n, a + WINDOW);
     return [a, b];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [all, cur?.floor, cur?.ceil]);
+  }, [all, cur?.floor, cur?.ceil, spotAt]);
   const messages = useMemo(() => (firstIdx === 0 && endIdx === all.length ? all : all.slice(firstIdx, endIdx)), [all, firstIdx, endIdx]);
   const hidden = firstIdx;
   const below = all.length - endIdx;
@@ -171,8 +183,15 @@ function MessageListImpl({
   const firstNew = newAfter > 0 ? all.findIndex((m) => !m.sys && m.user !== me && Number(m.id) > newAfter) : -1;
   useEffect(() => {
     if (cur || !all.length || !ready) return;
-    const from = firstNew >= 0 && firstNew < all.length - WINDOW ? Math.max(0, firstNew - 10) : Math.max(0, all.length - WINDOW);
-    setWin({ room, floor: idAt(all, from), ceil: from + MAX_ROWS < all.length ? idAt(all, from + MAX_ROWS - 1) : null });
+    const atSpot = spotAt >= 0 && spotAt < all.length - WINDOW;
+    const from = atSpot
+      ? Math.max(0, spotAt - 10)
+      : firstNew >= 0 && firstNew < all.length - WINDOW
+        ? Math.max(0, firstNew - 10)
+        : Math.max(0, all.length - WINDOW);
+    // around a saved spot only the usual window: more rows made the chat screen open slower; the rest comes on scroll
+    const size = atSpot ? WINDOW : MAX_ROWS;
+    setWin({ room, floor: idAt(all, from), ceil: from + size < all.length ? idAt(all, from + size - 1) : null });
   }, [all, cur, room, ready]); // eslint-disable-line react-hooks/exhaustive-deps
   /** Room whose first screen is placed: with unread messages it opens at the "New" divider, not at the end. */
   const placed = useRef<string | null>(null);
@@ -207,6 +226,48 @@ function MessageListImpl({
       }
     }
   };
+  /** Room held at its saved spot while rows above settle (pin banner, previews), until the user scrolls. */
+  const holding = useRef<string | null>(null);
+  // read by the resize observer, which is set up once
+  const roomRef = useRef(room);
+  roomRef.current = room;
+  /** Puts the saved row of this room back at its offset; false when there is none or it is not rendered. */
+  const toSpot = (el: HTMLElement) => {
+    const spot = spots.get(roomRef.current);
+    const row = spot ? el.querySelector<HTMLElement>(`:scope > [data-mid="${CSS.escape(spot.id)}"]`) : null;
+    if (!row) return false;
+    el.scrollTop += row.getBoundingClientRect().top - el.getBoundingClientRect().top - spot!.top;
+    stick.current = el.scrollTop >= rest(el) - 1;
+    return true;
+  };
+  /** First screen of a room: where it was left, otherwise the end. */
+  const placeFirst = (el: HTMLElement) => {
+    if (toSpot(el)) return true;
+    stick.current = true;
+    el.scrollTop = rest(el);
+    return false;
+  };
+  // If the fresh history never comes (offline), the cached rows show anyway.
+  useEffect(() => {
+    const id = window.setTimeout(() => ref.current?.removeAttribute('data-wait'), 2000);
+    return () => window.clearTimeout(id);
+  }, [room]);
+  /** Remembers where the room is left, a moment after scrolling stops. */
+  const spotTimer = useRef(0);
+  const saveSpot = () => {
+    window.clearTimeout(spotTimer.current);
+    spotTimer.current = window.setTimeout(() => {
+      const el = ref.current;
+      if (!el || placed.current !== room || holding.current === room) return;
+      if (stick.current) return void spots.delete(room);
+      const box = el.getBoundingClientRect();
+      for (const row of el.querySelectorAll<HTMLElement>(':scope > [data-mid]')) {
+        const r = row.getBoundingClientRect();
+        if (r.bottom > box.top) return void spots.set(room, { id: row.dataset.mid!, top: r.top - box.top });
+      }
+    }, 150);
+  };
+  useEffect(() => () => window.clearTimeout(spotTimer.current), [room]);
   const reveal = () => {
     const { firstIdx: a, endIdx: b } = winRef.current;
     if (a <= 0) return false;
@@ -477,15 +538,22 @@ function MessageListImpl({
     if (el && row) {
       el.scrollTop += row.getBoundingClientRect().top - el.getBoundingClientRect().top - an!.top;
       glide(el, motion.current);
-    } else if (el && was && first && first < was.id && !stick.current) {
+    } else if (el && was && first && first < was.id && !stick.current && placed.current === room) {
       el.scrollTop += el.scrollHeight - was.h;
       glide(el, motion.current);
     }
-    if (el && cur && placed.current !== room && messages.length) {
-      placed.current = room;
-      el.scrollTop = rest(el);
-      centering.current = centerNew(el) ? room : null;
+    if (el && placed.current !== room && messages.length) {
+      // Cached rows, before the fresh ones arrive, sit at the same spot too: left at the top, the start of the chat flashed.
+      const at = placeFirst(el);
+      // shown once it stands where it was left, or for good once placed
+      if (at || cur) el.removeAttribute('data-wait');
+      if (cur) {
+        placed.current = room;
+        holding.current = at ? room : null;
+        centering.current = !at && centerNew(el) ? room : null;
+      }
     } else if (el && centering.current === room) centerNew(el);
+    else if (el && holding.current === room) toSpot(el);
     if (el && stick.current) el.scrollTop = rest(el);
     if (el && wasStuck && was && prevLast && last > prevLast && placed.current === room && riseNew(el, el.scrollHeight - was.h, prevLast)) {
       // rows measured mid-flight sit below the edge: check what is read once they land
@@ -510,6 +578,7 @@ function MessageListImpl({
     let settle = 0;
     const full = () => {
       sizeHead(el);
+      if (holding.current === roomRef.current) toSpot(el);
       if (stick.current) el.scrollTop = rest(el);
       report();
       paintGrad(true);
@@ -864,10 +933,12 @@ function MessageListImpl({
     <div
       className="chat-scroll"
       ref={ref}
-      onTouchStart={() => void ((motion.current.touch = true), (centering.current = null))}
-      onWheel={() => void (centering.current = null)}
-      onKeyDown={() => void (centering.current = null)}
-      onPointerDown={() => void (centering.current = null)}
+      // hidden while the saved spot is not loaded yet, instead of showing another part of the chat first
+      data-wait={placed.current !== room && spots.has(room) ? '' : undefined}
+      onTouchStart={() => void ((motion.current.touch = true), (centering.current = holding.current = null))}
+      onWheel={() => void (centering.current = holding.current = null)}
+      onKeyDown={() => void (centering.current = holding.current = null)}
+      onPointerDown={() => void (centering.current = holding.current = null)}
       onTouchEnd={(e) => void (motion.current.touch = e.touches.length > 0)}
       onTouchCancel={() => void (motion.current.touch = false)}
       onScroll={(e) => {
@@ -894,6 +965,7 @@ function MessageListImpl({
         cancelPress();
         report();
         paintGrad(true);
+        saveSpot();
       }}
     >
       <div className="chat-head-room" ref={head} aria-hidden />

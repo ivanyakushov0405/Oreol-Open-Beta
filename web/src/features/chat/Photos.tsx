@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Icon } from '../../shared/icons';
 import { fileSize, type Attachment } from '../../shared/model';
@@ -265,18 +265,86 @@ export function PhotoViewer({ photos, start, onClose }: { photos: Attachment[]; 
   const slideRef = useRef(slide);
   slideRef.current = slide;
 
+  // Zoom on the phone: two fingers pinch, one finger pans a zoomed photo, a double tap zooms in or back out.
+  // While zoomed the swipes (next photo, close) are off.
+  const zoom = useRef({ s: 1, x: 0, y: 0 });
+  const fingers = useRef(new Map<number, { x: number; y: number }>());
+  const pinch = useRef<{ d: number; s: number; qx: number; qy: number } | null>(null);
+  const pan = useRef<{ id: number; x: number; y: number; zx: number; zy: number; moved: boolean } | null>(null);
+  const lastTap = useRef({ t: 0, x: 0, y: 0 });
+  const photoEl = () => root.current?.querySelector<HTMLElement>('.phv-slide:not([aria-hidden]) img.phv-img') ?? null;
+  const setZoom = (s: number, x: number, y: number, ms = 0) => {
+    zoom.current = { s, x, y };
+    const img = photoEl();
+    if (!img) return;
+    img.style.transition = ms ? `transform ${ms}ms cubic-bezier(.2, .8, .2, 1)` : 'none';
+    img.style.transform = s === 1 && !x && !y ? '' : `translate3d(${x}px, ${y}px, 0) scale(${s})`;
+  };
+  /** Keeps a zoomed photo covering the screen where it can, and centres it where it is smaller. */
+  const settle = () => {
+    const img = photoEl();
+    const box = root.current;
+    let { s, x, y } = zoom.current;
+    if (!img || !box) return;
+    if (s <= 1) return setZoom(1, 0, 0, 220);
+    s = Math.min(s, 5);
+    const mx = Math.max(0, (img.offsetWidth * s - box.clientWidth) / 2);
+    const my = Math.max(0, (img.offsetHeight * s - box.clientHeight) / 2);
+    x = Math.max(-mx, Math.min(mx, x));
+    y = Math.max(-my, Math.min(my, y));
+    setZoom(s, x, y, 220);
+  };
+  /** Offset of a screen point from the photo's untransformed centre. */
+  const fromCentre = (px: number, py: number) => {
+    const img = photoEl()!;
+    const r = img.getBoundingClientRect();
+    const { s, x, y } = zoom.current;
+    return { x: px - (r.left + r.width / 2 - x), y: py - (r.top + r.height / 2 - y), s };
+  };
+  // the slides reuse their elements, so the next photo must not inherit the zoom
+  useEffect(() => {
+    pinch.current = pan.current = null;
+    setZoom(1, 0, 0);
+  }, [i]);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-      else if (e.key === 'ArrowLeft') slideRef.current(-1);
+      if (e.key === 'Escape') {
+        // only the viewer closes, not the card or dialog it was opened from
+        e.stopImmediatePropagation();
+        onClose();
+      } else if (e.key === 'ArrowLeft') slideRef.current(-1);
       else if (e.key === 'ArrowRight') slideRef.current(1);
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
   }, [onClose]);
 
   const onPointerDown = (e: React.PointerEvent) => {
     e.stopPropagation();
+    if (e.pointerType === 'touch' && !photos[i].video && photoEl()) {
+      fingers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (fingers.current.size === 2) {
+        // the second finger turns whatever the first one started into a pinch
+        if (drag.current?.axis) setTrack(0, 0, 160);
+        drag.current = null;
+        pan.current = null;
+        const [a, b] = [...fingers.current.values()];
+        const c = fromCentre((a.x + b.x) / 2, (a.y + b.y) / 2);
+        const z = zoom.current;
+        pinch.current = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, s: z.s, qx: (c.x - z.x) / z.s, qy: (c.y - z.y) / z.s };
+        try {
+          root.current?.setPointerCapture(e.pointerId);
+        } catch {
+          /* ignore */
+        }
+        return;
+      }
+      if (zoom.current.s > 1) {
+        pan.current = { id: e.pointerId, x: e.clientX, y: e.clientY, zx: zoom.current.x, zy: zoom.current.y, moved: false };
+        return;
+      }
+    }
     if (busy.current || drag.current || (e.pointerType === 'mouse' && e.button !== 0)) return;
     if ((e.target as HTMLElement).closest('button, a')) return;
     // On a video the finger controls the player (seek, volume); swiping only works outside it.
@@ -284,6 +352,35 @@ export function PhotoViewer({ photos, start, onClose }: { photos: Attachment[]; 
     drag.current = { id: e.pointerId, x: e.clientX, y: e.clientY, t: e.timeStamp, axis: null, dx: 0, dy: 0 };
   };
   const onPointerMove = (e: React.PointerEvent) => {
+    if (fingers.current.has(e.pointerId)) fingers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const pz = pinch.current;
+    if (pz && fingers.current.size >= 2) {
+      const [a, b] = [...fingers.current.values()];
+      const d = Math.hypot(a.x - b.x, a.y - b.y);
+      // a little give past the limits, taken back on release
+      const raw = (pz.s * d) / pz.d;
+      const sc = raw < 1 ? 1 - (1 - raw) * 0.4 : raw > 5 ? 5 + (raw - 5) * 0.2 : raw;
+      const c = fromCentre((a.x + b.x) / 2, (a.y + b.y) / 2);
+      // the point between the fingers stays under them
+      setZoom(sc, c.x - pz.qx * sc, c.y - pz.qy * sc);
+      return;
+    }
+    const pn = pan.current;
+    if (pn && pn.id === e.pointerId) {
+      const dx = e.clientX - pn.x;
+      const dy = e.clientY - pn.y;
+      if (!pn.moved && Math.hypot(dx, dy) < 6) return;
+      if (!pn.moved) {
+        pn.moved = true;
+        try {
+          root.current?.setPointerCapture(e.pointerId);
+        } catch {
+          /* ignore */
+        }
+      }
+      setZoom(zoom.current.s, pn.zx + dx, pn.zy + dy);
+      return;
+    }
     const s = drag.current;
     if (!s || e.pointerId !== s.id) return;
     const dx = e.clientX - s.x;
@@ -306,6 +403,44 @@ export function PhotoViewer({ photos, start, onClose }: { photos: Attachment[]; 
     }
   };
   const onPointerEnd = (e: React.PointerEvent, cancelled = false) => {
+    if (fingers.current.delete(e.pointerId)) {
+      if (pinch.current) {
+        if (fingers.current.size < 2) {
+          pinch.current = null;
+          settle();
+          // the finger left on the screen carries on panning
+          const [rest] = [...fingers.current.entries()];
+          if (rest && zoom.current.s > 1) pan.current = { id: rest[0], x: rest[1].x, y: rest[1].y, zx: zoom.current.x, zy: zoom.current.y, moved: true };
+          swallowClick.current = true;
+          window.setTimeout(() => (swallowClick.current = false), 0);
+        }
+        return;
+      }
+      const pn = pan.current;
+      if (pn && pn.id === e.pointerId) {
+        pan.current = null;
+        if (pn.moved) {
+          settle();
+          swallowClick.current = true;
+          window.setTimeout(() => (swallowClick.current = false), 0);
+          return;
+        }
+      }
+      // double tap: zoom in at the tap, or back out
+      const tap = lastTap.current;
+      const quick = e.timeStamp - tap.t < 300 && Math.hypot(e.clientX - tap.x, e.clientY - tap.y) < 30;
+      lastTap.current = { t: quick ? 0 : e.timeStamp, x: e.clientX, y: e.clientY };
+      if (quick && !cancelled && !drag.current?.axis && (e.target as HTMLElement).closest('.phv-img')) {
+        drag.current = null;
+        swallowClick.current = true;
+        window.setTimeout(() => (swallowClick.current = false), 0);
+        if (zoom.current.s > 1) return setZoom(1, 0, 0, 260);
+        const c = fromCentre(e.clientX, e.clientY);
+        zoom.current = { s: 2.5, x: -c.x * 1.5, y: -c.y * 1.5 };
+        return settle();
+      }
+      if (zoom.current.s > 1) return;
+    }
     const s = drag.current;
     if (!s || e.pointerId !== s.id) return;
     drag.current = null;
@@ -428,5 +563,23 @@ export function PhotoViewer({ photos, start, onClose }: { photos: Attachment[]; 
       )}
     </div>,
     document.body,
+  );
+}
+
+/** An avatar that opens its picture in the viewer (pinch zoom on the phone); without a picture it is plain. */
+export function ZoomAvatar({ className, url, children }: { className: string; url?: string | null; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <span
+        className={className + (url ? ' zoomable' : '')}
+        onClick={url ? (e) => (e.stopPropagation(), setOpen(true)) : undefined}
+        role={url ? 'button' : undefined}
+        aria-label={url ? t('Открыть фото') : undefined}
+      >
+        {children}
+      </span>
+      {open && url && <PhotoViewer photos={[{ id: 0, url, w: 0, h: 0 }]} start={0} onClose={() => setOpen(false)} />}
+    </>
   );
 }

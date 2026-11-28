@@ -8,8 +8,13 @@ import { Icon } from '../../shared/icons';
 import { handleOf, nameColor, type Server } from '../../shared/model';
 import { Avatar, Banner } from '../../shared/ui/Avatar';
 import { MENTION_EVENT } from '../chat/mentions';
+import { ZoomAvatar } from '../chat/Photos';
 import { openUserMenu } from '../members/userMenu';
+
 import { dateFormat, t } from '../../shared/i18n';
+
+// The collapsed row shows a few icons and a +N counter for the rest.
+const SHARED_ICONS = 3;
 
 let state: string | null = null;
 const subs = new Set<() => void>();
@@ -51,7 +56,7 @@ function serverMembers(id: string) {
   membersCache.set(id, { at: Date.now(), list });
   return list;
 }
-type Shared = { server: Server; joinedAt: string | null };
+type Shared = { server: Server };
 function useSharedServers(servers: Server[], name: string) {
   const [list, setList] = useState<Shared[] | null>(null);
   useEffect(() => {
@@ -61,7 +66,7 @@ function useSharedServers(servers: Server[], name: string) {
         serverMembers(server.id)
           .then((ms) => {
             const m = ms.find((x) => x.username === name);
-            return m ? { server, joinedAt: m.joinedAt } : null;
+            return m ? { server } : null;
           })
           .catch(() => null),
       ),
@@ -83,12 +88,11 @@ function goServer(server: Server) {
 
 export function ProfileDetails({ app, name, onClose }: { app: AppState; name: string; onClose: () => void }) {
   const profile = useUser(name);
-  const member = app.members.find((m) => m.username === name);
   const me = name === app.name;
+  const display = profile?.displayName || name;
   const status = app.statusOf(name);
   const inVoice = app.voiceUsers.some((v) => v.identity === name);
   const activity = inVoice ? t('В голосовом · {0}', { 0: app.voiceChannel?.name ?? t('Голосовой') }) : presenceLine(status, app.lastSeenOf(name));
-  const since = fmt(member?.joinedAt);
   const created = fmt(profile?.createdAt);
   const later = (what: string) => () => app.notify(t('{0} скоро будут', { 0: what }));
   const shared = useSharedServers(app.servers, name);
@@ -99,11 +103,11 @@ export function ProfileDetails({ app, name, onClose }: { app: AppState; name: st
   };
   return (
     <div className="pm-body">
-      <span className="pm-avatar">
-        <Avatar name={name} size={96} status={status} />
-      </span>
+      <ZoomAvatar className="pm-avatar" url={profile?.avatar}>
+        <Avatar name={name} size={96} />
+      </ZoomAvatar>
       <div className="pm-identity">
-        <h2 style={{ color: nameColor(name) }}>{profile?.displayName || name}</h2>
+        <h2 style={{ color: nameColor(name) }}>{display}</h2>
         <span className="mc-activity">
           <i className={`status-${status}`} />
           {activity}
@@ -119,30 +123,30 @@ export function ProfileDetails({ app, name, onClose }: { app: AppState; name: st
               window.dispatchEvent(new Event(EDIT_PROFILE_EVENT));
             }}
           >
-            <Icon name="pencil" size={16} />
-            {t('Редактировать профиль')}
+            <Icon name="pencil" size={20} />
+            {t('Редактировать')}
           </button>
         ) : (
           <>
             <button type="button" className="mc-btn primary" onClick={later(t('Личные сообщения'))}>
-              <Icon name="chats" size={16} />
+              <Icon name="chats" size={24} />
               {t('Написать')}
             </button>
             <button type="button" className="mc-btn" onClick={later(t('Личные звонки'))}>
-              <Icon name="voice" size={16} />
+              <Icon name="phone" size={24} />
               {t('Позвонить')}
             </button>
-            {profileFromChat() && <button
+            <button
               type="button"
-              className="mc-btn icon"
-              aria-label={t('Ещё')}
+              className="mc-btn"
               onClick={(e) => {
                 const r = e.currentTarget.getBoundingClientRect();
-                openUserMenu(name, r.left, r.bottom + 6, true);
+                openUserMenu(name, r.left, r.bottom + 6, true, profileFromChat());
               }}
             >
-              <Icon name="more" size={16} />
-            </button>}
+              <Icon name="more" size={24} />
+              {t('Ещё')}
+            </button>
           </>
         )}
       </div>
@@ -154,7 +158,7 @@ export function ProfileDetails({ app, name, onClose }: { app: AppState; name: st
         </section>
         {profile?.bio && (
           <section>
-            <div className="mc-over">{t('Обо мне')}</div>
+            <div className="mc-over">{t('О себе')}</div>
             <p className="mc-bio">{profile.bio}</p>
           </section>
         )}
@@ -167,65 +171,62 @@ export function ProfileDetails({ app, name, onClose }: { app: AppState; name: st
       </div>
 
       <div className="mc-info">
-        <section>
-          <button type="button" className="pm-server" onClick={() => open(app.server)}>
-            <span className="mc-server-ico" style={{ background: app.server.gradient }}>
-              {app.server.short}
+        <section className={'pm-shared-wrap' + (sharedOpen ? ' open' : '')}>
+          <button
+            type="button"
+            className="pm-shared"
+            aria-expanded={sharedOpen}
+            disabled={!shared?.length}
+            onClick={() => setSharedOpen((x) => !x)}
+          >
+            <span className="mc-over">
+              {me ? t('Серверы: ') : t('Общие серверы: ')}
+              {shared ? shared.length : '…'}
             </span>
-            <span>
-              <b>{app.server.name}</b>
-              {since && <small>{t('На сервере с ')}{since}</small>}
+            <span className="pm-shared-icons">
+              {shared?.slice(0, SHARED_ICONS).map(({ server }, i, list) => (
+                <span
+                  key={server.id}
+                  className="mc-server-ico sm"
+                  style={{ background: server.gradient, '--i': list.length - 1 - i + (shared.length > SHARED_ICONS ? 1 : 0) } as React.CSSProperties}
+                >
+                  {server.short}
+                </span>
+              ))}
+              {shared && shared.length > SHARED_ICONS && (
+                <span className="mc-server-ico sm pm-shared-more" style={{ '--i': 0 } as React.CSSProperties}>
+                  +{shared.length - SHARED_ICONS}
+                </span>
+              )}
+              {!!shared?.length && <Icon name="chevron-down" size={16} />}
             </span>
           </button>
-          <div className="mc-roles">
-            <span className="mc-role">
-              <i style={{ background: 'var(--role-everyone, #5c7590)' }} />
-              @everyone
-            </span>
-            {me && <span className="mc-role">{t('Это вы')}</span>}
+          <div className="pm-shared-list">
+            <div>
+              {shared?.map(({ server }) => (
+                <div key={server.id} className="pm-server">
+                  <button
+                    type="button"
+                    className="mc-server-ico pm-server-go"
+                    style={{ background: server.gradient }}
+                    aria-hidden="true"
+                    tabIndex={-1}
+                    onClick={() => open(server)}
+                  >
+                    {server.short}
+                  </button>
+                  <div className="pm-server-body">
+                    <button type="button" className="pm-server-name" tabIndex={sharedOpen ? 0 : -1} onClick={() => open(server)}>
+                      {server.name}
+                    </button>
+                    <span className="pm-server-nick">{display}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </section>
       </div>
-
-      {!me && (
-        <div className="mc-info">
-          <section className={'pm-shared-wrap' + (sharedOpen ? ' open' : '')}>
-            <button
-              type="button"
-              className="pm-shared"
-              aria-expanded={sharedOpen}
-              disabled={!shared?.length}
-              onClick={() => setSharedOpen((x) => !x)}
-            >
-              <span className="mc-over">{t('Общие серверы: ')}{shared ? shared.length : '…'}</span>
-              <span className="pm-shared-icons">
-                {shared?.slice(0, 3).map(({ server }) => (
-                  <span key={server.id} className="mc-server-ico sm" style={{ background: server.gradient }}>
-                    {server.short}
-                  </span>
-                ))}
-                {!!shared?.length && <Icon name="chevron-down" size={16} />}
-              </span>
-            </button>
-            <div className="pm-shared-list">
-              <div>
-                {shared?.map(({ server, joinedAt }) => (
-                  <button key={server.id} type="button" className="pm-server" tabIndex={sharedOpen ? 0 : -1} onClick={() => open(server)}>
-                    <span className="mc-server-ico" style={{ background: server.gradient }}>
-                      {server.short}
-                    </span>
-                    <span>
-                      <b>{server.name}</b>
-                      {fmt(joinedAt) && <small>{t('На сервере с ')}{fmt(joinedAt)}</small>}
-                    </span>
-                    <Icon name="chevron-right" size={18} />
-                  </button>
-                ))}
-              </div>
-            </div>
-          </section>
-        </div>
-      )}
     </div>
   );
 }

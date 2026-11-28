@@ -193,6 +193,124 @@ export function Composer({
       box.style.removeProperty('--composer-h');
     };
   }, []);
+  // The attachment strip scrolls sideways by wheel and mouse drag too (touch scrolls natively);
+  // its edges fade only on the side where more is hidden.
+  const strip = useRef<HTMLDivElement>(null);
+  const hasStrip = shownPhotos.length > 0;
+  useEffect(() => {
+    const el = strip.current;
+    if (!el) return;
+    const edges = () => {
+      const max = el.scrollWidth - el.clientWidth;
+      el.style.setProperty('--fade-l', el.scrollLeft > 1 ? '28px' : '0px');
+      el.style.setProperty('--fade-r', el.scrollLeft < max - 1 ? '28px' : '0px');
+    };
+    const wheel = (e: WheelEvent) => {
+      if (el.scrollWidth <= el.clientWidth || Math.abs(e.deltaX) >= Math.abs(e.deltaY)) return;
+      e.preventDefault();
+      el.scrollLeft += e.deltaY;
+    };
+    let drag: { id: number; x: number; left: number; moved: boolean } | null = null;
+    let swallow = false;
+    const down = (e: PointerEvent) => {
+      if (e.pointerType !== 'mouse' || e.button !== 0) return;
+      drag = { id: e.pointerId, x: e.clientX, left: el.scrollLeft, moved: false };
+    };
+    const move = (e: PointerEvent) => {
+      if (!drag || e.pointerId !== drag.id) return;
+      const dx = e.clientX - drag.x;
+      if (!drag.moved && Math.abs(dx) < 4) return;
+      if (!drag.moved) {
+        drag.moved = true;
+        el.setPointerCapture(e.pointerId);
+        el.dataset.drag = '';
+      }
+      el.scrollLeft = drag.left - dx;
+    };
+    const up = () => {
+      if (drag?.moved) {
+        swallow = true;
+        window.setTimeout(() => (swallow = false), 0);
+      }
+      drag = null;
+      delete el.dataset.drag;
+    };
+    // a drag ends with a click on whatever is under it; that click must not remove an attachment
+    const click = (e: MouseEvent) => swallow && (e.stopPropagation(), e.preventDefault());
+    // previews are not dragged out: dropped back on the chat they would attach again
+    const nodrag = (e: DragEvent) => e.preventDefault();
+    const ro = new ResizeObserver(edges);
+    ro.observe(el);
+    for (const c of el.children) ro.observe(c);
+    const mo = new MutationObserver(() => {
+      for (const c of el.children) ro.observe(c);
+      edges();
+    });
+    mo.observe(el, { childList: true });
+    edges();
+    el.addEventListener('scroll', edges, { passive: true });
+    el.addEventListener('wheel', wheel, { passive: false });
+    el.addEventListener('pointerdown', down);
+    el.addEventListener('pointermove', move);
+    el.addEventListener('pointerup', up);
+    el.addEventListener('pointercancel', up);
+    el.addEventListener('click', click, true);
+    el.addEventListener('dragstart', nodrag);
+    return () => {
+      ro.disconnect();
+      mo.disconnect();
+      el.removeEventListener('scroll', edges);
+      el.removeEventListener('wheel', wheel);
+      el.removeEventListener('pointerdown', down);
+      el.removeEventListener('pointermove', move);
+      el.removeEventListener('pointerup', up);
+      el.removeEventListener('pointercancel', up);
+      el.removeEventListener('click', click, true);
+      el.removeEventListener('dragstart', nodrag);
+    };
+  }, [hasStrip]);
+  // Files dropped anywhere on the chat attach like the paperclip.
+  const addLatest = useRef(addFiles);
+  addLatest.current = addFiles;
+  useEffect(() => {
+    const area = formRef.current?.closest<HTMLElement>('.chat');
+    if (!area || !allowPhotos) return;
+    const files = (e: DragEvent) => !!e.dataTransfer?.types.includes('Files');
+    let depth = 0;
+    const enter = (e: DragEvent) => {
+      if (!files(e)) return;
+      depth++;
+      area.dataset.drop = '';
+    };
+    const leave = (e: DragEvent) => {
+      if (!files(e)) return;
+      if (--depth <= 0) (depth = 0, delete area.dataset.drop);
+    };
+    const over = (e: DragEvent) => {
+      if (!files(e)) return;
+      e.preventDefault();
+      e.dataTransfer!.dropEffect = 'copy';
+    };
+    const drop = (e: DragEvent) => {
+      if (!files(e)) return;
+      e.preventDefault();
+      depth = 0;
+      delete area.dataset.drop;
+      addLatest.current(Array.from(e.dataTransfer!.files));
+      inputRef.current?.focus({ preventScroll: true });
+    };
+    area.addEventListener('dragenter', enter);
+    area.addEventListener('dragleave', leave);
+    area.addEventListener('dragover', over);
+    area.addEventListener('drop', drop);
+    return () => {
+      area.removeEventListener('dragenter', enter);
+      area.removeEventListener('dragleave', leave);
+      area.removeEventListener('dragover', over);
+      area.removeEventListener('drop', drop);
+      delete area.dataset.drop;
+    };
+  }, [allowPhotos]);
   return (
     <form
       ref={formRef}
@@ -258,7 +376,7 @@ export function Composer({
       <div className={'field' + (bar || shownPhotos.length ? ' has-bar' : '')}>
         {bar}
         {shownPhotos.length > 0 && (
-          <div className="composer-photos">
+          <div className="composer-photos" ref={strip}>
             {shownPhotos.map((p) => (
               <div className={'cp-item' + (p.att ? '' : ' loading') + (p.doc ? ' cp-doc' : '')} key={p.key} title={p.doc?.name}>
                 {p.doc ? (

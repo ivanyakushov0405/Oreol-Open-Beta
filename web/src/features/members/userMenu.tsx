@@ -5,19 +5,21 @@ import { Icon } from '../../shared/icons';
 import { handleOf } from '../../shared/model';
 import { Avatar } from '../../shared/ui/Avatar';
 import { MENTION_EVENT } from '../chat/mentions';
+import { openProfile } from '../profile/profile';
 import { getPeerVolume, setPeerVolume, subscribePeerVolume } from '../voice/peerVolume';
 import { DisplayName } from './Nick';
 import { t } from '../../shared/i18n';
 
-type Open = { name: string; x: number; y: number; mentionOnly?: boolean; inChat?: boolean } | null;
+// compact: the profile's «Ещё» menu, without the header and the items the profile already shows.
+type Open = { name: string; x: number; y: number; compact?: boolean; inChat?: boolean } | null;
 let state: Open = null;
 const subs = new Set<() => void>();
 const set = (v: Open) => {
   state = v;
   subs.forEach((f) => f());
 };
-export function openUserMenu(name: string, x: number, y: number, mentionOnly?: boolean, inChat?: boolean) {
-  set({ name, x, y, mentionOnly, inChat: inChat ?? mentionOnly });
+export function openUserMenu(name: string, x: number, y: number, compact?: boolean, inChat?: boolean) {
+  set({ name, x, y, compact, inChat });
 }
 export const userMenuProps = (name: string) => ({
   onContextMenu: (e: React.MouseEvent) => {
@@ -44,7 +46,7 @@ function UserMenu({
   name,
   x,
   y,
-  mentionOnly,
+  compact,
   inChat,
   onClose,
 }: {
@@ -52,7 +54,7 @@ function UserMenu({
   name: string;
   x: number;
   y: number;
-  mentionOnly?: boolean;
+  compact?: boolean;
   inChat?: boolean;
   onClose: () => void;
 }) {
@@ -92,19 +94,19 @@ function UserMenu({
     <>
       <div className="msg-menu-backdrop" onClick={onClose} onContextMenu={(e) => (e.preventDefault(), onClose())} />
       <div ref={ref} className="msg-menu user-menu" role="menu" style={{ left: pos.left, top: pos.top, transformOrigin: pos.origin }}>
-        {mentionOnly ? (
-          item('at', t('Упомянуть'), () => window.dispatchEvent(new CustomEvent(MENTION_EVENT, { detail: name })))
-        ) : (
-        <>
-        <div className="um-head">
-          <Avatar name={name} size={32} />
-          <span className="um-who">
-            <b>
-              <DisplayName name={name} />
-            </b>
-            <span>{handleOf(name)}</span>
-          </span>
-        </div>
+        {!compact && (
+          <div className="um-head">
+            <Avatar name={name} size={32} />
+            <span className="um-who">
+              <b>
+                <DisplayName name={name} />
+              </b>
+              <span>{handleOf(name)}</span>
+            </span>
+          </div>
+        )}
+        {!compact && item('copy', t('Копировать юзернейм'), () => void navigator.clipboard?.writeText(handleOf(name)))}
+        {!compact && item('user', t('Профиль'), () => openProfile(name, { inChat }))}
         {!self && (
           <label className="um-volume">
             <span className="um-vol-top">
@@ -125,10 +127,8 @@ function UserMenu({
           </label>
         )}
         {!self && inChat && item('at', t('Упомянуть'), () => window.dispatchEvent(new CustomEvent(MENTION_EVENT, { detail: name })))}
-        {!self && item('chats', t('Написать сообщение'), () => app.notify(t('Личные сообщения скоро будут')))}
-        {self && item('copy', t('Копировать юзернейм'), () => void navigator.clipboard?.writeText(handleOf(name)))}
-        </>
-        )}
+        {!self && !compact && item('chats', t('Написать сообщение'), () => app.notify(t('Личные сообщения скоро будут')))}
+        {!self && !compact && item('phone', t('Позвонить'), () => app.notify(t('Личные звонки скоро будут')))}
       </div>
     </>,
     document.body,

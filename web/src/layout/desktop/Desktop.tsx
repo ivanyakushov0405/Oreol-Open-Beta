@@ -20,16 +20,23 @@ import { UserSettingsBody } from '../../features/settings/UserSettings';
 import { isServerSection, isUserSection, SERVER_NAV, USER_NAV, userNavOf, userSectionTitle, type ServerSection, type UserSection } from '../../features/settings/nav';
 import { VoiceStage } from '../../features/voice/VoiceStage';
 import { Elapsed, VoiceStatus } from '../../features/voice/VoiceStatus';
-import { Icon } from '../../shared/icons';
+import { Icon, type IconName } from '../../shared/icons';
 import { type Channel, type ServerId } from '../../shared/model';
 import { plural, t } from '../../shared/i18n';
 
 type Overlay = { kind: 'user'; section: UserSection } | { kind: 'server'; section: ServerSection } | null;
 
-function TitleButton({ open, disabled, onClick, children }: { open: boolean; disabled?: boolean; onClick: () => void; children: React.ReactNode }) {
-  if (disabled) return <div>{children}</div>;
+function TitleButton({ icon, open, disabled, onClick, children }: { icon: IconName; open: boolean; disabled?: boolean; onClick: () => void; children: React.ReactNode }) {
+  if (disabled)
+    return (
+      <>
+        <Icon name={icon} />
+        <div>{children}</div>
+      </>
+    );
   return (
     <button type="button" className="main-head-title" aria-haspopup="dialog" aria-expanded={open} onClick={onClick}>
+      <Icon name={icon} className="head-ico" />
       <div>{children}</div>
       <Icon name="chevron-down" size={16} className="chev" />
     </button>
@@ -249,8 +256,7 @@ export function Desktop({ app }: { app: AppState }) {
       ) : (
         <main className={'main glass' + (isVoice ? ' main-voice' : '')}>
           <div className="main-head">
-            <Icon name={isVoice ? 'voice' : 'chats'} />
-            <TitleButton open={info?.side === false} disabled={isVoice} onClick={() => setInfo(info ? null : { side: false })}>
+            <TitleButton icon={isVoice ? 'voice' : 'chats'} open={info?.side === false} disabled={isVoice} onClick={() => setInfo(info ? null : { side: false })}>
               <div className="title">{channel.name}</div>
               <div className="sub">
                 {isVoice ? (
@@ -317,8 +323,7 @@ export function Desktop({ app }: { app: AppState }) {
       {!home && isVoice && voiceChat && (
         <aside className="side-chat glass">
           <div className="main-head">
-            <Icon name="chats" />
-            <TitleButton open={!!info?.side} onClick={() => setInfo(info ? null : { side: true })}>
+            <TitleButton icon="chats" open={!!info?.side} onClick={() => setInfo(info ? null : { side: true })}>
               <div className="title">{t('Чат · ')}{voiceName}</div>
               <div className="sub">
                 <TypingLine users={app.lobby.typingUsers.filter((u) => u !== app.name)} fallback={t('Видят участники голосового')} />
@@ -378,15 +383,12 @@ export function Desktop({ app }: { app: AppState }) {
           me={card.name === app.name}
           at={{ x: card.x, y: card.y }}
           status={app.statusOf(card.name)}
-          activity={app.voiceUsers.some((v) => v.identity === card.name) ? t('В голосовом · {0}', { 0: voiceName }) : presenceLine(app.statusOf(card.name), app.lastSeenOf(card.name))}
           serverName={app.server.name}
           since={cardMember?.joinedAt ? new Date(cardMember.joinedAt) : new Date()}
           onClose={() => setCard(null)}
           onProfile={() => {
-            const mine = card.name === app.name;
             setCard(null);
-            if (mine) setOverlay({ kind: 'user', section: 'account-edit' });
-            else openProfile(card.name);
+            openProfile(card.name);
           }}
         />
       )}

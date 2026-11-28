@@ -420,16 +420,13 @@ export function ChatInfo({
             {app.membersReady && ` · ${plural(app.members.length, 'участник', 'участника', 'участников')}`}
           </span>
         </div>
-        <button type="button" className="icon-btn" title={t('Закрыть')} aria-label={t('Закрыть')} onClick={onClose}>
-          <Icon name="close" />
-        </button>
       </div>
       )}
 
       <div className="ci-actions">
         {actions.map((a) => (
           <button key={a.icon} type="button" className={'ci-action' + (a.on ? ' on' : '')} aria-pressed={a.on} onClick={a.run}>
-            <Icon name={a.icon} />
+            <Icon name={a.icon} size={24} />
             <span>{a.label}</span>
           </button>
         ))}
@@ -491,10 +488,8 @@ export function ChatInfo({
       <div
         className="ci-body"
         ref={body}
-        onPointerDown={onPointerDown}
-        onPointerUp={onPointerUp}
-        onPointerCancel={() => (swipe.current = null)}
-        onClickCapture={onClickCapture}
+        // tabs switch by swipe and slide in only on the phone
+        {...(full ? { onPointerDown, onPointerUp, onPointerCancel: () => (swipe.current = null), onClickCapture } : {})}
         onDragStart={(e) => e.preventDefault()}
       >
         {search ? (
@@ -521,7 +516,7 @@ export function ChatInfo({
             {query && <Status page={found} empty={t('Ничего не найдено')} />}
           </>
         ) : (
-          <div key={tab} className={'ci-pane' + (dir ? ' from-' + dir : '')}>
+          <div key={tab} className={'ci-pane' + (full && dir ? ' from-' + dir : '')}>
             {visual && (
               <div className="ci-grid">
                 {items.map((a, i) => (
@@ -534,7 +529,7 @@ export function ChatInfo({
                         </span>
                       </>
                     ) : (
-                      <img src={a.url} alt="" loading="lazy" decoding="async" draggable={false} />
+                      <img src={a.thumb ?? a.url} alt="" loading="lazy" decoding="async" draggable={false} />
                     )}
                   </button>
                 ))}
@@ -605,7 +600,7 @@ function ResultThumb({ m }: { m: ChatMessage }) {
           <Icon name="play" size={12} />
         </>
       ) : (
-        <img src={a.url} alt="" loading="lazy" decoding="async" draggable={false} />
+        <img src={a.thumb ?? a.url} alt="" loading="lazy" decoding="async" draggable={false} />
       )}
     </span>
   );

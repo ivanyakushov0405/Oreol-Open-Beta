@@ -84,6 +84,16 @@ function AppScreens() {
     const id = window.setTimeout(() => document.documentElement.classList.remove('boot'), 700);
     return () => window.clearTimeout(id);
   }, []);
+  // A file dropped outside a chat must not make the browser open it in place of the app.
+  useEffect(() => {
+    const stop = (e: DragEvent) => e.dataTransfer?.types.includes('Files') && e.preventDefault();
+    window.addEventListener('dragover', stop);
+    window.addEventListener('drop', stop);
+    return () => {
+      window.removeEventListener('dragover', stop);
+      window.removeEventListener('drop', stop);
+    };
+  }, []);
   useEffect(() => {
     lsSet(LS_NAME, null);
     if (!hasSession()) return;

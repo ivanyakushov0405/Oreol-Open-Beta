@@ -264,8 +264,8 @@ from datetime import datetime, timezone
 import boto3
 from botocore.config import Config as BotoConfig
 from botocore.exceptions import BotoCoreError, ClientError
-from fastapi.responses import Response, StreamingResponse
-from PIL import Image, UnidentifiedImageError
+from fastapi.responses import FileResponse, Response, StreamingResponse
+from PIL import Image, ImageOps, UnidentifiedImageError
 
 S3_ENDPOINT = os.getenv("S3_ENDPOINT", "https://s3.twcstorage.ru")
 S3_BUCKET = os.getenv("S3_BUCKET", "3e88f5e3-35cc-4a02-9d3c-95cfbb3707c0")
@@ -371,7 +371,36 @@ def att_json(a) -> dict:
     d = {"id": a["id"], "url": media_url(a["key"]), "w": a["width"], "h": a["height"]}
     if a["mime"].startswith("video/"):
         d["video"] = True
+    elif has_thumb(a["key"], a["width"], a["height"]):
+        d["thumb"] = f"/api/thumb/{a['key']}"
     return d
+
+
+# Grid tiles: Chrome downscales a 4K photo to a tile with jagged edges, and the original is heavy to load.
+THUMB_SIDE = 480
+THUMB_MAX_SIDE = 2048
+THUMB_RE = re.compile(r"^photos/\d{4}/\d{2}/[0-9a-f]{32}\.(?:jpg|png|webp)$")
+
+
+def has_thumb(key: str, w: int, h: int) -> bool:
+    return bool(THUMB_RE.match(key)) and min(w, h) > THUMB_SIDE * 1.25
+
+
+def thumb_path(key: str) -> Path:
+    return UPLOADS_DIR / "thumbs" / (key.replace("/", "_").rsplit(".", 1)[0] + ".webp")
+
+
+def make_thumb(body: bytes) -> bytes:
+    with Image.open(io.BytesIO(body)) as img:
+        img.draft("RGB", (THUMB_SIDE * 2, THUMB_SIDE * 2))
+        img = ImageOps.exif_transpose(img)
+        w, h = img.size
+        k = min(THUMB_SIDE / min(w, h), THUMB_MAX_SIDE / max(w, h), 1)
+        img = img.convert("RGBA" if img.mode in ("RGBA", "LA", "P") else "RGB")
+        img = img.resize((max(1, round(w * k)), max(1, round(h * k))), Image.LANCZOS, reducing_gap=3)
+        out = io.BytesIO()
+        img.save(out, "WEBP", quality=82, method=4)
+        return out.getvalue()
 
 
 def purge_s3_keys(keys) -> None:
@@ -381,6 +410,8 @@ def purge_s3_keys(keys) -> None:
         return
 
     def run():
+        for k in keys:
+            thumb_path(k).unlink(missing_ok=True)
         try:
             for i in range(0, len(keys), 1000):
                 s3().delete_objects(
@@ -712,6 +743,38 @@ async def media(key: str, request: Request):
         status = 206
     # The body is read in chunks in a thread pool, large files are never held in memory whole.
     return StreamingResponse(obj["Body"].iter_chunks(64 * 1024), status_code=status, media_type=att["mime"], headers=headers)
+
+
+@app.get("/api/thumb/{key:path}")
+async def media_thumb(key: str):
+    if not THUMB_RE.match(key) or not S3_ACCESS_KEY:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    path = thumb_path(key)
+    headers = {"Cache-Control": "public, max-age=31536000, immutable"}
+    if path.exists():
+        return FileResponse(path, media_type="image/webp", headers=headers)
+    conn = db()
+    known = conn.execute("SELECT 1 FROM attachments WHERE key = ? LIMIT 1", (key,)).fetchone()
+    conn.close()
+    if not known:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    try:
+        obj = await asyncio.to_thread(lambda: s3().get_object(Bucket=S3_BUCKET, Key=key))
+        body = await asyncio.to_thread(obj["Body"].read)
+        data = await asyncio.to_thread(make_thumb, body)
+    except ClientError as e:
+        if e.response.get("Error", {}).get("Code", "") in ("NoSuchKey", "404"):
+            return JSONResponse({"error": "not found"}, status_code=404)
+        print(f"s3 get: {e}")
+        return Response(status_code=502)
+    except (BotoCoreError, OSError, ValueError) as e:
+        print(f"thumb {key}: {e}")
+        return Response(status_code=502)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(f".{uuid.uuid4().hex}.tmp")
+    tmp.write_bytes(data)
+    tmp.replace(path)
+    return Response(data, media_type="image/webp", headers=headers)
 
 
 MSG_COLS = "id, room, username, content, timestamp, reply_to, edited_at, pinned, fwd_user, fwd_ts, sys"

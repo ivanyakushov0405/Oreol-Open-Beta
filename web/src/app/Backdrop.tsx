@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 /** Torus colors drift as a whole: two gradients rotate in opposite directions and the second one fades in and out. */
 const LAYOUT = {
   desktop: {
@@ -39,24 +39,43 @@ function Layer({ th, torus, mobile }: { th: string; torus: number; mobile: boole
   // The motion comes from moving the whole layer on the GPU instead (styles.css).
   const live = !mobile;
   const svgRef = useRef<SVGSVGElement>(null);
+  const [go, setGo] = useState(false);
+  // The SVG animates on the main thread: on a first visit the bundle and the fonts keep it busy for a couple of
+  // seconds and the ring stutters. It starts moving once the page has settled.
+  useEffect(() => {
+    let off = false;
+    let idle = 0;
+    const loaded = document.readyState === 'complete' ? Promise.resolve() : new Promise((r) => addEventListener('load', r, { once: true }));
+    void Promise.all([loaded, document.fonts.ready]).then(() => {
+      if (off) return;
+      const start = () => !off && setGo(true);
+      if ('requestIdleCallback' in window) idle = requestIdleCallback(start, { timeout: 1500 });
+      else idle = setTimeout(start, 300) as unknown as number;
+    });
+    return () => {
+      off = true;
+      if ('cancelIdleCallback' in window) cancelIdleCallback(idle);
+      clearTimeout(idle);
+    };
+  }, []);
   useEffect(() => {
     const html = document.documentElement;
     const sync = () => {
       const svg = svgRef.current;
       if (!svg) return;
-      if (html.dataset.backdrop === 'off') svg.pauseAnimations();
+      if (!go || html.dataset.backdrop === 'off') svg.pauseAnimations();
       else svg.unpauseAnimations();
     };
     sync();
     const mo = new MutationObserver(sync);
     mo.observe(html, { attributes: true, attributeFilter: ['data-backdrop'] });
     return () => mo.disconnect();
-  }, []);
+  }, [go]);
   const L = LAYOUT[mobile ? 'mobile' : 'desktop'];
   const r = L.ring;
   const id = (n: string) => `bd-${th}-${n}`;
   return (
-    <div className={'bd-layer ' + th + (mobile ? ' m' : '')}>
+    <div className={'bd-layer ' + th + (mobile ? ' m' : '') + (go ? '' : ' hold')}>
       <svg ref={svgRef} viewBox={L.box} preserveAspectRatio="xMidYMid slice">
         <defs>
           {/* Radial gradients instead of a blur filter: the filter re-rendered on every repaint and the glows flashed sharp. */}

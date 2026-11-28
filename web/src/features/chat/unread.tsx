@@ -28,8 +28,10 @@ export function roomUnread(app: AppState, chat: AppState['lobby'] | null, room: 
   const n = own ? unreadCount(chat.messages, chat.myRead, app.name) : 0;
   const at = own ? unreadMentions(chat.messages, chat.myRead, app.name) : 0;
   if (own && chat.synced) return { n, at };
+  // The summary lists every room: before the sync it wins over the cached chat, whose read mark may be old
+  // (counting from the cache flashed a badge on the server icon right after a switch).
   const s = app.roomUnread[room];
-  return { n: Math.max(n, s?.count ?? 0), at: Math.max(at, s?.mentions ?? 0) };
+  return s ? { n: s.count, at: s.mentions } : { n, at };
 }
 
 export function unreadMentions(messages: { id: string | number; user: string; sys?: string | null; content?: string | null }[], readId: number, me: string) {

@@ -184,6 +184,7 @@ export const EN: Record<string, string> = {
   ' {0} из {1}': ' {0} of {1}',
   'Изображение': 'Image',
   'Просмотр вложений': 'Attachment viewer',
+  'Открыть фото': 'Open photo',
   '{0} из {1}': '{0} of {1}',
   'Сохранить': 'Save',
   'Не удалось сохранить': 'Could not save',
@@ -243,7 +244,6 @@ export const EN: Record<string, string> = {
   'О себе': 'About',
   'Ник на сервере': 'Server nickname',
   'Роли': 'Roles',
-  'Это вы': 'This is you',
   'На сервере с': 'Member since',
   ' г.': '',
   'Общие серверы: 1': 'Mutual servers: 1',
@@ -267,6 +267,7 @@ export const EN: Record<string, string> = {
   'В Ореоле с': 'On Oreol since',
   'На сервере с ': 'On the server since ',
   'Общие серверы: ': 'Mutual servers: ',
+  'Серверы: ': 'Servers: ',
 
   // servers and channels
   'Упоминаний: {0}': 'Mentions: {0}',

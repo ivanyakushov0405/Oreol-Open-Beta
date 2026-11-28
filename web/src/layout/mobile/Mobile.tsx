@@ -854,7 +854,6 @@ export function Mobile({ app }: { app: AppState }) {
           me={card === app.name}
           at={{ x: 0, y: 0 }}
           status={app.statusOf(card)}
-          activity={app.voiceUsers.some((v) => v.identity === card) ? t('В голосовом · {0}', { 0: voiceName }) : presenceLine(app.statusOf(card), app.lastSeenOf(card))}
           serverName={app.server.name}
           since={cardMember?.joinedAt ? new Date(cardMember.joinedAt) : new Date()}
           onClose={() => setCard(null)}

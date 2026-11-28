@@ -176,7 +176,7 @@ function DeleteDialog({ app, onClose }: { app: AppState; onClose: () => void }) 
             {t('Отмена')}
           </button>
           <button type="submit" className="btn btn-primary" disabled={busy || !password}>
-            <Icon name="trash" size={16} />
+            <Icon name="trash" size={20} />
             {busy ? t('Удаляем…') : t('Удалить навсегда')}
           </button>
         </div>
@@ -340,7 +340,7 @@ export function AccountView({ app, onEdit }: { app: AppState; onEdit: () => void
       </div>
       <div className="acc-actions-end">
         <button type="button" className="btn btn-primary acc-edit-btn" onClick={onEdit}>
-          <Icon name="pencil" size={16} />
+          <Icon name="pencil" size={20} />
           {t('Редактировать')}
         </button>
       </div>
@@ -361,7 +361,7 @@ export function AccountView({ app, onEdit }: { app: AppState; onEdit: () => void
           <p>{t('Аккаунт и все данные будут удалены без возможности восстановления.')}</p>
         </div>
         <button type="button" className="btn btn-danger-solid" onClick={() => setDel(true)}>
-          <Icon name="trash" size={16} />
+          <Icon name="trash" size={20} />
           {t('Удалить аккаунт')}
         </button>
       </div>

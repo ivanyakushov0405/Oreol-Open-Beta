@@ -52,7 +52,7 @@ const shift = (list: Iterable<HTMLElement>, v: string | null, tr = 'none') => {
     else (n.style.setProperty('transform', v, 'important'), n.style.setProperty('transition', tr, 'important'));
   }
 };
-const SKIP = 'input, textarea, select, [contenteditable], .ci-full:not([data-edge]), .tabbar, .m-call, .m-call-pill, .member-card, .popover-backdrop, .msg-menu, .m-menu, .dialog';
+const SKIP = 'input, textarea, select, [contenteditable], .composer-photos, .ci-full:not([data-edge]), .tabbar, .m-call, .m-call-pill, .member-card, .popover-backdrop, .msg-menu, .m-menu, .dialog';
 
 export function useStageSwipes(stage: RefObject<HTMLElement>, opts: Opts) {
   const o = useRef(opts);
@@ -60,7 +60,9 @@ export function useStageSwipes(stage: RefObject<HTMLElement>, opts: Opts) {
   useEffect(() => {
     const el = stage.current;
     if (!el) return;
-    type S = { id: number; x: number; y: number; t: number; kind: 'back' | 'tab'; node: HTMLElement; active: boolean; dx: number };
+    /** What a move writes to, found once when the gesture starts: queries (some with :has) and rect reads on every move cost frames. */
+    type Parts = { w: number; head: HTMLElement | null; under: HTMLElement[]; boxes: HTMLElement[]; cards: HTMLElement[]; body: HTMLElement[]; panels: HTMLElement[] };
+    type S = { id: number; x: number; y: number; t: number; kind: 'back' | 'tab'; node: HTMLElement; active: boolean; dx: number; parts?: Parts };
     let s: S | null = null;
     let swallowClick = false;
     /** Frost over the lower screen during a back swipe: right under the upper one, at its level, clearing as it moves. */
@@ -204,36 +206,45 @@ export function useStageSwipes(stage: RefObject<HTMLElement>, opts: Opts) {
           // The screen's own frost blurs only during the gesture and its ending: a constant blur slowed theme changes.
           s.node.dataset.frost = '';
           veilOn(s.node);
+          s.parts = {
+            w: el.clientWidth || 1,
+            head: s.node.querySelector<HTMLElement>(':scope > .m-head'),
+            under: underEls(),
+            boxes: boxesUnder(),
+            cards: cardsUnder(),
+            body: bodyUnder(),
+            panels: [],
+          };
+          // The upper screen frosts what lies under it, so the cards show whole and blurred, as under the chat.
+          wipe(s.parts.cards, Infinity);
         } else {
           el.dataset.swipe = 'tab';
+          s.parts = { w: el.clientWidth || 1, head: null, under: [], boxes: [], cards: [], body: [], panels: [...s.node.querySelectorAll<HTMLElement>(PANELS)] };
         }
       }
       e.preventDefault();
-      const w = el.clientWidth || 1;
+      const P = s.parts!;
+      const w = P.w;
       let x = e.clientX - s.x;
+      if (s.kind === 'back') x = Math.max(0, x);
+      if (x === s.dx) return;
       if (s.kind === 'back') {
-        x = Math.max(0, x);
         s.node.style.transform = `translateX(${x}px)`;
-        const head = s.node.querySelector<HTMLElement>(':scope > .m-head');
-        if (head) head.style.transform = `translateX(${-x}px)`;
+        if (P.head) P.head.style.transform = `translateX(${-x}px)`;
         const p = Math.min(1, x / w);
-        const under = underEls();
-        fade(under, p);
+        fade(P.under, p);
         veilSet(p, w);
         // The lower screen follows the finger (as in iOS) instead of sitting shifted.
-        shift(boxesUnder(), `translateX(${(-22 * (1 - p)).toFixed(2)}%)`);
-        // The upper screen frosts what lies under it, so the cards show whole and blurred, as under the chat.
-        const cards = cardsUnder();
-        wipe(cards, Infinity);
+        shift(P.boxes, `translateX(${(-22 * (1 - p)).toFixed(2)}%)`);
         // Faded like any lower screen, or their sharp text shows through the clearing frost. Under the frost Safari's
         // grey glass at opacity below 1 does not show.
-        fade(cards, p);
-        fade(bodyUnder(), p);
+        fade(P.cards, p);
+        fade(P.body, p);
       } else {
         const k = o.current.canTab(x < 0 ? 1 : -1) ? 0.12 : 0.05;
         s.node.style.transform = `translateX(${x * k}px)`;
         // Fade the panels themselves: opacity on the whole screen would cut the glass off from its backdrop.
-        fade(s.node.querySelectorAll<HTMLElement>(PANELS), 1 - Math.min(0.35, (Math.abs(x) / w) * 0.5));
+        fade(P.panels, 1 - Math.min(0.35, (Math.abs(x) / w) * 0.5));
       }
       s.dx = x;
     };
